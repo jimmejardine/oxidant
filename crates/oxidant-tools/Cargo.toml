@@ -1,0 +1,20 @@
+[package]
+name = "oxidant-tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+tokio.workspace = true
+async-trait.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+walkdir.workspace = true
+ignore.workspace = true
+globset.workspace = true
+regex.workspace = true
+camino.workspace = true

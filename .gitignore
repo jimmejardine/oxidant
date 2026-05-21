@@ -1,0 +1,22 @@
+/target
+**/*.rs.bk
+*.pdb
+
+# Oxidant runtime state — per-worktree caches (index-db, search-index, transcripts)
+.oxidant/
+
+# Sub-exploration worktrees (decision 0004)
+.oxidant-worktrees/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Local env / secrets (provider keys belong in oxidant-config, never the repo)
+.env
+.env.local

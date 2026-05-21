@@ -1,0 +1,26 @@
+[package]
+name = "oxidant"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "oxidant"
+path = "src/main.rs"
+
+[dependencies]
+oxidant-core.workspace = true
+oxidant-providers.workspace = true
+oxidant-tools.workspace = true
+oxidant-rust-tools.workspace = true
+oxidant-spec-tools.workspace = true
+oxidant-vcs.workspace = true
+oxidant-gui.workspace = true
+oxidant-config.workspace = true
+
+anyhow.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

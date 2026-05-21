@@ -1,0 +1,88 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[workspace.dependencies]
+# Internal crates
+oxidant-core         = { path = "crates/oxidant-core" }
+oxidant-providers    = { path = "crates/oxidant-providers" }
+oxidant-tools        = { path = "crates/oxidant-tools" }
+oxidant-rust-tools   = { path = "crates/oxidant-rust-tools" }
+oxidant-spec-tools   = { path = "crates/oxidant-spec-tools" }
+oxidant-vcs          = { path = "crates/oxidant-vcs" }
+oxidant-gui          = { path = "crates/oxidant-gui" }
+oxidant-config       = { path = "crates/oxidant-config" }
+
+# Async runtime + utilities
+tokio          = { version = "1.41", features = ["full"] }
+futures        = "0.3"
+futures-util   = "0.3"
+async-trait    = "0.1"
+bytes          = "1.8"
+
+# Serde + formats
+serde          = { version = "1", features = ["derive"] }
+serde_json     = "1"
+serde_yaml_ng  = "0.10"
+
+# Errors + tracing
+anyhow         = "1"
+thiserror      = "2"
+tracing        = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# HTTP (providers) — hand-rolled SSE on top of reqwest's byte stream per decision 0007
+reqwest        = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+
+# Filesystem + walking
+notify         = "7"
+walkdir        = "2"
+ignore         = "0.4"
+globset        = "0.4"
+
+# Markdown / frontmatter
+pulldown-cmark = "0.12"
+regex          = "1"
+
+# Persistence + search
+rusqlite       = { version = "0.32", features = ["bundled"] }
+tantivy        = "0.22"
+
+# Rust source analysis
+syn            = { version = "2", features = ["full", "extra-traits", "visit", "visit-mut"] }
+quote          = "1"
+proc-macro2    = "1"
+
+# LSP
+lsp-types      = "0.97"
+
+# GUI
+eframe         = { version = "0.29", default-features = false, features = ["default_fonts", "wgpu", "persistence"] }
+egui           = "0.29"
+egui_dock      = "0.14"
+egui_commonmark = "0.18"
+syntect        = "5"
+
+# Misc
+clap           = { version = "4", features = ["derive"] }
+chrono         = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+directories    = "5"
+once_cell      = "1"
+parking_lot    = "0.12"
+camino         = "1"
+
+[profile.dev]
+opt-level = 0
+debug = 1
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
