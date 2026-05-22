@@ -2571,11 +2571,16 @@ name = "oxidant-spec-tools"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "camino",
+ "oxidant-core",
  "petgraph",
+ "quote",
  "regex",
  "serde",
  "serde_json",
  "serde_yaml_ng",
+ "syn 2.0.117",
  "thiserror 2.0.18",
  "tracing",
  "walkdir",

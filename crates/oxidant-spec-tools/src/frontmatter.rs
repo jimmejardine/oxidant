@@ -252,6 +252,57 @@ fn yaml_to_json(value: serde_yaml_ng::Value) -> serde_json::Value {
     }
 }
 
+/// A code-fenced block extracted from spec body. Used by spec-tools::diff
+/// to find ```rust blocks that declare contract traits.
+#[derive(Debug, Clone)]
+pub struct FencedBlock {
+    /// Language hint after the opening fence (e.g. "rust", "json"). Empty if absent.
+    pub language: String,
+    /// Block body between the fence lines, joined by '\n', without trailing newline.
+    pub content: String,
+    /// 1-indexed line number of the opening fence in the original source.
+    pub line: usize,
+}
+
+/// Walk a spec body and return every fenced code block. Both ``` and ~~~
+/// fences are recognised; nested fences of the OTHER style are treated as
+/// content (matching common Markdown engines).
+pub fn extract_fenced_blocks(body: &str, line_offset: usize) -> Vec<FencedBlock> {
+    let mut out = Vec::new();
+    let mut current: Option<(String, Vec<String>, usize, &'static str)> = None;
+    for (idx, line) in body.lines().enumerate() {
+        let absolute_line = line_offset + idx;
+        let trimmed = line.trim_start();
+        if let Some((lang, contents, start_line, opener)) = &mut current {
+            if trimmed.starts_with(*opener) {
+                out.push(FencedBlock {
+                    language: std::mem::take(lang),
+                    content: contents.join("\n"),
+                    line: *start_line,
+                });
+                current = None;
+            } else {
+                contents.push(line.to_string());
+            }
+            continue;
+        }
+        let opener = if trimmed.starts_with("```") {
+            Some("```")
+        } else if trimmed.starts_with("~~~") {
+            Some("~~~")
+        } else {
+            None
+        };
+        if let Some(o) = opener {
+            let after = &trimmed[o.len()..];
+            let language = after.split_whitespace().next().unwrap_or("").to_string();
+            current = Some((language, Vec::new(), absolute_line, o));
+        }
+    }
+    // Unterminated fence — drop silently; validate would flag the file separately.
+    out
+}
+
 // Fence-aware body ref extraction. Lines inside ```...``` or ~~~...~~~ blocks
 // are skipped, and within a non-fenced line, content between single backticks
 // is also skipped — so literals like `[[ref]]` in prose don't count.
@@ -389,6 +440,19 @@ mod tests {
         let f = parse(src).expect("parse");
         let raws: Vec<_> = f.refs_in_body.iter().map(|r| r.raw.as_str()).collect();
         assert_eq!(raws, vec!["real/x"]);
+    }
+
+    #[test]
+    fn extract_fenced_blocks_captures_language_and_contents() {
+        let body = "intro\n```rust\nfn a() {}\nfn b() {}\n```\nbetween\n~~~json\n{\"x\": 1}\n~~~\nend\n";
+        let blocks = extract_fenced_blocks(body, 1);
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0].language, "rust");
+        assert_eq!(blocks[0].content, "fn a() {}\nfn b() {}");
+        assert_eq!(blocks[0].line, 2);
+        assert_eq!(blocks[1].language, "json");
+        assert_eq!(blocks[1].content, "{\"x\": 1}");
+        assert_eq!(blocks[1].line, 7);
     }
 
     #[test]

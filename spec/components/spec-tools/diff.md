@@ -7,13 +7,14 @@ implements: []
 depends_on:
   - components/spec-tools/frontmatter
   - components/spec-tools/graph
-  - components/rust-tools/syn-tools
 code:
   - crates/oxidant-spec-tools/src/diff.rs
 status: active
 responsibility: |
   Detect spec↔code drift: trait-method drift for contract specs and code-path existence for component specs.
 ---
+
+This component uses `syn` directly for the trait parse — [[components/rust-tools/syn-tools]] is the model-facing AST surface, separate concern.
 
 The mechanism that makes [[decisions/0008-spec-is-canonical]] enforceable. Without `spec_diff`, specs become shelfware; with it, divergence is a flagged warning the agent is prompted to fix.
 
@@ -24,10 +25,10 @@ Two checks:
 ### 1. Contract trait drift
 
 For each spec with `kind: contract`:
-- Parse the file body to extract the declared trait (the methods table + `Trait` rustdoc block in the body).
-- Locate the actual `trait <Name>` definition via the `code:` paths using [[components/rust-tools/syn-tools]].
-- Compare method names, parameter types (textually after `prettyplease`-style normalisation), and return types.
-- Emit `MethodAdded`, `MethodRemoved`, or `MethodSignatureChanged` per discrepancy.
+- Extract every ```rust fenced block from the body, parse each with `syn::parse_file`, collect the `ItemTrait` entries.
+- For each spec trait, locate the same-named trait in any of the `code:` paths (each parsed as a `syn::File`).
+- Compare methods by name and signature. Signatures are normalised before comparison: the token stream of each `syn::Signature` is rendered via `quote!{}`, then every path prefix is stripped to its last segment (so `serde_json::Value` matches `Value`, `crate::foo::Bar` matches `Bar`). This catches genuine drift while tolerating `use` statements rewriting paths.
+- Emit `MethodAdded` (in code, not in spec), `MethodRemoved` (in spec, not in code), or `MethodSignatureChanged` (in both, signatures differ after normalisation).
 
 ### 2. Component code-path existence
 

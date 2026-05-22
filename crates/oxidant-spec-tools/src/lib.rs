@@ -12,12 +12,17 @@
 //   spec/decisions/0008-spec-is-canonical.md
 //   spec/decisions/0010-spec-index-and-search.md
 
+pub mod diff;
 pub mod frontmatter;
 pub mod graph;
+pub mod tools;
 pub mod validate;
 
+pub use diff::{Drift, diff_all, diff_spec};
 pub use frontmatter::{
-    FrontmatterRecord, ParseError, RefMention, SpecFile, SpecKind, SpecStatus, parse,
+    FencedBlock, FrontmatterRecord, ParseError, RefMention, SpecFile, SpecKind, SpecStatus,
+    extract_fenced_blocks, parse,
 };
 pub use graph::{EdgeKind, GraphInput, Node, Resolution, SpecGraph, resolve};
+pub use tools::SpecDiff;
 pub use validate::{Warning, WarningKind, validate};
