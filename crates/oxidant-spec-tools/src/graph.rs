@@ -291,6 +291,7 @@ mod tests {
                 implements: vec![],
                 depends_on: depends_on.iter().map(|s| s.to_string()).collect(),
                 code: vec![],
+                tests: vec![],
                 status: SpecStatus::Active,
                 responsibility: None,
                 extras: serde_json::Value::Object(serde_json::Map::new()),

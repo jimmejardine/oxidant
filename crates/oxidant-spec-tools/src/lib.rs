@@ -29,7 +29,7 @@ pub mod walker;
 pub use diff::{Drift, diff_all, diff_spec};
 pub use frontmatter::{
     FencedBlock, FrontmatterRecord, ParseError, RefMention, SpecFile, SpecKind, SpecStatus,
-    extract_fenced_blocks, parse,
+    TestRef, extract_fenced_blocks, parse,
 };
 pub use graph::{EdgeKind, GraphInput, Node, Resolution, SpecGraph, resolve};
 pub use index_db::{IndexDb, SpecFilter, SpecRow};

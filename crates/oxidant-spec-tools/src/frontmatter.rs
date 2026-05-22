@@ -27,9 +27,20 @@ pub struct FrontmatterRecord {
     pub implements: Vec<String>,
     pub depends_on: Vec<String>,
     pub code: Vec<PathBuf>,
+    pub tests: Vec<TestRef>,
     pub status: SpecStatus,
     pub responsibility: Option<String>,
     pub extras: serde_json::Value,
+}
+
+/// One entry in a spec's `tests:` frontmatter list. See
+/// spec/decisions/0011-specs-claim-their-tests.md.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TestRef {
+    /// `<path>::<name>` — a single `#[test]` function.
+    Function { path: PathBuf, name: String },
+    /// `<path>` — every `#[test]` in that file.
+    WholeFile { path: PathBuf },
 }
 
 #[derive(Debug, Clone)]
@@ -163,6 +174,8 @@ struct RawFrontmatter {
     #[serde(default)]
     code: Vec<PathBuf>,
     #[serde(default)]
+    tests: Vec<String>,
+    #[serde(default)]
     status: Option<String>,
     #[serde(default)]
     responsibility: Option<String>,
@@ -190,6 +203,7 @@ impl RawFrontmatter {
             other => return Err(ParseError::InvalidStatus(other.to_string())),
         };
         let extras = yaml_map_to_json(self.extras);
+        let tests = self.tests.into_iter().map(parse_test_ref).collect();
         Ok(FrontmatterRecord {
             id: self.id,
             kind,
@@ -198,10 +212,24 @@ impl RawFrontmatter {
             implements: self.implements,
             depends_on: self.depends_on,
             code: self.code,
+            tests,
             status,
             responsibility: self.responsibility,
             extras,
         })
+    }
+}
+
+fn parse_test_ref(raw: String) -> TestRef {
+    // `::` only appears between path and Rust fn name; fn names can't contain
+    // it, so rsplit is safe. If neither form matches, treat as whole-file —
+    // the validator will surface a missing path as `unresolved_test`.
+    match raw.rsplit_once("::") {
+        Some((path, name)) if !path.is_empty() && !name.is_empty() => TestRef::Function {
+            path: PathBuf::from(path),
+            name: name.to_string(),
+        },
+        _ => TestRef::WholeFile { path: PathBuf::from(raw) },
     }
 }
 
@@ -481,5 +509,21 @@ mod tests {
     fn rejects_unknown_kind() {
         let err = parse("---\nid: foo\nkind: spaghetti\n---\n").unwrap_err();
         assert!(matches!(err, ParseError::InvalidKind(_)));
+    }
+
+    #[test]
+    fn parses_tests_field_in_both_forms() {
+        let src = "---\nid: x\nkind: component\ntests:\n  - crates/x/tests/y.rs::it_works\n  - crates/x/tests/y.rs\n---\n";
+        let f = parse(src).expect("parse");
+        assert_eq!(
+            f.frontmatter.tests,
+            vec![
+                TestRef::Function {
+                    path: PathBuf::from("crates/x/tests/y.rs"),
+                    name: "it_works".to_string(),
+                },
+                TestRef::WholeFile { path: PathBuf::from("crates/x/tests/y.rs") },
+            ]
+        );
     }
 }
