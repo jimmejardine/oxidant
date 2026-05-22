@@ -47,6 +47,13 @@ notify         = "7"
 walkdir        = "2"
 ignore         = "0.4"
 globset        = "0.4"
+dunce          = "1"
+tempfile       = "3"
+
+# Content search (ripgrep engine)
+grep-searcher  = "0.1"
+grep-matcher   = "0.1"
+grep-regex     = "0.1"
 
 # Markdown / frontmatter
 pulldown-cmark = "0.12"

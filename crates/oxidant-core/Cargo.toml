@@ -30,3 +30,5 @@ async-trait.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
+dunce.workspace = true
+oxidant-tools.workspace = true

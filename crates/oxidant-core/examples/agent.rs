@@ -1,11 +1,12 @@
 // End-to-end agent loop demo against a local OpenAI-compatible server.
 //
 // Defaults to textgen-webui on http://localhost:5000/v1 with whatever model
-// is loaded. Registers a single inline demo tool (`current_time`) so the
-// model has the option to call something. The demo tool is intentionally
-// kept inside this example file rather than added to oxidant-tools — it
-// doesn't have a spec, and real tools should.
+// is loaded. Without --no-tools, registers the standard oxidant-tools set
+// (fs_read, fs_write, glob, grep, edit_string, apply_edits) PLUS an inline
+// demo `current_time` tool. ToolContext.workspace_root defaults to the
+// current working directory.
 //
+//   cargo run -p oxidant-core --example agent -- "summarise spec/overview.md"
 //   cargo run -p oxidant-core --example agent -- "what time is it?"
 //   cargo run -p oxidant-core --example agent -- --no-tools "haiku about ownership"
 //   cargo run -p oxidant-core --example agent -- --preset lmstudio "..."
@@ -100,12 +101,17 @@ async fn main() -> anyhow::Result<()> {
 
     let mut registry = ToolRegistry::new();
     if !args.no_tools {
+        oxidant_tools::register_standard_tools(&mut registry);
         registry.register(Arc::new(CurrentTime));
-        println!("[tools available: current_time]");
+        let names: Vec<_> = registry.iter().map(|t| t.name().to_string()).collect();
+        println!("[tools available: {}]", names.join(", "));
     }
 
+    let cwd = std::env::current_dir()?;
+    let workspace_root = camino::Utf8PathBuf::from_path_buf(dunce::canonicalize(&cwd)?)
+        .map_err(|p| anyhow::anyhow!("non-UTF-8 path: {}", p.display()))?;
     let ctx = ToolContext {
-        workspace_root: camino::Utf8PathBuf::from("."),
+        workspace_root,
         exploration_id: "demo".to_string(),
         cancellation: CancellationToken::new(),
     };

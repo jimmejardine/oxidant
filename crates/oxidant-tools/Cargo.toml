@@ -6,6 +6,8 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+oxidant-core.workspace = true
+
 tokio.workspace = true
 async-trait.workspace = true
 serde.workspace = true
@@ -18,3 +20,13 @@ ignore.workspace = true
 globset.workspace = true
 regex.workspace = true
 camino.workspace = true
+dunce.workspace = true
+syn.workspace = true
+grep-searcher.workspace = true
+grep-matcher.workspace = true
+grep-regex.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true }
+tokio-util.workspace = true
