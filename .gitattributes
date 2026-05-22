@@ -1,0 +1,29 @@
+# Normalise text files to LF in the repository AND on checkout. Wins
+# over core.autocrlf — no more "LF will be replaced by CRLF" warnings
+# on Windows clones.
+* text=auto eol=lf
+
+# Belt-and-braces for the common text types in this repo.
+*.rs        text eol=lf
+*.toml      text eol=lf
+*.md        text eol=lf
+*.json      text eol=lf
+*.lock      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.sh        text eol=lf
+*.gitignore text eol=lf
+
+# Binary patterns — never touch line endings.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.exe   binary
+*.dll   binary
+*.so    binary
+*.dylib binary
