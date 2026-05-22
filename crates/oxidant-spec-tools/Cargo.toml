@@ -15,13 +15,20 @@ anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 walkdir.workspace = true
+ignore.workspace = true
 regex.workspace = true
 petgraph.workspace = true
 async-trait.workspace = true
 syn.workspace = true
 quote.workspace = true
 camino.workspace = true
+rusqlite.workspace = true
+tantivy.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+dunce.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true }
 tokio-util.workspace = true
+tempfile.workspace = true

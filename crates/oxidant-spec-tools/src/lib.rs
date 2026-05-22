@@ -19,6 +19,9 @@ use oxidant_core::{Tool, ToolRegistry};
 pub mod diff;
 pub mod frontmatter;
 pub mod graph;
+pub mod index_db;
+pub mod search_index;
+pub mod timeline;
 pub mod tools;
 pub mod validate;
 pub mod walker;
@@ -29,13 +32,18 @@ pub use frontmatter::{
     extract_fenced_blocks, parse,
 };
 pub use graph::{EdgeKind, GraphInput, Node, Resolution, SpecGraph, resolve};
-pub use tools::{SpecDiff, SpecForFile, SpecRead, SpecResolveLinks, SpecTree, SpecValidate};
+pub use index_db::{IndexDb, SpecFilter, SpecRow};
+pub use search_index::{SearchHit, SearchIndex, SearchQuery, SearchSource};
+pub use timeline::{Commit, Timeline, TimelineFilter};
+pub use tools::{
+    CodeChanges, SpecChanges, SpecDiff, SpecForFile, SpecRead, SpecResolveLinks, SpecSearch,
+    SpecTree, SpecValidate, TextSearch,
+};
 pub use validate::{Warning, WarningKind, validate};
 pub use walker::{SpecRecord, walk_specs};
 
-/// Register every model-facing spec tool declared under spec/tools/spec/:
-/// spec_diff, spec_read, spec_for_file, spec_tree, spec_resolve_links,
-/// spec_validate.
+/// Register every model-facing spec tool declared under spec/tools/spec/,
+/// spec/tools/search/, and spec/tools/timeline/.
 pub fn register_standard_tools(registry: &mut ToolRegistry) {
     let tools: Vec<Arc<dyn Tool>> = vec![
         Arc::new(SpecDiff),
@@ -44,6 +52,10 @@ pub fn register_standard_tools(registry: &mut ToolRegistry) {
         Arc::new(SpecTree),
         Arc::new(SpecResolveLinks),
         Arc::new(SpecValidate),
+        Arc::new(SpecSearch),
+        Arc::new(TextSearch),
+        Arc::new(SpecChanges),
+        Arc::new(CodeChanges),
     ];
     for t in tools {
         registry.register(t);
