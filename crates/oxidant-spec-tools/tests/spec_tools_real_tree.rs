@@ -8,7 +8,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use oxidant_core::{Tool, ToolContext, ToolResult};
-use oxidant_spec_tools::{SpecForFile, SpecRead, SpecResolveLinks, SpecTree};
+use oxidant_spec_tools::{SpecForFile, SpecRead, SpecResolveLinks, SpecTree, SpecValidate};
 
 fn repo_root() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -194,4 +194,44 @@ async fn spec_resolve_links_unknown_ref_errors() {
         .invoke(json!({"ref": "does/not/exist"}), &ctx())
         .await;
     assert!(matches!(result, ToolResult::Err(_)));
+}
+
+#[tokio::test]
+async fn spec_validate_tree_wide_returns_warnings() {
+    let v = match SpecValidate.invoke(json!({}), &ctx()).await {
+        ToolResult::Ok(v) => v,
+        ToolResult::Err(e) => panic!("err: {e}"),
+    };
+    assert_eq!(v["ok"], true);
+    let count = v["count"].as_u64().unwrap();
+    assert!(count > 0, "expected the baseline to surface real warnings");
+    let counts = v["counts"].as_object().unwrap();
+    assert!(counts.contains_key("MissingCodePath"));
+}
+
+#[tokio::test]
+async fn spec_validate_kind_filter_works() {
+    let v = match SpecValidate
+        .invoke(json!({ "kinds": ["MissingCodePath"] }), &ctx())
+        .await
+    {
+        ToolResult::Ok(v) => v,
+        ToolResult::Err(e) => panic!("err: {e}"),
+    };
+    let warnings = v["warnings"].as_array().unwrap();
+    for w in warnings {
+        assert_eq!(w["kind"], "MissingCodePath");
+    }
+}
+
+#[tokio::test]
+async fn spec_validate_unknown_kind_filter_yields_empty() {
+    let v = match SpecValidate
+        .invoke(json!({ "kinds": ["NotARealKind"] }), &ctx())
+        .await
+    {
+        ToolResult::Ok(v) => v,
+        ToolResult::Err(e) => panic!("err: {e}"),
+    };
+    assert_eq!(v["count"], 0);
 }
