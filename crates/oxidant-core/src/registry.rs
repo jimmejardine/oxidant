@@ -17,6 +17,9 @@ use tokio_util::sync::CancellationToken;
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
+    fn description(&self) -> &str {
+        ""
+    }
     fn schema(&self) -> Value;
     fn category(&self) -> ToolCategory;
     async fn invoke(&self, args: Value, ctx: &ToolContext) -> ToolResult;
@@ -69,6 +72,18 @@ impl ToolRegistry {
             .iter()
             .map(|(name, tool)| (name.clone(), tool.schema()))
             .collect()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &Arc<dyn Tool>> + '_ {
+        self.tools.values()
+    }
+
+    pub fn len(&self) -> usize {
+        self.tools.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.tools.is_empty()
     }
 
     pub async fn invoke(&self, name: &str, args: Value, ctx: &ToolContext) -> ToolResult {

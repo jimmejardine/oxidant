@@ -1,0 +1,355 @@
+// Realises spec/components/core/agent-loop.md.
+//
+// Drives one Conversation: send → stream → accumulate → dispatch tools →
+// append results → repeat. One `run()` call processes a turn from the user's
+// last message to either an end-of-turn assistant reply (no tool calls) or
+// `max_iterations` exhausted. Provider, ToolRegistry, and ToolContext are
+// passed in by reference — the loop owns nothing it didn't get from the
+// caller, matching the spec's "loop runs on a tokio task" model.
+
+use std::collections::HashMap;
+
+use anyhow::anyhow;
+use futures::StreamExt;
+use serde_json::Value;
+
+use oxidant_providers::{
+    ChatEvent, ChatRequest, ContentPart, Provider, RequestMessage, Role, StopReason, ThinkingConfig,
+    ToolSpec, Usage,
+};
+
+use crate::conversation::Conversation;
+use crate::message::{ContentBlock, ImageSource, Message, ToolResultContent};
+use crate::registry::{ToolContext, ToolRegistry, ToolResult};
+
+#[derive(Debug, Clone)]
+pub struct AgentLoopConfig {
+    pub model: String,
+    pub system_prompt: Option<String>,
+    pub max_tokens: u32,
+    pub max_iterations: usize,
+    pub temperature: Option<f32>,
+    pub thinking: Option<ThinkingConfig>,
+}
+
+impl AgentLoopConfig {
+    pub fn new(model: impl Into<String>) -> Self {
+        Self {
+            model: model.into(),
+            system_prompt: None,
+            max_tokens: 4096,
+            max_iterations: 16,
+            temperature: None,
+            thinking: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AgentLoopOutcome {
+    pub iterations: usize,
+    pub stop_reason: Option<StopReason>,
+    pub total_usage: Usage,
+    pub tool_calls_dispatched: usize,
+}
+
+/// Run the agent loop until the model returns an end-of-turn response with
+/// no pending tool calls, or until `max_iterations` is reached.
+///
+/// `on_event` is invoked synchronously for every ChatEvent — use it to
+/// surface streaming output to the GUI, log, or terminal. The function
+/// returns when the loop terminates; cancellation is implicit (drop the
+/// future) per the spec.
+pub async fn run<F>(
+    provider: &dyn Provider,
+    registry: &ToolRegistry,
+    ctx: &ToolContext,
+    conv: &mut Conversation,
+    config: &AgentLoopConfig,
+    mut on_event: F,
+) -> anyhow::Result<AgentLoopOutcome>
+where
+    F: FnMut(&ChatEvent),
+{
+    let mut outcome = AgentLoopOutcome::default();
+
+    for iteration in 0..config.max_iterations {
+        outcome.iterations = iteration + 1;
+
+        let request = build_request(conv, registry, config);
+        tracing::debug!(
+            iter = iteration,
+            messages = request.messages.len(),
+            tools = request.tools.len(),
+            "agent_loop: sending request"
+        );
+
+        let mut stream = provider.chat(request).await?;
+        let mut acc = TurnAccumulator::default();
+        let mut error_text: Option<String> = None;
+
+        while let Some(event) = stream.next().await {
+            on_event(&event);
+            match event {
+                ChatEvent::TextDelta(s) => acc.text.push_str(&s),
+                ChatEvent::ThinkingDelta(s) => acc.thinking.push_str(&s),
+                ChatEvent::ToolUseStart { id, name } => {
+                    acc.order.push(id.clone());
+                    acc.tool_calls.insert(
+                        id.clone(),
+                        PendingToolCall {
+                            name,
+                            input_buffer: String::new(),
+                        },
+                    );
+                }
+                ChatEvent::ToolUseInputDelta { id, json_delta } => {
+                    if let Some(tc) = acc.tool_calls.get_mut(&id) {
+                        tc.input_buffer.push_str(&json_delta);
+                    }
+                }
+                ChatEvent::ToolUseEnd { .. } => {
+                    // input is fully accumulated; we parse below.
+                }
+                ChatEvent::Finish { stop_reason, usage } => {
+                    acc.stop_reason = Some(stop_reason);
+                    acc.usage = usage;
+                }
+                ChatEvent::Error(e) => {
+                    error_text = Some(e);
+                    break;
+                }
+            }
+        }
+
+        if let Some(e) = error_text {
+            return Err(anyhow!("provider stream error: {e}"));
+        }
+
+        outcome.stop_reason = acc.stop_reason;
+        outcome.total_usage.input_tokens += acc.usage.input_tokens;
+        outcome.total_usage.output_tokens += acc.usage.output_tokens;
+        outcome.total_usage.cache_creation_input_tokens += acc.usage.cache_creation_input_tokens;
+        outcome.total_usage.cache_read_input_tokens += acc.usage.cache_read_input_tokens;
+
+        let assistant_content = build_assistant_blocks(&acc);
+        let has_tool_calls = !acc.order.is_empty();
+        conv.push_assistant(assistant_content, acc.stop_reason, Some(acc.usage));
+
+        if !has_tool_calls {
+            return Ok(outcome);
+        }
+
+        // Dispatch every tool call the model made this turn.
+        for id in &acc.order {
+            let tc = acc.tool_calls.get(id).expect("tool call we just inserted");
+            let input = parse_tool_input(&tc.input_buffer);
+            tracing::debug!(tool = %tc.name, id = %id, "dispatching tool");
+            let result = registry.invoke(&tc.name, input, ctx).await;
+            outcome.tool_calls_dispatched += 1;
+            let (content, is_error) = match result {
+                ToolResult::Ok(v) => (ToolResultContent::Json(v), false),
+                ToolResult::Err(e) => (ToolResultContent::Text(e), true),
+            };
+            conv.push_tool_result(id, content, is_error);
+        }
+    }
+
+    Err(anyhow!(
+        "agent loop exceeded max_iterations ({})",
+        config.max_iterations
+    ))
+}
+
+#[derive(Default)]
+struct TurnAccumulator {
+    text: String,
+    thinking: String,
+    tool_calls: HashMap<String, PendingToolCall>,
+    order: Vec<String>,
+    stop_reason: Option<StopReason>,
+    usage: Usage,
+}
+
+struct PendingToolCall {
+    name: String,
+    input_buffer: String,
+}
+
+fn parse_tool_input(buf: &str) -> Value {
+    if buf.trim().is_empty() {
+        return Value::Object(serde_json::Map::new());
+    }
+    match serde_json::from_str(buf) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("malformed tool input JSON ({e}); falling back to empty object. raw={buf}");
+            Value::Object(serde_json::Map::new())
+        }
+    }
+}
+
+fn build_assistant_blocks(acc: &TurnAccumulator) -> Vec<ContentBlock> {
+    let mut content = Vec::new();
+    if !acc.thinking.is_empty() {
+        content.push(ContentBlock::Thinking(acc.thinking.clone()));
+    }
+    if !acc.text.is_empty() {
+        content.push(ContentBlock::Text(acc.text.clone()));
+    }
+    for id in &acc.order {
+        let tc = acc.tool_calls.get(id).expect("tool call we just inserted");
+        content.push(ContentBlock::ToolUse {
+            id: id.clone(),
+            name: tc.name.clone(),
+            input: parse_tool_input(&tc.input_buffer),
+        });
+    }
+    content
+}
+
+/// Translate a Conversation + Registry + Config into a provider-agnostic ChatRequest.
+///
+/// Internal Conversation::Message::ToolResult variants don't have a direct
+/// equivalent in our normalized RequestMessage (which only has User|Assistant
+/// roles). The translator batches consecutive ToolResult messages into a
+/// single User RequestMessage carrying ContentPart::ToolResult parts — the
+/// provider layer then splits those back out into "tool" role messages
+/// (OpenAI) or `tool_result` content blocks (Anthropic).
+pub fn build_request(
+    conv: &Conversation,
+    registry: &ToolRegistry,
+    config: &AgentLoopConfig,
+) -> ChatRequest {
+    let mut messages = Vec::<RequestMessage>::new();
+    let mut tool_result_buf = Vec::<ContentPart>::new();
+
+    for msg in &conv.messages {
+        match msg {
+            Message::User { content } => {
+                flush_tool_results(&mut tool_result_buf, &mut messages);
+                let parts: Vec<ContentPart> = content.iter().filter_map(block_to_part).collect();
+                if !parts.is_empty() {
+                    messages.push(RequestMessage { role: Role::User, content: parts });
+                }
+            }
+            Message::Assistant { content, .. } => {
+                flush_tool_results(&mut tool_result_buf, &mut messages);
+                let parts: Vec<ContentPart> = content.iter().filter_map(block_to_part).collect();
+                messages.push(RequestMessage { role: Role::Assistant, content: parts });
+            }
+            Message::ToolResult { call_id, content, is_error } => {
+                tool_result_buf.push(ContentPart::ToolResult {
+                    call_id: call_id.clone(),
+                    content: content.as_string(),
+                    is_error: *is_error,
+                });
+            }
+        }
+    }
+    flush_tool_results(&mut tool_result_buf, &mut messages);
+
+    let tools: Vec<ToolSpec> = registry
+        .iter()
+        .map(|tool| ToolSpec {
+            name: tool.name().to_string(),
+            description: tool.description().to_string(),
+            input_schema: tool.schema(),
+        })
+        .collect();
+
+    ChatRequest {
+        model: config.model.clone(),
+        system: config.system_prompt.clone(),
+        messages,
+        tools,
+        max_tokens: config.max_tokens,
+        temperature: config.temperature,
+        thinking: config.thinking,
+    }
+}
+
+fn flush_tool_results(buf: &mut Vec<ContentPart>, out: &mut Vec<RequestMessage>) {
+    if !buf.is_empty() {
+        out.push(RequestMessage {
+            role: Role::User,
+            content: std::mem::take(buf),
+        });
+    }
+}
+
+fn block_to_part(block: &ContentBlock) -> Option<ContentPart> {
+    match block {
+        ContentBlock::Text(s) => Some(ContentPart::Text(s.clone())),
+        ContentBlock::Thinking(s) => Some(ContentPart::Thinking(s.clone())),
+        ContentBlock::ToolUse { id, name, input } => Some(ContentPart::ToolUse {
+            id: id.clone(),
+            name: name.clone(),
+            input: input.clone(),
+        }),
+        ContentBlock::Image { source: _, media_type: _ } => {
+            // ImageSource isn't supported by the local provider path; drop with a debug log.
+            // Vision will be wired through when oxidant-providers gains a vision content variant.
+            let _ = ImageSource::Base64(String::new()); // keep ImageSource in scope
+            tracing::debug!("dropping ContentBlock::Image (vision not wired through MVP provider path)");
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_request_batches_tool_results_into_user_message() {
+        let mut conv = Conversation::new();
+        conv.push_user_text("hi");
+        conv.push_assistant(
+            vec![
+                ContentBlock::Text("calling".into()),
+                ContentBlock::ToolUse {
+                    id: "t1".into(),
+                    name: "x".into(),
+                    input: serde_json::json!({}),
+                },
+                ContentBlock::ToolUse {
+                    id: "t2".into(),
+                    name: "x".into(),
+                    input: serde_json::json!({}),
+                },
+            ],
+            None,
+            None,
+        );
+        conv.push_tool_result("t1", ToolResultContent::Text("a".into()), false);
+        conv.push_tool_result("t2", ToolResultContent::Text("b".into()), false);
+
+        let registry = ToolRegistry::new();
+        let req = build_request(&conv, &registry, &AgentLoopConfig::new("test-model"));
+        assert_eq!(req.messages.len(), 3);
+        assert_eq!(req.messages[0].role, Role::User);
+        assert_eq!(req.messages[1].role, Role::Assistant);
+        assert_eq!(req.messages[2].role, Role::User);
+        // Two ToolResult parts batched into the trailing user message
+        assert_eq!(req.messages[2].content.len(), 2);
+        assert!(matches!(
+            req.messages[2].content[0],
+            ContentPart::ToolResult { ref call_id, .. } if call_id == "t1"
+        ));
+    }
+
+    #[test]
+    fn build_request_omits_empty_user_message() {
+        // A user message containing only an Image block (currently dropped)
+        // should not produce an empty user message in the request.
+        let mut conv = Conversation::new();
+        conv.push_user_content(vec![ContentBlock::Image {
+            source: ImageSource::Base64("xxx".into()),
+            media_type: "image/png".into(),
+        }]);
+        let registry = ToolRegistry::new();
+        let req = build_request(&conv, &registry, &AgentLoopConfig::new("m"));
+        assert!(req.messages.is_empty());
+    }
+}

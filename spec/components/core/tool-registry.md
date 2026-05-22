@@ -22,10 +22,13 @@ pub struct ToolRegistry {
 
 impl ToolRegistry {
     pub fn register(&mut self, tool: Arc<dyn Tool>);
-    pub fn schemas(&self) -> Vec<(String, serde_json::Value)>;       // for the system prompt
+    pub fn schemas(&self) -> Vec<(String, serde_json::Value)>;       // legacy, for system prompts
+    pub fn iter(&self) -> impl Iterator<Item = &Arc<dyn Tool>>;      // agent loop uses this
     pub async fn invoke(&self, name: &str, args: serde_json::Value, ctx: &ToolContext) -> ToolResult;
 }
 ```
+
+`iter()` is what the agent loop walks to build the `tools:` field of each provider request — it needs `name() + description() + schema()` per tool, all from [[contracts/tool]], in one pass without cloning into intermediate tuples.
 
 ## Dispatch flow
 

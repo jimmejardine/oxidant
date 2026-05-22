@@ -7,6 +7,12 @@
 //   spec/components/core/tool-registry.md
 //   spec/contracts/tool.md
 
+pub mod agent_loop;
+pub mod conversation;
+pub mod message;
 pub mod registry;
 
+pub use agent_loop::{AgentLoopConfig, AgentLoopOutcome, build_request, run};
+pub use conversation::Conversation;
+pub use message::{ContentBlock, ImageSource, Message, ToolResultContent};
 pub use registry::{Tool, ToolCategory, ToolContext, ToolRegistry, ToolResult};

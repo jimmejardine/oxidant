@@ -19,6 +19,7 @@ code:
 #[async_trait]
 pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
+    fn description(&self) -> &str { "" }
     fn schema(&self) -> serde_json::Value;
     fn category(&self) -> ToolCategory;
     async fn invoke(&self, args: serde_json::Value, ctx: &ToolContext) -> ToolResult;
@@ -35,6 +36,8 @@ pub enum ToolResult {
     Err(String),
 }
 ```
+
+`description()` is the short text sent to the model alongside the schema in every chat request — what the tool is for, when to call it. Defaults to empty so trivial tools don't have to override; real tools always should. See [[components/providers/openai]] for how it lands in the wire payload.
 
 `ToolContext` is the registry's concern — see [[components/core/tool-registry]].
 

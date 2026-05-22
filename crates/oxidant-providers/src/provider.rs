@@ -6,6 +6,7 @@
 
 use async_trait::async_trait;
 use futures::stream::BoxStream;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[async_trait]
@@ -86,7 +87,7 @@ pub enum ChatEvent {
     Error(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StopReason {
     EndTurn,
     StopSequence,
@@ -94,7 +95,7 @@ pub enum StopReason {
     ToolUse,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Usage {
     pub input_tokens: u32,
     pub output_tokens: u32,
