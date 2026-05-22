@@ -29,18 +29,20 @@ pub use frontmatter::{
     extract_fenced_blocks, parse,
 };
 pub use graph::{EdgeKind, GraphInput, Node, Resolution, SpecGraph, resolve};
-pub use tools::{SpecDiff, SpecForFile, SpecRead};
+pub use tools::{SpecDiff, SpecForFile, SpecRead, SpecResolveLinks, SpecTree};
 pub use validate::{Warning, WarningKind, validate};
 pub use walker::{SpecRecord, walk_specs};
 
 /// Register the model-facing spec tools currently realised: spec_diff,
-/// spec_read, spec_for_file. spec_tree, spec_resolve_links, spec_validate
-/// follow as their wrappers land.
+/// spec_read, spec_for_file, spec_tree, spec_resolve_links. spec_validate
+/// follows when its wrapper lands.
 pub fn register_standard_tools(registry: &mut ToolRegistry) {
     let tools: Vec<Arc<dyn Tool>> = vec![
         Arc::new(SpecDiff),
         Arc::new(SpecRead),
         Arc::new(SpecForFile),
+        Arc::new(SpecTree),
+        Arc::new(SpecResolveLinks),
     ];
     for t in tools {
         registry.register(t);

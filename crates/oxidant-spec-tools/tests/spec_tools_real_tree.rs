@@ -8,7 +8,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use oxidant_core::{Tool, ToolContext, ToolResult};
-use oxidant_spec_tools::{SpecForFile, SpecRead};
+use oxidant_spec_tools::{SpecForFile, SpecRead, SpecResolveLinks, SpecTree};
 
 fn repo_root() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -113,4 +113,85 @@ async fn spec_for_file_unknown_path_returns_empty() {
         ToolResult::Err(e) => panic!("err: {e}"),
     };
     assert_eq!(v["count"], 0);
+}
+
+#[tokio::test]
+async fn spec_tree_default_args_returns_overview_rooted() {
+    let v = match SpecTree.invoke(json!({}), &ctx()).await {
+        ToolResult::Ok(v) => v,
+        ToolResult::Err(e) => panic!("err: {e}"),
+    };
+    assert_eq!(v["root"]["ref"], "overview");
+    assert_eq!(v["root"]["kind"], "overview");
+    let children = v["root"]["children"].as_array().expect("children array");
+    assert!(!children.is_empty(), "overview should have parent-children");
+}
+
+#[tokio::test]
+async fn spec_tree_depends_on_root_at_a_substrate() {
+    let v = match SpecTree
+        .invoke(
+            json!({
+                "from_ref": "components/tools/workspace-edit-substrate",
+                "edge_kind": "depends_on",
+                "depth": 2
+            }),
+            &ctx(),
+        )
+        .await
+    {
+        ToolResult::Ok(v) => v,
+        ToolResult::Err(e) => panic!("err: {e}"),
+    };
+    assert_eq!(v["root"]["ref"], "components/tools/workspace-edit-substrate");
+    // edit and apply-edits depend on the substrate — both should appear as children.
+    let children = v["root"]["children"].as_array().expect("children");
+    let child_refs: Vec<&str> = children.iter().map(|c| c["ref"].as_str().unwrap()).collect();
+    assert!(
+        child_refs.contains(&"components/tools/edit"),
+        "expected components/tools/edit as child; got {child_refs:?}"
+    );
+}
+
+#[tokio::test]
+async fn spec_tree_rejects_unknown_edge_kind() {
+    let result = SpecTree
+        .invoke(json!({ "edge_kind": "implements" }), &ctx())
+        .await;
+    assert!(matches!(result, ToolResult::Err(_)));
+}
+
+#[tokio::test]
+async fn spec_resolve_links_for_tool_contract() {
+    let v = match SpecResolveLinks
+        .invoke(json!({"ref": "contracts/tool"}), &ctx())
+        .await
+    {
+        ToolResult::Ok(v) => v,
+        ToolResult::Err(e) => panic!("err: {e}"),
+    };
+    assert_eq!(v["ref"], "contracts/tool");
+
+    // contracts/tool has many specs depending on it (every tool's `implements`
+    // points here) and at least the registry component depends on it.
+    let inbound = v["inbound"].as_array().expect("inbound array");
+    assert!(
+        !inbound.is_empty(),
+        "contracts/tool should have inbound edges from implementing tools and the registry component"
+    );
+
+    let outbound = v["outbound"].as_array().expect("outbound array");
+    // Outbound at minimum contains the parent (`overview`).
+    let has_overview_parent = outbound.iter().any(|e| {
+        e["to"].as_str() == Some("overview") && e["edge"].as_str() == Some("parent")
+    });
+    assert!(has_overview_parent, "expected parent edge to overview");
+}
+
+#[tokio::test]
+async fn spec_resolve_links_unknown_ref_errors() {
+    let result = SpecResolveLinks
+        .invoke(json!({"ref": "does/not/exist"}), &ctx())
+        .await;
+    assert!(matches!(result, ToolResult::Err(_)));
 }

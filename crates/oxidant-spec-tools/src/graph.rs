@@ -30,6 +30,17 @@ pub enum EdgeKind {
     BodyRef,
 }
 
+impl EdgeKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EdgeKind::Parent => "parent",
+            EdgeKind::Implements => "implements",
+            EdgeKind::DependsOn => "depends_on",
+            EdgeKind::BodyRef => "body_ref",
+        }
+    }
+}
+
 pub struct SpecGraph {
     inner: DiGraph<Node, EdgeKind>,
     id_to_idx: HashMap<String, NodeIndex>,
