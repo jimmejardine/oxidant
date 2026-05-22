@@ -1329,7 +1329,7 @@ fn relativise_uri(uri: &str, workspace_root: &Path) -> String {
 /// LSP WorkspaceEdit response → oxidant_tools::WorkspaceEdit ready for the
 /// substrate. Returns Err if any URI doesn't resolve to a workspace path.
 fn lsp_to_oxidant_workspace_edit(resp: &Value) -> Result<oxidant_tools::WorkspaceEdit, String> {
-    use oxidant_tools::{Position, Range, TextEdit, WorkspaceEdit};
+    use oxidant_tools::{Range, TextEdit, WorkspaceEdit};
     let mut out: HashMap<PathBuf, Vec<TextEdit>> = HashMap::new();
     let mut record = |uri: &str, edits: &[Value]| -> Result<(), String> {
         let path = uri_to_path(uri).ok_or_else(|| format!("could not decode uri: {uri}"))?;
