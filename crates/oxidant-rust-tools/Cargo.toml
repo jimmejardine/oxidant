@@ -24,9 +24,9 @@ lsp-types.workspace = true
 camino.workspace = true
 cargo_metadata.workspace = true
 regex.workspace = true
+dunce.workspace = true
+tokio-util.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
 tokio = { workspace = true }
-tokio-util.workspace = true
-dunce.workspace = true
