@@ -1,8 +1,9 @@
-// Live LSP integration tests. Marked #[ignore] because rust-analyzer takes
-// ~10–30s to spawn and index, and may not be installed (`rustup component
-// add rust-analyzer`). Run manually:
+// Live LSP integration tests. They spawn rust-analyzer and wait for the
+// `experimental/serverStatus { quiescent: true }` notification (plus
+// `publishDiagnostics` for the relevant file) before issuing semantic
+// queries. Cold start is ~5-10s on a tempdir crate.
 //
-//   cargo test -p oxidant-rust-tools --test lsp_live -- --ignored --nocapture
+// Requires rust-analyzer on PATH: `rustup component add rust-analyzer`.
 
 use std::path::Path;
 
@@ -37,7 +38,6 @@ fn write_sample_crate(dir: &Path) {
 }
 
 #[tokio::test]
-#[ignore = "requires rust-analyzer on PATH; slow ~30s cold start"]
 async fn hover_on_function_signature() {
     let dir = TempDir::new().unwrap();
     write_sample_crate(dir.path());
@@ -56,13 +56,12 @@ async fn hover_on_function_signature() {
     };
     let sig = v["type_signature"].as_str().unwrap_or("");
     assert!(
-        sig.contains("fn add") || sig.contains("add"),
-        "expected signature for `add`, got {sig:?}"
+        sig.contains("fn add"),
+        "expected signature for `fn add`, got {sig:?}"
     );
 }
 
 #[tokio::test]
-#[ignore = "requires rust-analyzer on PATH; slow ~30s cold start"]
 async fn workspace_symbols_finds_add() {
     let dir = TempDir::new().unwrap();
     write_sample_crate(dir.path());

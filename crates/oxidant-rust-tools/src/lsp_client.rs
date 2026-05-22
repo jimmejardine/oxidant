@@ -24,13 +24,18 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::{Mutex as AsyncMutex, mpsc, oneshot};
+use tokio::sync::{Mutex as AsyncMutex, mpsc, oneshot, watch};
 use tokio::time::timeout;
 
 use oxidant_core::{Tool, ToolCategory, ToolContext, ToolResult};
 
 const INITIALIZE_TIMEOUT_SECS: u64 = 60;
 const REQUEST_TIMEOUT_SECS: u64 = 30;
+/// rust-analyzer cold start on a fresh tempdir crate can take a while —
+/// cargo metadata, dependency resolution, initial index. Tools wait for
+/// `experimental/serverStatus { quiescent: true }` up to this budget
+/// before issuing semantic queries.
+const READY_TIMEOUT_SECS: u64 = 60;
 
 // ---------------------------------------------------------------- Client
 
@@ -41,6 +46,13 @@ fn clients() -> &'static StdMutex<HashMap<PathBuf, Arc<AsyncMutex<LspClient>>>> 
     LSP_CLIENTS.get_or_init(|| StdMutex::new(HashMap::new()))
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ServerStatus {
+    pub health: String,
+    pub quiescent: bool,
+    pub message: Option<String>,
+}
+
 pub struct LspClient {
     workspace: PathBuf,
     next_id: AtomicI64,
@@ -48,6 +60,9 @@ pub struct LspClient {
     pending: Arc<StdMutex<HashMap<i64, oneshot::Sender<Value>>>>,
     diagnostics: Arc<StdMutex<HashMap<PathBuf, Vec<Value>>>>,
     opened_files: Arc<StdMutex<HashSet<PathBuf>>>,
+    /// Latest `experimental/serverStatus` from rust-analyzer. None until
+    /// the first such notification arrives.
+    server_status: watch::Receiver<Option<ServerStatus>>,
     _child: Child, // kept to ensure lifetime
 }
 
@@ -93,6 +108,7 @@ impl LspClient {
             Arc::new(StdMutex::new(HashMap::new()));
         let opened_files: Arc<StdMutex<HashSet<PathBuf>>> =
             Arc::new(StdMutex::new(HashSet::new()));
+        let (status_tx, status_rx) = watch::channel::<Option<ServerStatus>>(None);
 
         // writer task
         tokio::spawn(writer_loop(stdin, outgoing_rx));
@@ -101,6 +117,7 @@ impl LspClient {
             stdout,
             pending.clone(),
             diagnostics.clone(),
+            status_tx,
         ));
         // stderr drain — only used for logging
         tokio::spawn(stderr_drain(stderr));
@@ -112,6 +129,7 @@ impl LspClient {
             pending,
             diagnostics,
             opened_files,
+            server_status: status_rx,
             _child: child,
         };
 
@@ -243,6 +261,64 @@ impl LspClient {
     pub fn all_diagnostics(&self) -> HashMap<PathBuf, Vec<Value>> {
         self.diagnostics.lock().unwrap().clone()
     }
+
+    /// Wait until rust-analyzer has analysed `file` — signalled by an
+    /// entry appearing in the diagnostics cache (rust-analyzer publishes
+    /// diagnostics for every analysed file, even when there are zero).
+    /// File-position queries (hover, goto_definition) need this; workspace
+    /// queries can use [`wait_until_ready`] instead.
+    pub async fn wait_for_file_analysis(&self, file: &Path) -> Result<(), String> {
+        let canonical = dunce::canonicalize(file).unwrap_or_else(|_| file.to_path_buf());
+        let waited = timeout(Duration::from_secs(READY_TIMEOUT_SECS), async {
+            loop {
+                {
+                    let diags = self.diagnostics.lock().unwrap();
+                    if diags.contains_key(&canonical) {
+                        return Ok::<_, String>(());
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        })
+        .await;
+        match waited {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(format!(
+                "rust-analyzer never published diagnostics for {} within {READY_TIMEOUT_SECS}s",
+                canonical.display()
+            )),
+        }
+    }
+
+    /// Wait until rust-analyzer reports it's quiescent (done indexing /
+    /// analysing). Returns Ok the moment the first `quiescent: true`
+    /// status arrives, or after the timeout — semantic queries against
+    /// a still-indexing server return empty, so this matters.
+    pub async fn wait_until_ready(&self) -> Result<(), String> {
+        if matches!(&*self.server_status.borrow(), Some(s) if s.quiescent) {
+            return Ok(());
+        }
+        let mut rx = self.server_status.clone();
+        let waited = timeout(Duration::from_secs(READY_TIMEOUT_SECS), async {
+            loop {
+                if matches!(&*rx.borrow(), Some(s) if s.quiescent) {
+                    return Ok::<_, String>(());
+                }
+                rx.changed()
+                    .await
+                    .map_err(|_| "serverStatus channel closed".to_string())?;
+            }
+        })
+        .await;
+        match waited {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(format!(
+                "rust-analyzer did not become quiescent within {READY_TIMEOUT_SECS}s"
+            )),
+        }
+    }
 }
 
 async fn locate_rust_analyzer() -> Result<PathBuf, String> {
@@ -283,6 +359,12 @@ fn minimal_client_capabilities() -> Value {
             "hover": { "contentFormat": ["markdown", "plaintext"] },
             "definition": { "linkSupport": false },
             "publishDiagnostics": { "relatedInformation": true }
+        },
+        // rust-analyzer extension: enables `experimental/serverStatus`
+        // notifications carrying { health, quiescent } so we know when the
+        // server is idle and ready for semantic queries.
+        "experimental": {
+            "serverStatusNotification": true
         }
     })
 }
@@ -337,6 +419,7 @@ async fn reader_loop(
     stdout: tokio::process::ChildStdout,
     pending: Arc<StdMutex<HashMap<i64, oneshot::Sender<Value>>>>,
     diagnostics: Arc<StdMutex<HashMap<PathBuf, Vec<Value>>>>,
+    server_status: watch::Sender<Option<ServerStatus>>,
 ) {
     let mut reader = BufReader::new(stdout);
     loop {
@@ -369,7 +452,7 @@ async fn reader_loop(
                 let _ = tx.send(payload);
             }
         } else if let Some(method) = msg.get("method").and_then(|v| v.as_str()) {
-            handle_notification(method, &msg, &diagnostics);
+            handle_notification(method, &msg, &diagnostics, &server_status);
         }
     }
 }
@@ -409,6 +492,7 @@ fn handle_notification(
     method: &str,
     msg: &Value,
     diagnostics: &Arc<StdMutex<HashMap<PathBuf, Vec<Value>>>>,
+    server_status: &watch::Sender<Option<ServerStatus>>,
 ) {
     match method {
         "textDocument/publishDiagnostics" => {
@@ -424,6 +508,23 @@ fn handle_notification(
                 .cloned()
                 .unwrap_or_default();
             diagnostics.lock().unwrap().insert(path, diags);
+        }
+        "experimental/serverStatus" => {
+            let Some(params) = msg.get("params") else { return };
+            let status = ServerStatus {
+                health: params
+                    .get("health")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("ok")
+                    .to_string(),
+                quiescent: params.get("quiescent").and_then(|v| v.as_bool()).unwrap_or(false),
+                message: params
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+            };
+            tracing::debug!(?status, "rust-analyzer serverStatus");
+            let _ = server_status.send(Some(status));
         }
         "window/logMessage" | "window/showMessage" | "$/progress" | "$/cargoMain" => {
             tracing::trace!(method, "lsp notification");
@@ -482,23 +583,33 @@ fn extract_hover_signature(hover: &Value) -> (Option<String>, Option<String>) {
 }
 
 fn split_signature_from_markdown(text: &str) -> (Option<String>, Option<String>) {
-    // rust-analyzer hovers usually look like:
-    //   ```rust\nfn name(...)\n```\n---\n<doc markdown>
-    let mut signature: Option<String> = None;
+    // rust-analyzer hovers typically emit MULTIPLE rust code fences. The
+    // first usually carries the module qualifier (e.g. `crate_name`); the
+    // last carries the actual signature. We keep all rust-fence contents
+    // joined with blank lines so the model sees both. Non-fenced prose
+    // becomes the doc_md.
+    let mut signature_parts: Vec<String> = Vec::new();
     let mut doc_lines: Vec<&str> = Vec::new();
     let mut in_fence = false;
+    let mut fence_lang = String::new();
     let mut fence_buf = String::new();
     for line in text.lines() {
         let trimmed = line.trim_start();
         if trimmed.starts_with("```") {
             if in_fence {
-                if signature.is_none() {
-                    signature = Some(fence_buf.trim().to_string());
+                let is_rust = matches!(fence_lang.as_str(), "rust" | "Rust" | "rs" | "");
+                if is_rust {
+                    let body = fence_buf.trim().to_string();
+                    if !body.is_empty() {
+                        signature_parts.push(body);
+                    }
                 }
                 fence_buf.clear();
+                fence_lang.clear();
                 in_fence = false;
             } else {
                 in_fence = true;
+                fence_lang = trimmed[3..].trim().to_string();
             }
             continue;
         }
@@ -511,6 +622,11 @@ fn split_signature_from_markdown(text: &str) -> (Option<String>, Option<String>)
             doc_lines.push(line);
         }
     }
+    let signature = if signature_parts.is_empty() {
+        None
+    } else {
+        Some(signature_parts.join("\n\n"))
+    };
     let doc = doc_lines
         .iter()
         .copied()
@@ -571,6 +687,9 @@ impl Tool for RustHover {
             Ok(p) => p,
             Err(e) => return ToolResult::Err(e),
         };
+        if let Err(e) = client.wait_for_file_analysis(&canonical).await {
+            return ToolResult::Err(e);
+        }
         let uri = path_to_uri(&canonical).unwrap_or_default();
         let resp = match client
             .request(
@@ -637,6 +756,9 @@ impl Tool for RustGotoDefinition {
             Ok(p) => p,
             Err(e) => return ToolResult::Err(e),
         };
+        if let Err(e) = client.wait_for_file_analysis(&canonical).await {
+            return ToolResult::Err(e);
+        }
         let uri = path_to_uri(&canonical).unwrap_or_default();
         let resp = match client
             .request(
@@ -746,6 +868,9 @@ impl Tool for RustWorkspaceSymbols {
             Err(e) => return ToolResult::Err(e),
         };
         let client = client.lock().await;
+        if let Err(e) = client.wait_until_ready().await {
+            return ToolResult::Err(e);
+        }
         let resp = match client
             .request("workspace/symbol", json!({ "query": args.query }))
             .await
@@ -864,13 +989,21 @@ impl Tool for RustDiagnostics {
 
         let entries: HashMap<PathBuf, Vec<Value>> = if let Some(f) = &args.file {
             let path = resolve_file(ctx, f);
-            let _ = client.ensure_file_opened(&path).await;
+            if let Err(e) = client.ensure_file_opened(&path).await {
+                return ToolResult::Err(e);
+            }
             let canonical = dunce::canonicalize(&path).unwrap_or(path);
+            if let Err(e) = client.wait_for_file_analysis(&canonical).await {
+                return ToolResult::Err(e);
+            }
             let diags = client.diagnostics_for(&canonical);
             let mut m = HashMap::new();
             m.insert(canonical, diags);
             m
         } else {
+            if let Err(e) = client.wait_until_ready().await {
+                return ToolResult::Err(e);
+            }
             client.all_diagnostics()
         };
 
@@ -923,6 +1056,18 @@ mod tests {
         let (sig, doc) = split_signature_from_markdown(md);
         assert_eq!(sig.as_deref(), Some("fn add(a: i32, b: i32) -> i32"));
         assert!(doc.unwrap().contains("Adds two numbers"));
+    }
+
+    #[test]
+    fn split_signature_joins_multiple_rust_fences() {
+        // rust-analyzer's actual output: first fence is the module qualifier,
+        // second is the signature. We keep both for the model.
+        let md = "```rust\nsample\n```\n\n```rust\npub fn add(a: i32, b: i32) -> i32\n```\n\n---\n\nAdds two integers together.";
+        let (sig, doc) = split_signature_from_markdown(md);
+        let s = sig.expect("signature");
+        assert!(s.contains("sample"), "got: {s}");
+        assert!(s.contains("pub fn add"), "got: {s}");
+        assert!(doc.unwrap().contains("Adds two integers"));
     }
 
     #[test]
