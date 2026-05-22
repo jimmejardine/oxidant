@@ -126,6 +126,9 @@ async fn main() -> anyhow::Result<()> {
     loop_config.system_prompt = args.system;
     loop_config.max_tokens = args.max_tokens;
     loop_config.max_iterations = args.max_iterations;
+    if !args.no_tools {
+        loop_config.post_edit_check_tool = Some("spec_diff".into());
+    }
 
     let mut stdout = std::io::stdout().lock();
     let outcome = run(

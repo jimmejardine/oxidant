@@ -20,7 +20,7 @@ use oxidant_providers::{
 
 use crate::conversation::Conversation;
 use crate::message::{ContentBlock, ImageSource, Message, ToolResultContent};
-use crate::registry::{ToolContext, ToolRegistry, ToolResult};
+use crate::registry::{ToolCategory, ToolContext, ToolRegistry, ToolResult};
 
 #[derive(Debug, Clone)]
 pub struct AgentLoopConfig {
@@ -30,6 +30,12 @@ pub struct AgentLoopConfig {
     pub max_iterations: usize,
     pub temperature: Option<f32>,
     pub thinking: Option<ThinkingConfig>,
+    /// Name of a ReadOnly tool to invoke after any turn that dispatched
+    /// at least one Mutating-category tool. The tool's result is appended
+    /// to the conversation as a synthetic User message so the model sees
+    /// it on the next iteration. Typically "spec_diff" — see
+    /// spec/components/core/agent-loop.md and spec/tools/spec/spec-diff.md.
+    pub post_edit_check_tool: Option<String>,
 }
 
 impl AgentLoopConfig {
@@ -41,6 +47,7 @@ impl AgentLoopConfig {
             max_iterations: 16,
             temperature: None,
             thinking: None,
+            post_edit_check_tool: None,
         }
     }
 }
@@ -51,6 +58,9 @@ pub struct AgentLoopOutcome {
     pub stop_reason: Option<StopReason>,
     pub total_usage: Usage,
     pub tool_calls_dispatched: usize,
+    /// Number of times the configured post-edit check tool fired across
+    /// this run (one per turn that contained any Mutating tool call).
+    pub post_edit_checks_fired: usize,
 }
 
 /// Run the agent loop until the model returns an end-of-turn response with
@@ -141,10 +151,14 @@ where
         }
 
         // Dispatch every tool call the model made this turn.
+        let mut any_mutating = false;
         for id in &acc.order {
             let tc = acc.tool_calls.get(id).expect("tool call we just inserted");
             let input = parse_tool_input(&tc.input_buffer);
             tracing::debug!(tool = %tc.name, id = %id, "dispatching tool");
+            if tool_is_mutating(registry, &tc.name) {
+                any_mutating = true;
+            }
             let result = registry.invoke(&tc.name, input, ctx).await;
             outcome.tool_calls_dispatched += 1;
             let (content, is_error) = match result {
@@ -152,6 +166,25 @@ where
                 ToolResult::Err(e) => (ToolResultContent::Text(e), true),
             };
             conv.push_tool_result(id, content, is_error);
+        }
+
+        // Post-edit hook — see spec/components/core/agent-loop.md.
+        if any_mutating {
+            if let Some(check_tool) = &config.post_edit_check_tool {
+                if registry.iter().any(|t| t.name() == check_tool.as_str()) {
+                    tracing::debug!(tool = %check_tool, "post-edit check");
+                    let result = registry
+                        .invoke(check_tool, serde_json::Value::Object(Default::default()), ctx)
+                        .await;
+                    let message = format_post_edit_check(check_tool, &result);
+                    conv.push_user_text(message);
+                    outcome.post_edit_checks_fired += 1;
+                } else {
+                    tracing::warn!(
+                        "post_edit_check_tool {check_tool:?} not registered; skipping"
+                    );
+                }
+            }
         }
     }
 
@@ -174,6 +207,22 @@ struct TurnAccumulator {
 struct PendingToolCall {
     name: String,
     input_buffer: String,
+}
+
+fn tool_is_mutating(registry: &ToolRegistry, name: &str) -> bool {
+    registry
+        .iter()
+        .any(|t| t.name() == name && matches!(t.category(), ToolCategory::Mutating))
+}
+
+fn format_post_edit_check(tool_name: &str, result: &ToolResult) -> String {
+    match result {
+        ToolResult::Ok(v) => format!(
+            "[oxidant post-edit check via `{tool_name}`]\n{}",
+            serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string())
+        ),
+        ToolResult::Err(e) => format!("[oxidant post-edit check `{tool_name}` failed]\n{e}"),
+    }
 }
 
 fn parse_tool_input(buf: &str) -> Value {

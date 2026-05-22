@@ -275,6 +275,195 @@ async fn error_event_terminates_with_err() {
     assert!(err.to_string().contains("connection reset"));
 }
 
+// ---- post-edit hook tests -----------------------------------------------
+
+/// A mutating tool we can inject so the post-edit hook fires.
+struct ScratchWrite;
+
+#[async_trait]
+impl Tool for ScratchWrite {
+    fn name(&self) -> &str {
+        "scratch_write"
+    }
+    fn schema(&self) -> serde_json::Value {
+        json!({ "type": "object", "properties": {}, "additionalProperties": false })
+    }
+    fn category(&self) -> ToolCategory {
+        ToolCategory::Mutating
+    }
+    async fn invoke(&self, _args: serde_json::Value, _ctx: &ToolContext) -> ToolResult {
+        ToolResult::Ok(json!({ "wrote": "scratch" }))
+    }
+}
+
+/// The check tool — ReadOnly. Counts how often it was invoked via shared state.
+struct DriftCheck {
+    invocations: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[async_trait]
+impl Tool for DriftCheck {
+    fn name(&self) -> &str {
+        "drift_check"
+    }
+    fn schema(&self) -> serde_json::Value {
+        json!({ "type": "object", "properties": {}, "additionalProperties": false })
+    }
+    fn category(&self) -> ToolCategory {
+        ToolCategory::ReadOnly
+    }
+    async fn invoke(&self, _args: serde_json::Value, _ctx: &ToolContext) -> ToolResult {
+        self.invocations
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        ToolResult::Ok(json!({ "count": 0, "drifts": [] }))
+    }
+}
+
+fn config_with_hook() -> AgentLoopConfig {
+    let mut cfg = AgentLoopConfig::new("m");
+    cfg.post_edit_check_tool = Some("drift_check".into());
+    cfg
+}
+
+#[tokio::test]
+async fn post_edit_hook_fires_after_mutating_tool() {
+    // Turn 2 is text-only (terminates). Turn 1 calls scratch_write (Mutating).
+    let provider = MockProvider::new(vec![
+        vec![
+            ChatEvent::TextDelta("done".into()),
+            ChatEvent::Finish { stop_reason: StopReason::EndTurn, usage: Usage::default() },
+        ],
+        vec![
+            ChatEvent::ToolUseStart { id: "m1".into(), name: "scratch_write".into() },
+            ChatEvent::ToolUseInputDelta { id: "m1".into(), json_delta: "{}".into() },
+            ChatEvent::ToolUseEnd { id: "m1".into() },
+            ChatEvent::Finish { stop_reason: StopReason::ToolUse, usage: Usage::default() },
+        ],
+    ]);
+
+    let invocations = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut registry = ToolRegistry::new();
+    registry.register(std::sync::Arc::new(ScratchWrite));
+    registry.register(std::sync::Arc::new(DriftCheck { invocations: invocations.clone() }));
+
+    let mut conv = Conversation::new();
+    conv.push_user_text("write something");
+
+    let outcome = run(
+        &provider,
+        &registry,
+        &ctx(),
+        &mut conv,
+        &config_with_hook(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(outcome.post_edit_checks_fired, 1);
+    assert_eq!(invocations.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+    // The second request to the provider should include the synthetic User
+    // message carrying the drift_check result.
+    let reqs = provider.captured_requests();
+    assert_eq!(reqs.len(), 2);
+    let second_turn_messages = &reqs[1].messages;
+    let has_post_edit_marker = second_turn_messages.iter().any(|m| {
+        m.content.iter().any(|p| match p {
+            oxidant_providers::ContentPart::Text(s) => s.contains("[oxidant post-edit check"),
+            _ => false,
+        })
+    });
+    assert!(
+        has_post_edit_marker,
+        "expected the post-edit check result in the second turn's messages"
+    );
+}
+
+#[tokio::test]
+async fn post_edit_hook_skipped_when_only_readonly_tools_used() {
+    // Single turn calling a ReadOnly tool then finishing.
+    struct PeekTool;
+    #[async_trait]
+    impl Tool for PeekTool {
+        fn name(&self) -> &str { "peek" }
+        fn schema(&self) -> serde_json::Value { json!({}) }
+        fn category(&self) -> ToolCategory { ToolCategory::ReadOnly }
+        async fn invoke(&self, _: serde_json::Value, _: &ToolContext) -> ToolResult {
+            ToolResult::Ok(json!({}))
+        }
+    }
+
+    let provider = MockProvider::new(vec![
+        vec![
+            ChatEvent::TextDelta("done".into()),
+            ChatEvent::Finish { stop_reason: StopReason::EndTurn, usage: Usage::default() },
+        ],
+        vec![
+            ChatEvent::ToolUseStart { id: "p1".into(), name: "peek".into() },
+            ChatEvent::ToolUseInputDelta { id: "p1".into(), json_delta: "{}".into() },
+            ChatEvent::ToolUseEnd { id: "p1".into() },
+            ChatEvent::Finish { stop_reason: StopReason::ToolUse, usage: Usage::default() },
+        ],
+    ]);
+
+    let invocations = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut registry = ToolRegistry::new();
+    registry.register(std::sync::Arc::new(PeekTool));
+    registry.register(std::sync::Arc::new(DriftCheck { invocations: invocations.clone() }));
+
+    let mut conv = Conversation::new();
+    conv.push_user_text("look");
+
+    let outcome = run(
+        &provider,
+        &registry,
+        &ctx(),
+        &mut conv,
+        &config_with_hook(),
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(outcome.post_edit_checks_fired, 0);
+    assert_eq!(invocations.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn post_edit_hook_silent_when_unconfigured() {
+    let provider = MockProvider::new(vec![
+        vec![
+            ChatEvent::TextDelta("ok".into()),
+            ChatEvent::Finish { stop_reason: StopReason::EndTurn, usage: Usage::default() },
+        ],
+        vec![
+            ChatEvent::ToolUseStart { id: "m1".into(), name: "scratch_write".into() },
+            ChatEvent::ToolUseInputDelta { id: "m1".into(), json_delta: "{}".into() },
+            ChatEvent::ToolUseEnd { id: "m1".into() },
+            ChatEvent::Finish { stop_reason: StopReason::ToolUse, usage: Usage::default() },
+        ],
+    ]);
+    let mut registry = ToolRegistry::new();
+    registry.register(std::sync::Arc::new(ScratchWrite));
+
+    let mut conv = Conversation::new();
+    conv.push_user_text("write");
+
+    // No post_edit_check_tool configured.
+    let outcome = run(
+        &provider,
+        &registry,
+        &ctx(),
+        &mut conv,
+        &AgentLoopConfig::new("m"),
+        |_| {},
+    )
+    .await
+    .unwrap();
+    assert_eq!(outcome.post_edit_checks_fired, 0);
+}
+
 #[tokio::test]
 async fn max_iterations_bound_returns_error() {
     // Both turns end with ToolUse so the loop never reaches EndTurn.

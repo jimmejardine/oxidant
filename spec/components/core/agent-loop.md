@@ -56,6 +56,14 @@ The loop returns when:
 - The user cancels via the GUI (cancellation token in `ToolContext`).
 - A provider error event arrives.
 
+## Post-edit hook
+
+After dispatching any turn that included a `Mutating`-category tool call, the loop may invoke a configured ReadOnly check tool (typically [[tools/spec/spec-diff]]). The check's result is appended to the conversation as a synthetic `User` text message — prefixed `[oxidant post-edit check]` — so the model sees it in its next request and can act on any flagged issues (drift, missing code paths, broken invariants) before declaring the work done.
+
+Wired via `AgentLoopConfig::post_edit_check_tool: Option<String>`. Default `None`. When set, the named tool is invoked through the same registry as model-driven tool calls — same permission gating, same panic-catching dispatch. The hook does not fire if a turn used only `ReadOnly` tools (no mutation, nothing to drift).
+
+This is the agent-loop side of [[decisions/0008-spec-is-canonical]]: drift is detected mechanically, surfaced immediately, and the model is given a chance to resolve before the next user turn.
+
 ## Cancellation
 
 Each loop runs on a tokio task spawned by `oxidant-core`. Cancellation: drop the task handle. Any in-flight tool call sees `ctx.is_cancelled()` and short-circuits.
