@@ -9,6 +9,10 @@ depends_on:
   - components/spec-tools/validate
 code:
   - crates/oxidant-spec-tools/src/tools/spec_validate.rs
+tests:
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_validate_tree_wide_returns_warnings
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_validate_kind_filter_works
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_validate_unknown_kind_filter_yields_empty
 status: active
 responsibility: |
   Run the full validator over spec/ and return structured warnings (frontmatter completeness, link integrity, length budgets, orphans, code path existence).

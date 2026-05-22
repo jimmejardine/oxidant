@@ -8,6 +8,8 @@ depends_on:
   - components/spec-tools/index-db
 code:
   - crates/oxidant-spec-tools/src/search_index.rs
+tests:
+  - crates/oxidant-spec-tools/src/search_index.rs
 status: active
 responsibility: |
   Maintain a Tantivy full-text index over spec markdown and Rust source for BM25-ranked search via tools/search/text-search and tools/search/spec-search.

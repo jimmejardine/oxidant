@@ -10,6 +10,8 @@ depends_on:
   - contracts/workspace-edit
 code:
   - crates/oxidant-tools/src/edit.rs
+tests:
+  - crates/oxidant-tools/src/edit.rs::apply_edits_span_precise
 status: active
 responsibility: |
   Apply one or more span-precise edits across one or more files, atomically.

@@ -9,6 +9,11 @@ depends_on:
   - components/tools/fs
 code:
   - crates/oxidant-tools/src/fs.rs
+tests:
+  - crates/oxidant-tools/src/fs.rs::fs_read_whole_file
+  - crates/oxidant-tools/src/fs.rs::fs_read_with_offset_and_limit
+  - crates/oxidant-tools/src/fs.rs::fs_read_binary_returns_marker
+  - crates/oxidant-tools/src/fs.rs::fs_read_rejects_escape
 status: active
 responsibility: |
   Read a file from the worktree, optionally a line range, returning UTF-8 text or a binary marker.

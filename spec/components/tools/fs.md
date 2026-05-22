@@ -7,6 +7,8 @@ implements: []
 depends_on: []
 code:
   - crates/oxidant-tools/src/fs.rs
+tests:
+  - crates/oxidant-tools/src/fs.rs
 status: active
 responsibility: |
   Filesystem read/write/list capabilities scoped to the exploration's workspace root.

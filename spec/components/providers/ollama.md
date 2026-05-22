@@ -10,6 +10,8 @@ depends_on:
   - components/providers/openai
 code:
   - crates/oxidant-providers/src/ollama.rs
+tests:
+  - crates/oxidant-providers/tests/local_smoke.rs
 status: active
 responsibility: |
   Talk to a local Ollama (or llama.cpp) server via its OpenAI-compatible endpoint.

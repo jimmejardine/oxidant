@@ -7,6 +7,9 @@ implements: []
 depends_on: []
 code:
   - crates/oxidant-rust-tools/src/cargo_runner.rs
+tests:
+  - crates/oxidant-rust-tools/src/cargo_runner.rs
+  - crates/oxidant-rust-tools/tests/cargo_runner_live.rs
 status: active
 responsibility: |
   Spawn cargo/clippy/rustc/cargo-expand as subprocesses with --message-format=json, parse the streaming output via cargo_metadata, and return structured results.

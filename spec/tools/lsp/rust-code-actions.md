@@ -10,6 +10,8 @@ depends_on:
   - contracts/workspace-edit
 code:
   - crates/oxidant-rust-tools/src/lsp_client.rs
+tests:
+  - crates/oxidant-rust-tools/tests/lsp_live.rs::code_actions_returns_list
 status: active
 responsibility: |
   Enumerate rust-analyzer code actions (quick-fixes, refactors, organise imports, implement missing members) for a range.

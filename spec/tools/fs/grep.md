@@ -9,6 +9,9 @@ depends_on:
   - components/tools/fs
 code:
   - crates/oxidant-tools/src/fs.rs
+tests:
+  - crates/oxidant-tools/src/fs.rs::grep_finds_matches_with_line_and_text
+  - crates/oxidant-tools/src/fs.rs::grep_respects_path_glob
 status: active
 responsibility: |
   Stream-search a regex across the worktree (or a subset), returning line-anchored matches with context.

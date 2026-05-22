@@ -8,6 +8,9 @@ depends_on:
   - contracts/workspace-edit
 code:
   - crates/oxidant-rust-tools/src/lsp_client.rs
+tests:
+  - crates/oxidant-rust-tools/src/lsp_client.rs
+  - crates/oxidant-rust-tools/tests/lsp_live.rs
 status: active
 responsibility: |
   Manage one rust-analyzer process per exploration over async-lsp and expose its capabilities as structured agent tools.

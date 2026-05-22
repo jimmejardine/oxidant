@@ -9,6 +9,8 @@ depends_on:
   - contracts/workspace-edit
 code:
   - crates/oxidant-tools/src/edit.rs
+tests:
+  - crates/oxidant-tools/src/edit.rs
 status: active
 responsibility: |
   Expose the two model-facing edit surfaces (string-replace and span-precise), both backed by the workspace-edit substrate.

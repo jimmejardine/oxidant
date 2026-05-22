@@ -9,6 +9,9 @@ depends_on:
   - components/spec-tools/graph
 code:
   - crates/oxidant-spec-tools/src/diff.rs
+tests:
+  - crates/oxidant-spec-tools/src/diff.rs
+  - crates/oxidant-spec-tools/tests/diff_real_tree.rs
 status: active
 responsibility: |
   Detect spec↔code drift: trait-method drift for contract specs and code-path existence for component specs.

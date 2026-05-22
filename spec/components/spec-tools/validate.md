@@ -10,6 +10,11 @@ depends_on:
   - components/spec-tools/index-db
 code:
   - crates/oxidant-spec-tools/src/validate.rs
+tests:
+  - crates/oxidant-spec-tools/tests/validate_real_tree.rs
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_validate_tree_wide_returns_warnings
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_validate_kind_filter_works
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_validate_unknown_kind_filter_yields_empty
 status: active
 responsibility: |
   Produce structured warnings about frontmatter completeness, link integrity, length budgets, orphans, and code-path existence.
@@ -30,6 +35,8 @@ The drift detector for spec hygiene. Warnings, never errors — even severe issu
 | cycle | The graph contains a cycle in `parent` or `depends_on`. |
 | length_budget_exceeded | Spec body exceeds the per-kind budget. |
 | missing_code_path | A `code:` entry refers to a file that doesn't exist. |
+| orphan_test | A `#[test]` exists in code but no spec's `tests:` claims it (directly or via whole-file shorthand). See [[decisions/0011-specs-claim-their-tests]]. |
+| unresolved_test | A `tests:` entry refers to a path or function that doesn't exist. |
 | reachability | `overview` cannot reach this spec via the link graph in ≤ 4 hops. |
 
 ## Output
@@ -46,6 +53,12 @@ pub fn validate(repo: &Path) -> Vec<Warning>;
 ```
 
 The GUI buckets warnings by `kind` in the spec panel; the agent receives them via [[tools/spec/spec-validate]].
+
+## Test inventory
+
+To produce `orphan_test` and `unresolved_test`, the validator builds the universe of test ids by walking `crates/**/*.rs` and emitting one `<repo-relative-path>::<fn_name>` per `#[test]` attribute it finds. Both integration tests (`crates/x/tests/y.rs`) and inline `#[cfg(test)] mod` tests in `src/` are included. The id form is the validator's normalised shape, not cargo's module-path form; the spec author writes the path they see on disk.
+
+A spec's `tests:` entries are expanded: a bare path claims every test in that file, a `path::fn` entry claims exactly that one. The union across all specs is the *claimed* set; the inventory minus claimed is the orphan set; claimed minus inventory is the unresolved set.
 
 ## Performance
 

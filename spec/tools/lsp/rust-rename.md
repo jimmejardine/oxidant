@@ -10,6 +10,10 @@ depends_on:
   - contracts/workspace-edit
 code:
   - crates/oxidant-rust-tools/src/lsp_client.rs
+tests:
+  - crates/oxidant-rust-tools/tests/lsp_live.rs::rename_preview_returns_workspace_edit
+  - crates/oxidant-rust-tools/tests/lsp_live.rs::rename_apply_routes_through_substrate
+  - crates/oxidant-rust-tools/tests/lsp_live.rs::rename_rejects_invalid_identifier
 status: active
 responsibility: |
   Compute a cross-file rename WorkspaceEdit via rust-analyzer; the caller decides whether to apply.

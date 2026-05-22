@@ -10,6 +10,10 @@ depends_on:
   - contracts/workspace-edit
 code:
   - crates/oxidant-rust-tools/src/syn_query.rs
+tests:
+  - crates/oxidant-rust-tools/src/syn_query.rs::add_derive_inserts_new_attribute
+  - crates/oxidant-rust-tools/src/syn_query.rs::add_derive_merges_into_existing
+  - crates/oxidant-rust-tools/src/syn_query.rs::add_derive_errors_on_missing_type
 status: active
 responsibility: |
   Add a #[derive(...)] entry to a struct or enum, merging with any existing derive attribute.

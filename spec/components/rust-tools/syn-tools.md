@@ -8,6 +8,8 @@ depends_on:
   - contracts/workspace-edit
 code:
   - crates/oxidant-rust-tools/src/syn_query.rs
+tests:
+  - crates/oxidant-rust-tools/src/syn_query.rs
 status: active
 responsibility: |
   Parse and transform Rust source via syn 2.x; backs the syntactic agent tools and produces WorkspaceEdits for the substrate.

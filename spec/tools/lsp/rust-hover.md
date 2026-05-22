@@ -9,6 +9,8 @@ depends_on:
   - components/rust-tools/lsp
 code:
   - crates/oxidant-rust-tools/src/lsp_client.rs
+tests:
+  - crates/oxidant-rust-tools/tests/lsp_live.rs::hover_on_function_signature
 status: active
 responsibility: |
   Return the rust-analyzer hover info at a position: type signature plus markdown docs.

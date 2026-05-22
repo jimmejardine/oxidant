@@ -9,6 +9,8 @@ depends_on:
   - contracts/provider
 code:
   - crates/oxidant-providers/src/openai.rs
+tests:
+  - crates/oxidant-providers/src/openai.rs
 status: active
 responsibility: |
   Talk to OpenAI Chat Completions (default) or the Responses API (feature-gated); base path also serves OpenAI-compatible servers.

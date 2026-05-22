@@ -11,6 +11,9 @@ depends_on:
   - components/core/conversation
 code:
   - crates/oxidant-core/src/agent_loop.rs
+tests:
+  - crates/oxidant-core/src/agent_loop.rs
+  - crates/oxidant-core/tests/agent_loop_mock.rs
 status: active
 responsibility: |
   Drive the per-exploration conversation: send to the Provider, stream events, dispatch tool calls through the registry, append results, repeat until stop.

@@ -8,6 +8,8 @@ depends_on:
   - components/spec-tools/frontmatter
 code:
   - crates/oxidant-spec-tools/src/index_db.rs
+tests:
+  - crates/oxidant-spec-tools/src/index_db.rs
 status: active
 responsibility: |
   Maintain a SQLite metadata index of spec files supporting graph queries, status filters, and git-derived timestamps.

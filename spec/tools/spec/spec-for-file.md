@@ -9,6 +9,10 @@ depends_on:
   - components/spec-tools/index-db
 code:
   - crates/oxidant-spec-tools/src/tools/spec_for_file.rs
+tests:
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_for_file_finds_workspace_edit_substrate
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_for_file_with_windows_style_slashes
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_for_file_unknown_path_returns_empty
 status: active
 responsibility: |
   Reverse lookup: given a code file path, return the specs that reference it via their code: frontmatter.

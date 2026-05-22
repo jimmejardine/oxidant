@@ -9,6 +9,8 @@ depends_on:
   - components/tools/fs
 code:
   - crates/oxidant-tools/src/fs.rs
+tests:
+  - crates/oxidant-tools/src/fs.rs::glob_finds_files
 status: active
 responsibility: |
   Return paths matching a glob pattern under the worktree root.

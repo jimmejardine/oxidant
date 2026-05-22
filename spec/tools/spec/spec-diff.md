@@ -9,6 +9,8 @@ depends_on:
   - components/spec-tools/diff
 code:
   - crates/oxidant-spec-tools/src/tools/spec_diff.rs
+tests:
+  - crates/oxidant-spec-tools/tests/diff_real_tree.rs
 status: active
 responsibility: |
   Detect spec↔code drift; in MVP this means trait-method drift for contract specs and missing code: paths for component specs.

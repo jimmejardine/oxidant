@@ -10,6 +10,11 @@ depends_on:
   - contracts/workspace-edit
 code:
   - crates/oxidant-tools/src/edit.rs
+tests:
+  - crates/oxidant-tools/src/edit.rs::edit_string_unique_replacement
+  - crates/oxidant-tools/src/edit.rs::edit_string_rejects_ambiguous_match
+  - crates/oxidant-tools/src/edit.rs::edit_string_replace_all
+  - crates/oxidant-tools/src/edit.rs::edit_string_missing_returns_clear_error
 status: active
 responsibility: |
   Replace a unique occurrence of `old_string` with `new_string` in a single file; the natural surface when no upstream tool produced a span.

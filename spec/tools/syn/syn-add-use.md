@@ -10,6 +10,9 @@ depends_on:
   - contracts/workspace-edit
 code:
   - crates/oxidant-rust-tools/src/syn_query.rs
+tests:
+  - crates/oxidant-rust-tools/src/syn_query.rs::add_use_inserts_after_existing_uses
+  - crates/oxidant-rust-tools/src/syn_query.rs::add_use_skips_when_already_imported
 status: active
 responsibility: |
   Add a use path to a Rust file at the correct location (after existing use clauses, respecting grouping); produce a WorkspaceEdit.

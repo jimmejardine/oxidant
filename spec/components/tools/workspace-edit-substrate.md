@@ -8,6 +8,10 @@ implements:
 depends_on: []
 code:
   - crates/oxidant-tools/src/workspace_edit.rs
+tests:
+  - crates/oxidant-tools/src/workspace_edit.rs
+  - crates/oxidant-tools/src/edit.rs::byte_offset_to_position_works_across_lines
+  - crates/oxidant-rust-tools/tests/lsp_live.rs::rename_apply_routes_through_substrate
 status: active
 responsibility: |
   Apply atomic, span-precise multi-file edits with optimistic-concurrency checks and post-edit syntactic validation for .rs files.

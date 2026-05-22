@@ -9,6 +9,8 @@ depends_on:
   - components/rust-tools/lsp
 code:
   - crates/oxidant-rust-tools/src/lsp_client.rs
+tests:
+  - crates/oxidant-rust-tools/tests/lsp_live.rs::workspace_symbols_finds_add
 status: active
 responsibility: |
   Search across the workspace for symbols (functions, types, traits, modules) by name.

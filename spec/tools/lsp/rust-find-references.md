@@ -9,6 +9,8 @@ depends_on:
   - components/rust-tools/lsp
 code:
   - crates/oxidant-rust-tools/src/lsp_client.rs
+tests:
+  - crates/oxidant-rust-tools/tests/lsp_live.rs::find_references_returns_call_and_definition
 status: active
 responsibility: |
   Return all references to the symbol at a position across the workspace.

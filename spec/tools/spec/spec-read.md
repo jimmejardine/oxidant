@@ -9,6 +9,10 @@ depends_on:
   - components/spec-tools/frontmatter
 code:
   - crates/oxidant-spec-tools/src/tools/spec_read.rs
+tests:
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_read_canonical_ref
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_read_short_ref
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_read_unknown_ref_errors
 status: active
 responsibility: |
   Fetch one spec file by canonical or short-form ref, returning parsed frontmatter and raw body.

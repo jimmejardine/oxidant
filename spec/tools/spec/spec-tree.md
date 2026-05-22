@@ -9,6 +9,10 @@ depends_on:
   - components/spec-tools/graph
 code:
   - crates/oxidant-spec-tools/src/tools/spec_tree.rs
+tests:
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_tree_default_args_returns_overview_rooted
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_tree_depends_on_root_at_a_substrate
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_tree_rejects_unknown_edge_kind
 status: active
 responsibility: |
   Return a hierarchical view of the spec graph rooted at a given ref, walking parent or depends_on edges.

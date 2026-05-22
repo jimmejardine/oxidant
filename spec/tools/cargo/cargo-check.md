@@ -9,6 +9,9 @@ depends_on:
   - components/rust-tools/cargo-runner
 code:
   - crates/oxidant-rust-tools/src/cargo_runner.rs
+tests:
+  - crates/oxidant-rust-tools/tests/cargo_runner_live.rs::cargo_check_ok_on_clean_project
+  - crates/oxidant-rust-tools/tests/cargo_runner_live.rs::cargo_check_returns_diagnostics_on_broken_project
 status: active
 responsibility: |
   Run cargo check with --message-format=json and return structured CompilerMessages + a pass/fail summary.

@@ -9,6 +9,9 @@ depends_on:
   - components/rust-tools/syn-tools
 code:
   - crates/oxidant-rust-tools/src/syn_query.rs
+tests:
+  - crates/oxidant-rust-tools/src/syn_query.rs::find_items_returns_fns_and_structs
+  - crates/oxidant-rust-tools/src/syn_query.rs::find_items_name_pattern_substring
 status: active
 responsibility: |
   Parse a Rust file via syn and return the items matching a kind + optional name pattern, with byte ranges.

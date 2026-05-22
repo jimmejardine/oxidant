@@ -9,6 +9,8 @@ depends_on:
   - components/spec-tools/index-db
 code:
   - crates/oxidant-spec-tools/src/graph.rs
+tests:
+  - crates/oxidant-spec-tools/src/graph.rs
 status: active
 responsibility: |
   Construct an in-memory directed graph of spec nodes and edges (parent, implements, depends_on, body refs), and answer traversal queries.

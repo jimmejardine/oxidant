@@ -7,6 +7,13 @@ status: active
 depends_on: []
 code:
   - crates/oxidant-tools/src/workspace_edit.rs
+tests:
+  - crates/oxidant-tools/src/workspace_edit.rs::apply_single_edit_in_place
+  - crates/oxidant-tools/src/workspace_edit.rs::apply_rejects_overlapping_edits
+  - crates/oxidant-tools/src/workspace_edit.rs::apply_rejects_expected_text_mismatch
+  - crates/oxidant-tools/src/workspace_edit.rs::apply_rust_file_with_syn_failure_rolls_back
+  - crates/oxidant-tools/src/workspace_edit.rs::apply_multi_file_atomicity
+  - crates/oxidant-tools/src/workspace_edit.rs::post_edit_byte_ranges_track_shifts
 responsibility: |
   The atomic multi-file edit data structure used by every code-changing path in oxidant.
 ---

@@ -10,6 +10,9 @@ depends_on:
   - contracts/workspace-edit
 code:
   - crates/oxidant-rust-tools/src/syn_query.rs
+tests:
+  - crates/oxidant-rust-tools/src/syn_query.rs::rename_local_renames_parameter_inside_fn
+  - crates/oxidant-rust-tools/src/syn_query.rs::rename_local_rejects_invalid_ident
 status: active
 responsibility: |
   Rename a local binding (variable, parameter, or local function) within a single file based on a syntactic span; cross-file renames go through rust-rename.

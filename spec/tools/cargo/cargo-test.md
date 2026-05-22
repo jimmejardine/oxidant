@@ -9,6 +9,8 @@ depends_on:
   - components/rust-tools/cargo-runner
 code:
   - crates/oxidant-rust-tools/src/cargo_runner.rs
+tests:
+  - crates/oxidant-rust-tools/tests/cargo_runner_live.rs::cargo_test_runs_a_passing_test
 status: active
 responsibility: |
   Run cargo test with structured per-test events, capturing stdout/stderr per failing test for diagnostic use.

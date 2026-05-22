@@ -7,6 +7,8 @@ implements: []
 depends_on: []
 code:
   - crates/oxidant-spec-tools/src/frontmatter.rs
+tests:
+  - crates/oxidant-spec-tools/src/frontmatter.rs
 status: active
 responsibility: |
   Parse YAML frontmatter and body `[[refs]]` from spec markdown files; produce typed FrontmatterRecord and SpecBody structs.
@@ -33,9 +35,15 @@ pub struct FrontmatterRecord {
     pub implements: Vec<String>,
     pub depends_on: Vec<String>,
     pub code: Vec<PathBuf>,
+    pub tests: Vec<TestRef>,
     pub status: SpecStatus,
     pub responsibility: Option<String>,
     pub extras: serde_json::Value,       // unknown keys preserved for forward-compat
+}
+
+pub enum TestRef {
+    Function { path: PathBuf, name: String },  // "crates/x/tests/y.rs::name"
+    WholeFile { path: PathBuf },                // "crates/x/tests/y.rs"
 }
 
 pub struct RefMention {
@@ -48,6 +56,15 @@ pub struct RefMention {
 ## Frontmatter grammar
 
 YAML between `---` markers at the very top of the file. Missing → error. Empty → empty `FrontmatterRecord` minus `id`/`kind` → validation error downstream.
+
+## `tests:` field
+
+Optional list per [[decisions/0011-specs-claim-their-tests]]. Each entry is one of:
+
+- `<repo-relative-path>::<fn_name>` — a single test function. The path is the file containing `#[test] fn fn_name`; the validator's inventory pass produces matching ids.
+- `<repo-relative-path>` — shorthand claiming every `#[test]` in that file.
+
+Both forms parse to `TestRef`. The parser does not verify the path or function exists — that's the validator's job (`unresolved_test`). Many-to-many is allowed: the same test may appear in multiple specs' `tests:` lists.
 
 ## Body ref extraction
 

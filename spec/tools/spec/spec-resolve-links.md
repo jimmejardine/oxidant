@@ -9,6 +9,9 @@ depends_on:
   - components/spec-tools/graph
 code:
   - crates/oxidant-spec-tools/src/tools/spec_resolve_links.rs
+tests:
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_resolve_links_for_tool_contract
+  - crates/oxidant-spec-tools/tests/spec_tools_real_tree.rs::spec_resolve_links_unknown_ref_errors
 status: active
 responsibility: |
   Return all inbound and outbound links (frontmatter and body refs) for one spec.
