@@ -8,8 +8,12 @@
 //   spec/decisions/0001-multi-provider-llm.md
 //   spec/decisions/0007-roll-own-llm-provider-layer.md
 
+pub mod ollama;
+pub mod openai;
 pub mod provider;
 
+pub use ollama::{OllamaConfig, OllamaProvider};
+pub use openai::{OpenAIConfig, OpenAIProvider};
 pub use provider::{
     ChatEvent, ChatRequest, ContentPart, Provider, ProviderCapabilities, RequestMessage, Role,
     StopReason, ThinkingConfig, ToolSpec, Usage,

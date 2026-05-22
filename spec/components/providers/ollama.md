@@ -19,7 +19,7 @@ A thin wrapper around [[components/providers/openai]] with conservative defaults
 
 ## Configuration
 
-- Default `base_url`: `http://localhost:11434/v1` (Ollama). llama.cpp's server typically listens on `http://localhost:8080/v1` — same path, just configure.
+- Default `base_url`: `http://localhost:11434/v1` (Ollama). llama.cpp's `server` listens on `http://localhost:8080/v1`, LM Studio on `http://localhost:1234/v1` — same path, just configure.
 - Auth: none by default; bearer token configurable for protected deployments.
 
 ## Capability defaults (vs OpenAI)
@@ -39,6 +39,6 @@ Most code paths overlap, but:
 
 These differences are small enough that internally `OllamaProvider` holds an `OpenAIProvider` and overrides only the deltas.
 
-## llama.cpp via the same path
+## Same path for llama.cpp and LM Studio
 
-Point this provider at llama.cpp's `server` binary (`./server -m model.gguf --port 8080 --api`) and it works. No separate `LlamaCppProvider` needed.
+This component is the catch-all for local OpenAI-compatible servers. Point it at llama.cpp's `server` binary (`./server -m model.gguf --port 8080 --api`), at LM Studio's local server (typically `http://localhost:1234/v1`), or at any other OpenAI-compatible local endpoint — no separate `LlamaCppProvider` or `LMStudioProvider` needed. The type name `OllamaProvider` is historical; the responsibility is "local OpenAI-compatible server with conservative defaults".
