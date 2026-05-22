@@ -6,6 +6,7 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
+oxidant-core.workspace = true
 oxidant-tools.workspace = true
 
 tokio.workspace = true
@@ -21,3 +22,11 @@ quote.workspace = true
 proc-macro2.workspace = true
 lsp-types.workspace = true
 camino.workspace = true
+cargo_metadata.workspace = true
+regex.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio = { workspace = true }
+tokio-util.workspace = true
+dunce.workspace = true

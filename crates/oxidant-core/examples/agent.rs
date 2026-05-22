@@ -102,8 +102,11 @@ async fn main() -> anyhow::Result<()> {
     let mut registry = ToolRegistry::new();
     if !args.no_tools {
         oxidant_tools::register_standard_tools(&mut registry);
+        oxidant_rust_tools::register_standard_tools(&mut registry);
+        registry.register(Arc::new(oxidant_spec_tools::SpecDiff));
         registry.register(Arc::new(CurrentTime));
-        let names: Vec<_> = registry.iter().map(|t| t.name().to_string()).collect();
+        let mut names: Vec<_> = registry.iter().map(|t| t.name().to_string()).collect();
+        names.sort();
         println!("[tools available: {}]", names.join(", "));
     }
 

@@ -70,6 +70,7 @@ tantivy        = "0.22"
 syn            = { version = "2", features = ["full", "extra-traits", "visit", "visit-mut"] }
 quote          = "1"
 proc-macro2    = "1"
+cargo_metadata = "0.18"
 
 # LSP
 lsp-types      = "0.97"

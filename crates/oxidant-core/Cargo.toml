@@ -32,3 +32,5 @@ serde_json.workspace = true
 chrono.workspace = true
 dunce.workspace = true
 oxidant-tools.workspace = true
+oxidant-rust-tools.workspace = true
+oxidant-spec-tools.workspace = true
