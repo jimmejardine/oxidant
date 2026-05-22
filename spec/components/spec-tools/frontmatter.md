@@ -51,7 +51,7 @@ YAML between `---` markers at the very top of the file. Missing → error. Empty
 
 ## Body ref extraction
 
-Naive regex `\[\[([^\]]+)\]\]` capturing the inner text. Refs inside fenced code blocks are ignored (the parser tracks fence state). Line/column captured for diagnostics from [[components/spec-tools/validate]].
+Naive regex `\[\[([^\]]+)\]\]` capturing the inner text. Refs inside fenced code blocks (``` or `~~~`) are ignored (the parser tracks fence state). Refs inside single-backtick inline code spans on the same line are also ignored, so documentation literals like `` `[[ref]]` `` don't register as real refs. Line/column captured for diagnostics from [[components/spec-tools/validate]].
 
 ## Why a separate component
 

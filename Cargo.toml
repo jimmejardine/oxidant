@@ -51,6 +51,9 @@ globset        = "0.4"
 pulldown-cmark = "0.12"
 regex          = "1"
 
+# Spec graph
+petgraph       = "0.7"
+
 # Persistence + search
 rusqlite       = { version = "0.32", features = ["bundled"] }
 tantivy        = "0.22"

@@ -11,3 +11,13 @@
 //   spec/components/spec-tools/timeline.md
 //   spec/decisions/0008-spec-is-canonical.md
 //   spec/decisions/0010-spec-index-and-search.md
+
+pub mod frontmatter;
+pub mod graph;
+pub mod validate;
+
+pub use frontmatter::{
+    FrontmatterRecord, ParseError, RefMention, SpecFile, SpecKind, SpecStatus, parse,
+};
+pub use graph::{EdgeKind, GraphInput, Node, Resolution, SpecGraph, resolve};
+pub use validate::{Warning, WarningKind, validate};
