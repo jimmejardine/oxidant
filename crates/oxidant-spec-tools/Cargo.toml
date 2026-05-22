@@ -21,3 +21,7 @@ async-trait.workspace = true
 syn.workspace = true
 quote.workspace = true
 camino.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true }
+tokio-util.workspace = true

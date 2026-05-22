@@ -2616,6 +2616,8 @@ dependencies = [
  "serde_yaml_ng",
  "syn 2.0.117",
  "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
  "tracing",
  "walkdir",
 ]

@@ -103,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
     if !args.no_tools {
         oxidant_tools::register_standard_tools(&mut registry);
         oxidant_rust_tools::register_standard_tools(&mut registry);
-        registry.register(Arc::new(oxidant_spec_tools::SpecDiff));
+        oxidant_spec_tools::register_standard_tools(&mut registry);
         registry.register(Arc::new(CurrentTime));
         let mut names: Vec<_> = registry.iter().map(|t| t.name().to_string()).collect();
         names.sort();

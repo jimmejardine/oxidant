@@ -12,11 +12,16 @@
 //   spec/decisions/0008-spec-is-canonical.md
 //   spec/decisions/0010-spec-index-and-search.md
 
+use std::sync::Arc;
+
+use oxidant_core::{Tool, ToolRegistry};
+
 pub mod diff;
 pub mod frontmatter;
 pub mod graph;
 pub mod tools;
 pub mod validate;
+pub mod walker;
 
 pub use diff::{Drift, diff_all, diff_spec};
 pub use frontmatter::{
@@ -24,5 +29,20 @@ pub use frontmatter::{
     extract_fenced_blocks, parse,
 };
 pub use graph::{EdgeKind, GraphInput, Node, Resolution, SpecGraph, resolve};
-pub use tools::SpecDiff;
+pub use tools::{SpecDiff, SpecForFile, SpecRead};
 pub use validate::{Warning, WarningKind, validate};
+pub use walker::{SpecRecord, walk_specs};
+
+/// Register the model-facing spec tools currently realised: spec_diff,
+/// spec_read, spec_for_file. spec_tree, spec_resolve_links, spec_validate
+/// follow as their wrappers land.
+pub fn register_standard_tools(registry: &mut ToolRegistry) {
+    let tools: Vec<Arc<dyn Tool>> = vec![
+        Arc::new(SpecDiff),
+        Arc::new(SpecRead),
+        Arc::new(SpecForFile),
+    ];
+    for t in tools {
+        registry.register(t);
+    }
+}
