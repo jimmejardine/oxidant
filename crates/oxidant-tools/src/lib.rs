@@ -7,3 +7,7 @@
 //   spec/components/tools/bash-runner.md
 //   spec/components/tools/workspace-edit-substrate.md
 //   spec/invariants/edits-are-atomic.md
+
+pub mod workspace_edit;
+
+pub use workspace_edit::{Position, Range, TextEdit, WorkspaceEdit};

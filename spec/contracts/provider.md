@@ -30,7 +30,52 @@ pub struct ProviderCapabilities {
     pub vision: bool,
     pub max_context_tokens: usize,
 }
+```
 
+## Request shape
+
+The request is provider-agnostic; impls translate into native API payloads. Caching markers and other backend-specific concerns are applied inside the impl based on `capabilities()`, not the caller.
+
+```rust
+pub struct ChatRequest {
+    pub model: String,
+    pub system: Option<String>,
+    pub messages: Vec<RequestMessage>,
+    pub tools: Vec<ToolSpec>,
+    pub max_tokens: u32,
+    pub temperature: Option<f32>,
+    pub thinking: Option<ThinkingConfig>,
+}
+
+pub struct RequestMessage {
+    pub role: Role,
+    pub content: Vec<ContentPart>,
+}
+
+pub enum Role { User, Assistant }
+
+pub enum ContentPart {
+    Text(String),
+    Thinking(String),
+    ToolUse { id: String, name: String, input: serde_json::Value },
+    ToolResult { call_id: String, content: String, is_error: bool },
+    // Image/vision content lands when the vision capability is wired through.
+}
+
+pub struct ToolSpec {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
+}
+
+pub struct ThinkingConfig {
+    pub budget_tokens: u32,
+}
+```
+
+## Event shape
+
+```rust
 pub enum ChatEvent {
     TextDelta(String),
     ThinkingDelta(String),
@@ -39,6 +84,20 @@ pub enum ChatEvent {
     ToolUseEnd { id: String },
     Finish { stop_reason: StopReason, usage: Usage },
     Error(String),
+}
+
+pub enum StopReason {
+    EndTurn,
+    StopSequence,
+    MaxTokens,
+    ToolUse,
+}
+
+pub struct Usage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+    pub cache_creation_input_tokens: u32,
+    pub cache_read_input_tokens: u32,
 }
 ```
 

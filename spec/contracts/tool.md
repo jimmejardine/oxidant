@@ -23,7 +23,20 @@ pub trait Tool: Send + Sync {
     fn category(&self) -> ToolCategory;
     async fn invoke(&self, args: serde_json::Value, ctx: &ToolContext) -> ToolResult;
 }
+
+pub enum ToolCategory {
+    ReadOnly,    // auto-approved
+    Mutating,    // prompts unless allowlisted
+    Network,     // prompts unless allowlisted
+}
+
+pub enum ToolResult {
+    Ok(serde_json::Value),
+    Err(String),
+}
 ```
+
+`ToolContext` is the registry's concern — see [[components/core/tool-registry]].
 
 ## Methods
 

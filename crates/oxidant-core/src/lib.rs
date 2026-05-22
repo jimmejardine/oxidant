@@ -6,3 +6,7 @@
 //   spec/components/core/exploration.md
 //   spec/components/core/tool-registry.md
 //   spec/contracts/tool.md
+
+pub mod registry;
+
+pub use registry::{Tool, ToolCategory, ToolContext, ToolRegistry, ToolResult};

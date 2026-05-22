@@ -7,9 +7,9 @@ publish.workspace = true
 
 [dependencies]
 oxidant-providers.workspace = true
-oxidant-tools.workspace = true
 
 tokio.workspace = true
+tokio-util.workspace = true
 futures.workspace = true
 async-trait.workspace = true
 serde.workspace = true
