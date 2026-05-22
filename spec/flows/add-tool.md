@@ -4,6 +4,8 @@ kind: flow
 parent: overview
 order: 4
 status: active
+responsibility: |
+  Spec-first ritual for adding a new model-facing tool: write the spec, validate, implement at the declared code path, register, test, flip status to active — spec and code committed together.
 depends_on:
   - contracts/tool
   - components/core/tool-registry

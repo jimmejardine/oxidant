@@ -4,6 +4,8 @@ kind: flow
 parent: overview
 order: 3
 status: active
+responsibility: |
+  Reincorporate a sub-exploration's work into its parent branch via `git merge --no-ff`, with the agent assisting conflict resolution in the parent's window.
 depends_on:
   - components/vcs/worktree-mgmt
   - components/vcs/git-shellout

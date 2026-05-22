@@ -4,6 +4,8 @@ kind: flow
 parent: overview
 order: 2
 status: active
+responsibility: |
+  Create a fresh sub-exploration from an existing one: compute target path and branch name, run `git worktree add`, initialise `.oxidant/` state, build an Exploration struct, persist it, open a viewport.
 depends_on:
   - components/vcs/worktree-mgmt
   - components/vcs/session-persistence
