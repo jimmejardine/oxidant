@@ -15,14 +15,15 @@ pub mod lsp_client;
 
 pub use cargo_runner::{CargoCheck, CargoClippy, CargoTest};
 pub use lsp_client::{
-    LspClient, RustDiagnostics, RustGotoDefinition, RustHover, RustWorkspaceSymbols,
+    LspClient, RustCodeActions, RustDiagnostics, RustFindReferences, RustGotoDefinition, RustHover,
+    RustRename, RustWorkspaceSymbols,
 };
 
-/// Register the rust-tools currently realised:
+/// Register every model-facing rust-tool currently realised:
 /// - cargo: cargo_check, cargo_clippy, cargo_test
-/// - lsp:   rust_hover, rust_goto_definition, rust_workspace_symbols, rust_diagnostics
-/// Syn tools and the remaining LSP tools (rename, code_actions, find_references)
-/// follow as their wrappers land.
+/// - lsp:   rust_hover, rust_goto_definition, rust_find_references,
+///          rust_workspace_symbols, rust_rename, rust_code_actions, rust_diagnostics
+/// Syn tools follow when their component lands.
 pub fn register_standard_tools(registry: &mut ToolRegistry) {
     let tools: Vec<Arc<dyn Tool>> = vec![
         Arc::new(CargoCheck),
@@ -30,7 +31,10 @@ pub fn register_standard_tools(registry: &mut ToolRegistry) {
         Arc::new(CargoTest),
         Arc::new(RustHover),
         Arc::new(RustGotoDefinition),
+        Arc::new(RustFindReferences),
         Arc::new(RustWorkspaceSymbols),
+        Arc::new(RustRename),
+        Arc::new(RustCodeActions),
         Arc::new(RustDiagnostics),
     ];
     for t in tools {

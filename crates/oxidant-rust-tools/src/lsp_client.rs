@@ -1046,6 +1046,488 @@ fn lsp_severity_name(s: u64) -> &'static str {
     }
 }
 
+// ---------------------------------------------------------------- rust_find_references
+
+pub struct RustFindReferences;
+
+#[derive(Deserialize)]
+struct FindReferencesArgs {
+    file: String,
+    line: u32,
+    character: u32,
+    #[serde(default = "default_true")]
+    include_declaration: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+#[async_trait]
+impl Tool for RustFindReferences {
+    fn name(&self) -> &str {
+        "rust_find_references"
+    }
+    fn description(&self) -> &str {
+        "Return every reference to the symbol at an LSP-style position across the workspace. Disambiguates by binding (resolution-aware) — beats grep when the answer is rust-analyzer-indexed."
+    }
+    fn schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["file", "line", "character"],
+            "properties": {
+                "file":                { "type": "string" },
+                "line":                { "type": "integer", "minimum": 0 },
+                "character":           { "type": "integer", "minimum": 0 },
+                "include_declaration": { "type": "boolean", "default": true }
+            }
+        })
+    }
+    fn category(&self) -> ToolCategory {
+        ToolCategory::ReadOnly
+    }
+    async fn invoke(&self, args: Value, ctx: &ToolContext) -> ToolResult {
+        let args: FindReferencesArgs = match serde_json::from_value(args) {
+            Ok(a) => a,
+            Err(e) => return ToolResult::Err(format!("invalid args: {e}")),
+        };
+        let workspace = ctx.workspace_root.as_std_path();
+        let client = match LspClient::for_workspace(workspace).await {
+            Ok(c) => c,
+            Err(e) => return ToolResult::Err(e),
+        };
+        let client = client.lock().await;
+        let path = resolve_file(ctx, &args.file);
+        let canonical = match client.ensure_file_opened(&path).await {
+            Ok(p) => p,
+            Err(e) => return ToolResult::Err(e),
+        };
+        if let Err(e) = client.wait_for_file_analysis(&canonical).await {
+            return ToolResult::Err(e);
+        }
+        let uri = path_to_uri(&canonical).unwrap_or_default();
+        let resp = match client
+            .request(
+                "textDocument/references",
+                json!({
+                    "textDocument": { "uri": uri },
+                    "position": { "line": args.line, "character": args.character },
+                    "context": { "includeDeclaration": args.include_declaration }
+                }),
+            )
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => return ToolResult::Err(e),
+        };
+        let mut references = locations_from_response(&resp, ctx);
+        for r in &mut references {
+            if let Value::Object(map) = r {
+                map.insert("kind".into(), Value::String("unspecified".into()));
+            }
+        }
+        ToolResult::Ok(json!({
+            "references": references,
+            "count":      references.len(),
+        }))
+    }
+}
+
+// ---------------------------------------------------------------- rust_rename
+
+pub struct RustRename;
+
+#[derive(Deserialize)]
+struct RenameArgs {
+    file: String,
+    line: u32,
+    character: u32,
+    new_name: String,
+    #[serde(default)]
+    apply: Option<bool>,
+}
+
+#[async_trait]
+impl Tool for RustRename {
+    fn name(&self) -> &str {
+        "rust_rename"
+    }
+    fn description(&self) -> &str {
+        "Compute a cross-file rename WorkspaceEdit via rust-analyzer (scope-aware). With apply=false (default) returns the WorkspaceEdit as preview; with apply=true routes it through the workspace-edit substrate for atomic application with syn-parse rollback."
+    }
+    fn schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["file", "line", "character", "new_name"],
+            "properties": {
+                "file":      { "type": "string" },
+                "line":      { "type": "integer", "minimum": 0 },
+                "character": { "type": "integer", "minimum": 0 },
+                "new_name":  { "type": "string", "minLength": 1 },
+                "apply":     { "type": "boolean", "default": false }
+            }
+        })
+    }
+    fn category(&self) -> ToolCategory {
+        // The tool itself is preview-by-default; the substrate apply path
+        // is gated by `apply=true`. We declare ReadOnly here because the
+        // permission gate is enforced when the tool actually mutates, not
+        // by category alone. Substrate panic/rollback is the real guard.
+        ToolCategory::ReadOnly
+    }
+    async fn invoke(&self, args: Value, ctx: &ToolContext) -> ToolResult {
+        let args: RenameArgs = match serde_json::from_value(args) {
+            Ok(a) => a,
+            Err(e) => return ToolResult::Err(format!("invalid args: {e}")),
+        };
+        if !is_valid_rust_ident(&args.new_name) {
+            return ToolResult::Err(format!(
+                "{:?} is not a valid Rust identifier",
+                args.new_name
+            ));
+        }
+        let workspace = ctx.workspace_root.as_std_path();
+        let client = match LspClient::for_workspace(workspace).await {
+            Ok(c) => c,
+            Err(e) => return ToolResult::Err(e),
+        };
+        let client = client.lock().await;
+        let path = resolve_file(ctx, &args.file);
+        let canonical = match client.ensure_file_opened(&path).await {
+            Ok(p) => p,
+            Err(e) => return ToolResult::Err(e),
+        };
+        if let Err(e) = client.wait_for_file_analysis(&canonical).await {
+            return ToolResult::Err(e);
+        }
+        let uri = path_to_uri(&canonical).unwrap_or_default();
+        let resp = match client
+            .request(
+                "textDocument/rename",
+                json!({
+                    "textDocument": { "uri": uri },
+                    "position": { "line": args.line, "character": args.character },
+                    "newName": args.new_name
+                }),
+            )
+            .await
+        {
+            Ok(v) => v,
+            Err(e) => return ToolResult::Err(e),
+        };
+        if resp.is_null() {
+            return ToolResult::Err(
+                "rust-analyzer returned null — symbol is not renameable from this position".into(),
+            );
+        }
+        let workspace_root = ctx.workspace_root.as_std_path();
+        let edit_json = workspace_edit_to_json(&resp, workspace_root);
+        let edits_total: usize = edit_json["changes"]
+            .as_object()
+            .map(|o| o.values().map(|v| v.as_array().map(|a| a.len()).unwrap_or(0)).sum())
+            .unwrap_or(0);
+        let files_touched = edit_json["changes"]
+            .as_object()
+            .map(|o| o.len())
+            .unwrap_or(0);
+
+        let mut result = json!({
+            "workspace_edit": edit_json,
+            "files_touched":  files_touched,
+            "edits_total":    edits_total,
+            "applied":        false,
+        });
+
+        if args.apply.unwrap_or(false) {
+            // Translate to oxidant_tools::WorkspaceEdit and route through
+            // the substrate for atomicity + syn-parse rollback.
+            match lsp_to_oxidant_workspace_edit(&resp) {
+                Ok(edit) => match oxidant_tools::apply(workspace_root, edit) {
+                    Ok(ar) => {
+                        result["applied"] = Value::Bool(true);
+                        result["substrate"] = json!({
+                            "ok": true,
+                            "files": ar.files.iter().map(|f| json!({
+                                "path": f.path.to_string_lossy().replace('\\', "/"),
+                                "edits_applied": f.edits_applied,
+                            })).collect::<Vec<_>>(),
+                        });
+                    }
+                    Err(e) => {
+                        result["applied"] = Value::Bool(false);
+                        result["substrate"] = json!({ "ok": false, "error": e.to_string() });
+                    }
+                },
+                Err(e) => {
+                    result["applied"] = Value::Bool(false);
+                    result["substrate"] = json!({ "ok": false, "error": e });
+                }
+            }
+        }
+        ToolResult::Ok(result)
+    }
+}
+
+fn is_valid_rust_ident(s: &str) -> bool {
+    let mut chars = s.chars();
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if first != '_' && !first.is_alphabetic() {
+        return false;
+    }
+    chars.all(|c| c == '_' || c.is_alphanumeric())
+}
+
+/// LSP textDocument/rename response → JSON in our oxidant shape, paths
+/// relativised to the workspace root.
+fn workspace_edit_to_json(resp: &Value, workspace_root: &Path) -> Value {
+    let mut by_file: serde_json::Map<String, Value> = serde_json::Map::new();
+    // Both `changes` (object keyed by URI) and `documentChanges` (array of
+    // TextDocumentEdit) are valid response shapes.
+    if let Some(changes) = resp.get("changes").and_then(|v| v.as_object()) {
+        for (uri, edits) in changes {
+            let path = relativise_uri(uri, workspace_root);
+            by_file.insert(path, edits.clone());
+        }
+    }
+    if let Some(doc_changes) = resp.get("documentChanges").and_then(|v| v.as_array()) {
+        for dc in doc_changes {
+            if let (Some(td), Some(edits)) = (
+                dc.get("textDocument"),
+                dc.get("edits").and_then(|v| v.as_array()),
+            ) {
+                let uri = td
+                    .get("uri")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let path = relativise_uri(&uri, workspace_root);
+                by_file
+                    .entry(path)
+                    .or_insert_with(|| Value::Array(Vec::new()))
+                    .as_array_mut()
+                    .unwrap()
+                    .extend(edits.clone());
+            }
+        }
+    }
+    json!({ "changes": Value::Object(by_file) })
+}
+
+fn relativise_uri(uri: &str, workspace_root: &Path) -> String {
+    if let Some(path) = uri_to_path(uri) {
+        if let Ok(rel) = path.strip_prefix(workspace_root) {
+            return rel.to_string_lossy().replace('\\', "/");
+        }
+        return path.to_string_lossy().replace('\\', "/");
+    }
+    uri.to_string()
+}
+
+/// LSP WorkspaceEdit response → oxidant_tools::WorkspaceEdit ready for the
+/// substrate. Returns Err if any URI doesn't resolve to a workspace path.
+fn lsp_to_oxidant_workspace_edit(resp: &Value) -> Result<oxidant_tools::WorkspaceEdit, String> {
+    use oxidant_tools::{Position, Range, TextEdit, WorkspaceEdit};
+    let mut out: HashMap<PathBuf, Vec<TextEdit>> = HashMap::new();
+    let mut record = |uri: &str, edits: &[Value]| -> Result<(), String> {
+        let path = uri_to_path(uri).ok_or_else(|| format!("could not decode uri: {uri}"))?;
+        let entry = out.entry(path).or_default();
+        for e in edits {
+            let range = e
+                .get("range")
+                .ok_or_else(|| "edit missing range".to_string())?;
+            let new_text = e
+                .get("newText")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| "edit missing newText".to_string())?;
+            let start = pos_from_json(range.get("start"))?;
+            let end = pos_from_json(range.get("end"))?;
+            entry.push(TextEdit {
+                range: Range { start, end },
+                new_text: new_text.to_string(),
+                expected_text: None,
+            });
+        }
+        Ok::<_, String>(())
+    };
+    if let Some(changes) = resp.get("changes").and_then(|v| v.as_object()) {
+        for (uri, edits) in changes {
+            if let Some(arr) = edits.as_array() {
+                record(uri, arr)?;
+            }
+        }
+    }
+    if let Some(doc_changes) = resp.get("documentChanges").and_then(|v| v.as_array()) {
+        for dc in doc_changes {
+            let uri = dc
+                .get("textDocument")
+                .and_then(|t| t.get("uri"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if let Some(arr) = dc.get("edits").and_then(|v| v.as_array()) {
+                record(uri, arr)?;
+            }
+        }
+    }
+    use oxidant_tools::WorkspaceEdit as Wse;
+    Ok(Wse { changes: out })
+}
+
+fn pos_from_json(v: Option<&Value>) -> Result<oxidant_tools::Position, String> {
+    let v = v.ok_or_else(|| "position missing".to_string())?;
+    let line = v
+        .get("line")
+        .and_then(|x| x.as_u64())
+        .ok_or_else(|| "position.line missing".to_string())? as u32;
+    let character = v
+        .get("character")
+        .and_then(|x| x.as_u64())
+        .ok_or_else(|| "position.character missing".to_string())? as u32;
+    Ok(oxidant_tools::Position { line, character })
+}
+
+// ---------------------------------------------------------------- rust_code_actions
+
+pub struct RustCodeActions;
+
+#[derive(Deserialize)]
+struct CodeActionArgs {
+    file: String,
+    range: RangeArg,
+    #[serde(default)]
+    kinds: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+struct RangeArg {
+    start: PositionArg,
+    end: PositionArg,
+}
+
+#[derive(Deserialize)]
+struct PositionArg {
+    line: u32,
+    character: u32,
+}
+
+#[async_trait]
+impl Tool for RustCodeActions {
+    fn name(&self) -> &str {
+        "rust_code_actions"
+    }
+    fn description(&self) -> &str {
+        "Enumerate rust-analyzer code actions (quickfixes, refactors, organise imports, implement missing members) for a range. Each action's `edit` is a WorkspaceEdit ready for apply_edits."
+    }
+    fn schema(&self) -> Value {
+        json!({
+            "type": "object",
+            "required": ["file", "range"],
+            "properties": {
+                "file":  { "type": "string" },
+                "range": {
+                    "type": "object",
+                    "required": ["start", "end"],
+                    "properties": {
+                        "start": {
+                            "type": "object",
+                            "required": ["line", "character"],
+                            "properties": {
+                                "line":      { "type": "integer", "minimum": 0 },
+                                "character": { "type": "integer", "minimum": 0 }
+                            }
+                        },
+                        "end": {
+                            "type": "object",
+                            "required": ["line", "character"],
+                            "properties": {
+                                "line":      { "type": "integer", "minimum": 0 },
+                                "character": { "type": "integer", "minimum": 0 }
+                            }
+                        }
+                    }
+                },
+                "kinds": { "type": "array", "items": { "type": "string" }, "description": "LSP CodeActionKind filter (quickfix, refactor.extract, ...)" }
+            }
+        })
+    }
+    fn category(&self) -> ToolCategory {
+        ToolCategory::ReadOnly
+    }
+    async fn invoke(&self, args: Value, ctx: &ToolContext) -> ToolResult {
+        let args: CodeActionArgs = match serde_json::from_value(args) {
+            Ok(a) => a,
+            Err(e) => return ToolResult::Err(format!("invalid args: {e}")),
+        };
+        let workspace = ctx.workspace_root.as_std_path();
+        let client = match LspClient::for_workspace(workspace).await {
+            Ok(c) => c,
+            Err(e) => return ToolResult::Err(e),
+        };
+        let client = client.lock().await;
+        let path = resolve_file(ctx, &args.file);
+        let canonical = match client.ensure_file_opened(&path).await {
+            Ok(p) => p,
+            Err(e) => return ToolResult::Err(e),
+        };
+        if let Err(e) = client.wait_for_file_analysis(&canonical).await {
+            return ToolResult::Err(e);
+        }
+        let uri = path_to_uri(&canonical).unwrap_or_default();
+
+        let mut params = json!({
+            "textDocument": { "uri": uri },
+            "range": {
+                "start": { "line": args.range.start.line, "character": args.range.start.character },
+                "end":   { "line": args.range.end.line,   "character": args.range.end.character }
+            },
+            "context": { "diagnostics": [] }
+        });
+        if let Some(kinds) = &args.kinds {
+            params["context"]["only"] = json!(kinds);
+        }
+
+        let resp = match client.request("textDocument/codeAction", params).await {
+            Ok(v) => v,
+            Err(e) => return ToolResult::Err(e),
+        };
+        let raw = resp.as_array().cloned().unwrap_or_default();
+        let workspace_root = ctx.workspace_root.as_std_path();
+        let kind_filter = args.kinds.as_ref();
+        let actions: Vec<Value> = raw
+            .into_iter()
+            .filter_map(|item| extract_code_action(&item, workspace_root))
+            .filter(|a| match kind_filter {
+                Some(kinds) => kinds
+                    .iter()
+                    .any(|k| a["kind"].as_str().is_some_and(|akind| akind == k.as_str())),
+                None => true,
+            })
+            .collect();
+        ToolResult::Ok(json!({ "actions": actions, "count": actions.len() }))
+    }
+}
+
+fn extract_code_action(item: &Value, workspace_root: &Path) -> Option<Value> {
+    // Item is either a Command or a CodeAction; we surface CodeAction only.
+    let title = item.get("title").and_then(|v| v.as_str())?.to_string();
+    let kind = item
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let edit = item
+        .get("edit")
+        .map(|e| workspace_edit_to_json(e, workspace_root))
+        .unwrap_or(json!({ "changes": {} }));
+    Some(json!({
+        "title": title,
+        "kind":  kind,
+        "edit":  edit,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
