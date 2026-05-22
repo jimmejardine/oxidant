@@ -112,7 +112,14 @@ impl Provider for OpenAIProvider {
 ///
 /// The OpenAI streaming format emits `data: {json}\n\n` events terminated by
 /// `data: [DONE]`. We accumulate bytes, split events on `\n\n`, take each
-/// `data:` value, parse the JSON, and translate to one or more ChatEvents.
+/// `data:` value, parse the JSON, and translate to ChatEvents.
+///
+/// `finish_reason` and `usage` may arrive in the same chunk (OpenAI with
+/// `include_usage: true`) or in separate chunks (textgen-webui sends usage
+/// in a final empty-choices chunk after the finish_reason chunk). To avoid
+/// emitting two Finish events, we accumulate stop_reason and usage across
+/// chunks and yield exactly one Finish — either when [DONE] arrives or
+/// when the byte stream closes.
 fn sse_event_stream<S>(
     mut byte_stream: S,
 ) -> impl futures::Stream<Item = ChatEvent> + Send + 'static
@@ -122,9 +129,10 @@ where
     let inner = try_stream! {
         let mut buffer = String::new();
         let mut tool_calls: HashMap<u32, ToolCallState> = HashMap::new();
-        let mut sent_finish = false;
+        let mut pending_stop: Option<StopReason> = None;
+        let mut pending_usage: Usage = Usage::default();
 
-        while let Some(chunk) = byte_stream.next().await {
+        'outer: while let Some(chunk) = byte_stream.next().await {
             let chunk = chunk.map_err(|e| anyhow!("network error reading SSE stream: {e}"))?;
             buffer.push_str(&String::from_utf8_lossy(&chunk));
 
@@ -136,18 +144,7 @@ where
                     continue;
                 };
                 if data.trim() == "[DONE]" {
-                    if !sent_finish {
-                        // Some local servers (Ollama) omit usage entirely and
-                        // skip a final chunk with finish_reason. Synthesise.
-                        for state in tool_calls.values() {
-                            yield ChatEvent::ToolUseEnd { id: state.id.clone() };
-                        }
-                        yield ChatEvent::Finish {
-                            stop_reason: StopReason::EndTurn,
-                            usage: Usage::default(),
-                        };
-                    }
-                    return;
+                    break 'outer;
                 }
 
                 let chunk_json: ChatCompletionChunk = match serde_json::from_str(&data) {
@@ -157,14 +154,29 @@ where
                         continue;
                     }
                 };
-                for event in translate_chunk(&chunk_json, &mut tool_calls) {
-                    if matches!(event, ChatEvent::Finish { .. }) {
-                        sent_finish = true;
-                    }
+                let outcome = translate_chunk(&chunk_json, &mut tool_calls);
+                for event in outcome.events {
                     yield event;
+                }
+                if let Some(stop) = outcome.stop_reason {
+                    pending_stop = Some(stop);
+                }
+                if let Some(u) = outcome.usage {
+                    pending_usage = u;
                 }
             }
         }
+
+        // Single Finish at the end — whether [DONE] arrived or the connection
+        // closed without one. Emit ToolUseEnd for any still-open tool calls
+        // before Finish, matching the contract that ToolUseEnd precedes Finish.
+        for state in tool_calls.values() {
+            yield ChatEvent::ToolUseEnd { id: state.id.clone() };
+        }
+        yield ChatEvent::Finish {
+            stop_reason: pending_stop.unwrap_or(StopReason::EndTurn),
+            usage: pending_usage,
+        };
     };
 
     // Convert errors yielded inside try_stream! into ChatEvent::Error so the
@@ -214,72 +226,66 @@ struct ToolCallState {
     name: String,
 }
 
+struct ChunkOutcome {
+    /// Streamable events (TextDelta, ToolUseStart, ToolUseInputDelta). Finish
+    /// is deliberately not in here — see sse_event_stream's comment.
+    events: Vec<ChatEvent>,
+    stop_reason: Option<StopReason>,
+    usage: Option<Usage>,
+}
+
 fn translate_chunk(
     chunk: &ChatCompletionChunk,
     tool_calls: &mut HashMap<u32, ToolCallState>,
-) -> Vec<ChatEvent> {
-    let mut out = Vec::new();
-    let Some(choice) = chunk.choices.first() else {
-        // Some servers emit a final usage-only chunk with no choices.
-        if let Some(usage) = chunk.usage.as_ref() {
-            out.push(ChatEvent::Finish {
-                stop_reason: StopReason::EndTurn,
-                usage: usage.into_oxidant(),
-            });
-        }
-        return out;
-    };
+) -> ChunkOutcome {
+    let mut events = Vec::new();
+    let mut stop_reason = None;
+    let usage = chunk.usage.as_ref().map(|u| u.into_oxidant());
 
-    let delta = &choice.delta;
-    if let Some(text) = delta.content.as_deref() {
-        if !text.is_empty() {
-            out.push(ChatEvent::TextDelta(text.to_string()));
-        }
-    }
-
-    if let Some(tcs) = &delta.tool_calls {
-        for tc in tcs {
-            let index = tc.index;
-            let state = tool_calls.entry(index).or_default();
-            let is_new = state.id.is_empty();
-            if let Some(id) = &tc.id {
-                state.id = id.clone();
+    if let Some(choice) = chunk.choices.first() {
+        let delta = &choice.delta;
+        if let Some(text) = delta.content.as_deref() {
+            if !text.is_empty() {
+                events.push(ChatEvent::TextDelta(text.to_string()));
             }
-            if let Some(func) = &tc.function {
-                if let Some(name) = &func.name {
-                    state.name = name.clone();
+        }
+
+        if let Some(tcs) = &delta.tool_calls {
+            for tc in tcs {
+                let index = tc.index;
+                let state = tool_calls.entry(index).or_default();
+                let is_new = state.id.is_empty();
+                if let Some(id) = &tc.id {
+                    state.id = id.clone();
                 }
-                if is_new && !state.id.is_empty() && !state.name.is_empty() {
-                    out.push(ChatEvent::ToolUseStart {
-                        id: state.id.clone(),
-                        name: state.name.clone(),
-                    });
-                }
-                if let Some(args) = &func.arguments {
-                    if !args.is_empty() && !state.id.is_empty() {
-                        out.push(ChatEvent::ToolUseInputDelta {
+                if let Some(func) = &tc.function {
+                    if let Some(name) = &func.name {
+                        state.name = name.clone();
+                    }
+                    if is_new && !state.id.is_empty() && !state.name.is_empty() {
+                        events.push(ChatEvent::ToolUseStart {
                             id: state.id.clone(),
-                            json_delta: args.clone(),
+                            name: state.name.clone(),
                         });
+                    }
+                    if let Some(args) = &func.arguments {
+                        if !args.is_empty() && !state.id.is_empty() {
+                            events.push(ChatEvent::ToolUseInputDelta {
+                                id: state.id.clone(),
+                                json_delta: args.clone(),
+                            });
+                        }
                     }
                 }
             }
         }
-    }
 
-    if let Some(reason) = &choice.finish_reason {
-        // Emit ToolUseEnd for every active tool call before Finish.
-        for state in tool_calls.values() {
-            out.push(ChatEvent::ToolUseEnd { id: state.id.clone() });
+        if let Some(reason) = &choice.finish_reason {
+            stop_reason = Some(parse_finish_reason(reason));
         }
-        let usage = chunk.usage.as_ref().map(|u| u.into_oxidant()).unwrap_or_default();
-        out.push(ChatEvent::Finish {
-            stop_reason: parse_finish_reason(reason),
-            usage,
-        });
     }
 
-    out
+    ChunkOutcome { events, stop_reason, usage }
 }
 
 fn parse_finish_reason(s: &str) -> StopReason {

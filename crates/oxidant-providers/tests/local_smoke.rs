@@ -1,11 +1,11 @@
 // Live smoke test against a local OpenAI-compatible server.
 //
-// Marked #[ignore] so cargo test doesn't require LM Studio / Ollama running.
+// Marked #[ignore] so cargo test doesn't require a local server running.
 // Run manually with:
 //   cargo test -p oxidant-providers --test local_smoke -- --ignored --nocapture
 //
 // Override defaults via env vars:
-//   OXIDANT_LOCAL_BASE_URL  default http://localhost:1234/v1 (LM Studio)
+//   OXIDANT_LOCAL_BASE_URL  default http://localhost:5000/v1 (textgen-webui)
 //   OXIDANT_LOCAL_MODEL     default: first model returned by GET /v1/models
 
 use futures::StreamExt;
@@ -18,30 +18,27 @@ use oxidant_providers::{
 #[ignore = "requires a running local OpenAI-compatible server"]
 async fn streams_a_short_completion() {
     let base_url = std::env::var("OXIDANT_LOCAL_BASE_URL")
-        .unwrap_or_else(|_| "http://localhost:1234/v1".to_string());
+        .unwrap_or_else(|_| "http://localhost:5000/v1".to_string());
 
     let config = OllamaConfig {
         base_url: base_url.clone(),
-        ..OllamaConfig::lmstudio()
+        ..OllamaConfig::textgen()
     };
 
-    let model = std::env::var("OXIDANT_LOCAL_MODEL")
-        .ok()
-        .unwrap_or_else(|| {
-            // Block on a quick /v1/models lookup. tokio::test wraps us in
-            // a runtime; reuse it via Handle.
+    let model = match std::env::var("OXIDANT_LOCAL_MODEL") {
+        Ok(m) => m,
+        Err(_) => {
             let url = format!("{}/models", base_url.trim_end_matches('/'));
-            let body = reqwest::blocking::get(&url)
-                .expect("local server reachable")
-                .text()
-                .expect("model list response");
+            let resp = reqwest::get(&url).await.expect("local server reachable");
+            let body = resp.text().await.expect("model list response");
             let parsed: serde_json::Value =
                 serde_json::from_str(&body).expect("parse /v1/models JSON");
             parsed["data"][0]["id"]
                 .as_str()
                 .expect("at least one model loaded")
                 .to_string()
-        });
+        }
+    };
 
     eprintln!("smoke: endpoint={base_url} model={model}");
 

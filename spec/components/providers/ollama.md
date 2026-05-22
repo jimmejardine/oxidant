@@ -19,7 +19,7 @@ A thin wrapper around [[components/providers/openai]] with conservative defaults
 
 ## Configuration
 
-- Default `base_url`: `http://localhost:11434/v1` (Ollama). llama.cpp's `server` listens on `http://localhost:8080/v1`, LM Studio on `http://localhost:1234/v1` — same path, just configure.
+- Default `base_url`: `http://localhost:11434/v1` (Ollama). llama.cpp's `server` listens on `http://localhost:8080/v1`, LM Studio on `http://localhost:1234/v1`, text-generation-webui (oobabooga) on `http://localhost:5000/v1` — same path, just configure.
 - Auth: none by default; bearer token configurable for protected deployments.
 
 ## Capability defaults (vs OpenAI)
@@ -39,6 +39,14 @@ Most code paths overlap, but:
 
 These differences are small enough that internally `OllamaProvider` holds an `OpenAIProvider` and overrides only the deltas.
 
-## Same path for llama.cpp and LM Studio
+## Same path for llama.cpp, LM Studio, and text-generation-webui
 
-This component is the catch-all for local OpenAI-compatible servers. Point it at llama.cpp's `server` binary (`./server -m model.gguf --port 8080 --api`), at LM Studio's local server (typically `http://localhost:1234/v1`), or at any other OpenAI-compatible local endpoint — no separate `LlamaCppProvider` or `LMStudioProvider` needed. The type name `OllamaProvider` is historical; the responsibility is "local OpenAI-compatible server with conservative defaults".
+This component is the catch-all for local OpenAI-compatible servers. Point it at llama.cpp's `server` binary (`./server -m model.gguf --port 8080 --api`), LM Studio's local server (typically `http://localhost:1234/v1`), text-generation-webui (oobabooga) with the OpenAI extension enabled (`http://localhost:5000/v1`), or any other OpenAI-compatible local endpoint — no separate per-runner provider type needed. The type name `OllamaProvider` is historical; the responsibility is "local OpenAI-compatible server with conservative defaults".
+
+## Server quirks to tolerate
+
+OpenAI-compatible local servers vary in how strictly they follow the streaming spec. Known quirks the provider absorbs:
+
+- **Split `finish_reason` and `usage`**: text-generation-webui emits `finish_reason` in one chunk and `usage` in a subsequent empty-choices chunk. The provider accumulates both and emits exactly one `Finish` ChatEvent — see [[contracts/provider]] for the contract that streams complete with exactly one `Finish`.
+- **Omitted `usage`**: Ollama may not include usage at all. `Finish.usage` falls back to `Usage::default()`.
+- **Sparse `tool_calls`**: some models emit malformed or no `tool_calls` even when the request includes tool schemas. The provider yields whatever the model produces; the agent loop is responsible for handling missing/invalid tool calls.

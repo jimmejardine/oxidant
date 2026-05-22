@@ -1,9 +1,11 @@
 // Quick streaming chat against any local OpenAI-compatible server.
 //
-// LM Studio default:  cargo run -p oxidant-providers --example local_chat -- "hello"
-// Ollama:             cargo run -p oxidant-providers --example local_chat -- --preset ollama "hello"
-// Pinned model:       cargo run -p oxidant-providers --example local_chat -- --model qwen2.5-coder-32b-instruct "hello"
-// Custom endpoint:    cargo run -p oxidant-providers --example local_chat -- --base-url http://localhost:9999/v1 "hello"
+// textgen-webui default: cargo run -p oxidant-providers --example local_chat -- "hello"
+// LM Studio:             cargo run -p oxidant-providers --example local_chat -- --preset lmstudio "hello"
+// Ollama:                cargo run -p oxidant-providers --example local_chat -- --preset ollama "hello"
+// llama.cpp server:      cargo run -p oxidant-providers --example local_chat -- --preset llamacpp "hello"
+// Pinned model:          cargo run -p oxidant-providers --example local_chat -- --model qwen2.5-coder-32b-instruct "hello"
+// Custom endpoint:       cargo run -p oxidant-providers --example local_chat -- --base-url http://localhost:9999/v1 "hello"
 //
 // If --model is omitted, the example queries /v1/models and uses the first one
 // loaded — so it "just works" against whatever LM Studio currently has open.
@@ -20,8 +22,8 @@ use oxidant_providers::{
 #[derive(Parser, Debug)]
 #[command(about = "Stream a chat completion from a local OpenAI-compatible server")]
 struct Args {
-    /// Server preset: lmstudio | ollama | llamacpp
-    #[arg(long, default_value = "lmstudio")]
+    /// Server preset: textgen | lmstudio | ollama | llamacpp
+    #[arg(long, default_value = "textgen")]
     preset: String,
 
     /// Override the base URL (e.g. http://localhost:1234/v1)
@@ -64,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
         "ollama" => OllamaConfig::ollama(),
         "llamacpp" => OllamaConfig::llamacpp(),
         "lmstudio" => OllamaConfig::lmstudio(),
+        "textgen" => OllamaConfig::textgen(),
         other => OllamaConfig::custom(format!("http://localhost:{}/v1", other)),
     };
     if let Some(url) = args.base_url {

@@ -50,6 +50,17 @@ impl OllamaConfig {
         }
     }
 
+    /// text-generation-webui (oobabooga) defaults: `http://localhost:5000/v1`,
+    /// no auth. The OpenAI-compatible API extension must be enabled in the UI.
+    pub fn textgen() -> Self {
+        Self {
+            base_url: "http://localhost:5000/v1".to_string(),
+            api_key: None,
+            name: "textgen".to_string(),
+            capabilities: local_capabilities(32_768),
+        }
+    }
+
     /// Configure the base URL freely; name defaults to "local-openai".
     pub fn custom(base_url: impl Into<String>) -> Self {
         Self {
