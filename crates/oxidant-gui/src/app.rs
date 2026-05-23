@@ -16,7 +16,8 @@ use oxidant_core::{Exploration, ToolRegistry};
 use oxidant_providers::{ChatEvent, Provider, StopReason, Usage};
 
 use crate::dock::{
-    DockTab, default_layout, is_tab_open, open_tab, reset_layout_preserving_files, singleton_tabs,
+    DockTab, default_layout, is_tab_open, open_in_centre, open_tab, reset_layout_preserving_files,
+    singleton_tabs,
 };
 use crate::panels::{
     chat_input::ChatInputPanel, diagnostic::DiagnosticPanel,
@@ -278,7 +279,11 @@ impl eframe::App for App {
         };
         if !pending.is_empty() {
             for tab in pending {
-                open_tab(&mut self.dock, tab);
+                // Pending tabs are always centre-area opens (the only
+                // current caller is the spec-tree double-click, which
+                // wants the new tab next to Transcript, not on the
+                // left next to the spec tree itself).
+                open_in_centre(&mut self.dock, tab);
             }
             ctx.request_repaint();
         }

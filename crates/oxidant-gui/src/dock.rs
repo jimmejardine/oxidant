@@ -94,6 +94,44 @@ pub fn open_tab(state: &mut DockState<DockTab>, tab: DockTab) {
     state.push_to_focused_leaf(tab);
 }
 
+/// Insert `tab` into the **centre** dock area, regardless of which leaf
+/// currently has focus. Used for File tabs requested by panels that
+/// don't own the dock (the spec-tree double-click flow): without this,
+/// the new tab would land next to the spec tree on the left, since
+/// double-clicking inside the spec tree leaves that leaf focused.
+///
+/// "Centre" = the leaf currently holding the `Transcript` tab. If
+/// Transcript has been closed, falls back to any leaf already holding
+/// a `File` tab, then to the focused leaf as a last resort.
+///
+/// If `tab` is already open, focuses it instead of duplicating.
+pub fn open_in_centre(state: &mut DockState<DockTab>, tab: DockTab) {
+    if let Some(loc) = state.find_tab(&tab) {
+        state.set_active_tab(loc);
+        state.set_focused_node_and_surface((loc.0, loc.1));
+        return;
+    }
+    let centre = centre_node(state);
+    if let Some((surface, node)) = centre {
+        state.set_focused_node_and_surface((surface, node));
+    }
+    state.push_to_focused_leaf(tab);
+}
+
+fn centre_node(
+    state: &DockState<DockTab>,
+) -> Option<(egui_dock::SurfaceIndex, egui_dock::NodeIndex)> {
+    if let Some((s, n, _)) = state.find_tab(&DockTab::Transcript) {
+        return Some((s, n));
+    }
+    for ((s, n), t) in state.iter_all_tabs() {
+        if matches!(t, DockTab::File { .. }) {
+            return Some((s, n));
+        }
+    }
+    None
+}
+
 /// Rebuild the default layout, but carry over any opened file tabs as
 /// centre-tab children of the new tree so the user doesn't lose them.
 pub fn reset_layout_preserving_files(state: &DockState<DockTab>) -> DockState<DockTab> {
@@ -146,6 +184,54 @@ mod tests {
         open_tab(&mut state, DockTab::Transcript);
         let after: usize = state.iter_all_tabs().count();
         assert_eq!(before, after, "open_tab duplicated an already-open tab");
+    }
+
+    #[test]
+    fn open_in_centre_lands_in_transcript_leaf_not_focused_leaf() {
+        let mut state = default_layout();
+        // Simulate the bug condition: focus the spec-tree leaf, the way
+        // a click inside the spec-tree panel would.
+        let (s, n, _) = state
+            .find_tab(&DockTab::SpecTree)
+            .expect("default layout has SpecTree");
+        state.set_focused_node_and_surface((s, n));
+
+        let file = DockTab::File {
+            path: PathBuf::from("spec/overview.md"),
+            source: FileSource::Spec,
+        };
+        open_in_centre(&mut state, file.clone());
+
+        let (transcript_s, transcript_n, _) = state
+            .find_tab(&DockTab::Transcript)
+            .expect("transcript still present");
+        let (file_s, file_n, _) = state.find_tab(&file).expect("file tab inserted");
+        assert_eq!(
+            (transcript_s, transcript_n),
+            (file_s, file_n),
+            "open_in_centre put the file tab in a different leaf from Transcript"
+        );
+    }
+
+    #[test]
+    fn open_in_centre_focuses_existing_tab_instead_of_duplicating() {
+        let mut state = default_layout();
+        let file = DockTab::File {
+            path: PathBuf::from("spec/overview.md"),
+            source: FileSource::Spec,
+        };
+        open_in_centre(&mut state, file.clone());
+        let count_before: usize = state
+            .iter_all_tabs()
+            .filter(|(_, t)| **t == file)
+            .count();
+        assert_eq!(count_before, 1);
+        open_in_centre(&mut state, file.clone());
+        let count_after: usize = state
+            .iter_all_tabs()
+            .filter(|(_, t)| **t == file)
+            .count();
+        assert_eq!(count_after, 1, "open_in_centre duplicated an open tab");
     }
 
     #[test]

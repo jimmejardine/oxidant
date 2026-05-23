@@ -52,6 +52,10 @@ The viewport's top menu bar carries a **Window** menu so a user can recover from
 
 File tabs (`DockTab::File { … }`) are not listed in the Window menu — they are opened from the spec tree or by following a navigation result. A recent-files history is out of scope for the MVP.
 
+## Centre-area opens (`open_in_centre`)
+
+File tabs requested from side panels (the spec-tree double-click is the current example) MUST be opened via `open_in_centre`, not the focus-bound `open_tab`. The helper locates the leaf currently holding the `Transcript` tab and pushes there, so new file tabs always dock alongside Transcript regardless of which panel triggered them. If `Transcript` has been closed, the helper falls back to any leaf already holding a `File` tab, then to the focused leaf. If the requested tab is already open, the helper focuses it rather than duplicating.
+
 ## Reset layout
 
 A menu command rebuilds the default layout and clears `dock-layout.json`. Opened files are preserved as centre tabs.

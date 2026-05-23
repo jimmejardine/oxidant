@@ -52,7 +52,9 @@ Tooltip on hover gives last-modified timestamp + commit subject.
 - Right-click: context menu — Reveal in code (jumps to first `code:` path), Show inbound refs, Show outbound refs, Show drift.
 - Drag onto a chat input: inserts the canonical ref as a `[[ref]]`.
 
-The double-click handler MUST NOT mutate the dock directly — the spec-tree panel is rendered inside `egui_dock`'s `TabViewer::ui`, which doesn't see the `DockState`. Instead it pushes a `DockTab::File { ..., source: Spec }` onto `SharedState::pending_centre_tabs`; the host viewport drains that queue after `DockArea::show` and inserts the tab via [[components/gui/dock-layout]]'s `open_tab` helper.
+The double-click handler MUST NOT mutate the dock directly — the spec-tree panel is rendered inside `egui_dock`'s `TabViewer::ui`, which doesn't see the `DockState`. Instead it pushes a `DockTab::File { ..., source: Spec }` onto `SharedState::pending_centre_tabs`; the host viewport drains that queue after `DockArea::show` and inserts the tab via [[components/gui/dock-layout]]'s `open_in_centre` helper.
+
+`open_in_centre` (NOT `open_tab`) is required because `push_to_focused_leaf` would put the new tab next to the spec tree on the left — the spec-tree leaf is what gained focus on the double-click. `open_in_centre` finds the leaf currently containing the `Transcript` tab and pushes there, so file tabs always dock alongside Transcript regardless of which side panel triggered the open.
 
 ## Backing query
 
