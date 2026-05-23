@@ -21,8 +21,8 @@ use crate::dock::{
 };
 use crate::panels::{
     chat_input::ChatInputPanel, diagnostic::DiagnosticPanel,
-    exploration_list::ExplorationListPanel, file_tab::FileTabPanel, spec_tree::SpecTreePanel,
-    transcript::TranscriptPanel,
+    exploration_list::ExplorationListPanel, file_tab::FileTabPanel, file_tree::FileTreePanel,
+    spec_tree::SpecTreePanel, transcript::TranscriptPanel,
 };
 use crate::theme::{self, Theme};
 use crate::viewport::ViewportConfig;
@@ -35,6 +35,7 @@ pub struct App {
     event_tx: UnboundedSender<AgentEvent>,
     chat_panel: ChatInputPanel,
     spec_panel: SpecTreePanel,
+    file_tree_panel: FileTreePanel,
     diag_panel: DiagnosticPanel,
     /// Currently-active theme. Mirrors what `theme::apply` recorded;
     /// kept here so the View → Theme submenu can render the radio
@@ -174,10 +175,12 @@ impl App {
         let (event_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
 
         let spec_panel = SpecTreePanel::new(config.workspace_root.clone());
+        let file_tree_panel = FileTreePanel::new(config.workspace_root.clone());
         let active_theme = config.theme;
         Self {
             chat_panel: ChatInputPanel::new(),
             spec_panel,
+            file_tree_panel,
             diag_panel: DiagnosticPanel::new(),
             config,
             dock: default_layout(),
@@ -256,6 +259,7 @@ impl eframe::App for App {
             state: self.state.clone(),
             chat_panel: &mut self.chat_panel,
             spec_panel: &mut self.spec_panel,
+            file_tree_panel: &mut self.file_tree_panel,
             diag_panel: &mut self.diag_panel,
             event_tx: self.event_tx.clone(),
             tokio_handle: self.config.tokio_handle.clone(),
@@ -332,6 +336,7 @@ pub(crate) struct TabViewer<'a> {
     pub state: Arc<StdMutex<SharedState>>,
     pub chat_panel: &'a mut ChatInputPanel,
     pub spec_panel: &'a mut SpecTreePanel,
+    pub file_tree_panel: &'a mut FileTreePanel,
     pub diag_panel: &'a mut DiagnosticPanel,
     pub event_tx: UnboundedSender<AgentEvent>,
     pub tokio_handle: Handle,
@@ -357,6 +362,9 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
             }
             DockTab::SpecTree => {
                 self.spec_panel.render(ui, &self.state);
+            }
+            DockTab::FileTree => {
+                self.file_tree_panel.render(ui, &self.state);
             }
             DockTab::ExplorationList => {
                 ExplorationListPanel.render(ui, &self.workspace_root);

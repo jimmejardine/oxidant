@@ -6,6 +6,7 @@
 //   spec/components/gui/transcript-tab.md
 //   spec/components/gui/chat-input-panel.md
 //   spec/components/gui/spec-tree-panel.md
+//   spec/components/gui/file-tree-panel.md
 //   spec/components/gui/diagnostic-panel.md
 //   spec/components/gui/file-tabs.md
 //   spec/components/gui/exploration-list.md
@@ -15,6 +16,7 @@
 
 pub mod app;
 pub mod dock;
+pub mod highlighter;
 pub mod panels;
 pub mod theme;
 pub mod viewport;

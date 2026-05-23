@@ -17,8 +17,8 @@ The dock manager lives via `egui_dock::DockArea`. Each exploration's viewport ow
 ## Default layout (per viewport)
 
 ```
-LEFT:    [spec_tree, exploration_list, validate_warnings]    (tab group)
-CENTRE:  [transcript, ...opened_files]                       (tab group; transcript is the home tab)
+LEFT:    [spec_tree, file_tree, exploration_list, validate_warnings]    (tab group)
+CENTRE:  [transcript, ...opened_files]                                  (tab group; transcript is the home tab)
 RIGHT:   [diagnostic_preview]
 BOTTOM:  [chat_input]
 ```
@@ -29,6 +29,7 @@ BOTTOM:  [chat_input]
 pub enum DockTab {
     Transcript,
     SpecTree,
+    FileTree,
     ExplorationList,
     ValidateWarnings,
     DiagnosticPreview,
@@ -65,6 +66,7 @@ A menu command rebuilds the default layout and clears `dock-layout.json`. Opened
 Each `DockTab` variant's render is delegated to its panel component:
 - `Transcript` → [[components/gui/transcript-tab]]
 - `SpecTree` → [[components/gui/spec-tree-panel]]
+- `FileTree` → [[components/gui/file-tree-panel]]
 - `ExplorationList` → [[components/gui/exploration-list]]
 - `ValidateWarnings` → handled inline (small surface)
 - `DiagnosticPreview` → [[components/gui/diagnostic-panel]]

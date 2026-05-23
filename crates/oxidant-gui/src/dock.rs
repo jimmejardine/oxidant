@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 pub enum DockTab {
     Transcript,
     SpecTree,
+    FileTree,
     ExplorationList,
     DiagnosticPreview,
     ChatInput,
@@ -32,6 +33,7 @@ impl DockTab {
         match self {
             DockTab::Transcript => "Transcript".into(),
             DockTab::SpecTree => "Specs".into(),
+            DockTab::FileTree => "Files".into(),
             DockTab::ExplorationList => "Explorations".into(),
             DockTab::DiagnosticPreview => "Diagnostics".into(),
             DockTab::ChatInput => "Chat".into(),
@@ -55,7 +57,11 @@ pub fn default_layout() -> DockState<DockTab> {
     let [_centre, left] = surface.split_left(
         root,
         0.22,
-        vec![DockTab::SpecTree, DockTab::ExplorationList],
+        vec![
+            DockTab::SpecTree,
+            DockTab::FileTree,
+            DockTab::ExplorationList,
+        ],
     );
     let [_centre, _right] =
         surface.split_right(NodeIndex::root(), 0.78, vec![DockTab::DiagnosticPreview]);
@@ -67,10 +73,11 @@ pub fn default_layout() -> DockState<DockTab> {
 /// The singletons offered in the Window menu. Order matches the spec
 /// (transcript, specs, explorations, diagnostics, chat). File tabs are
 /// excluded — they have their own discovery flow.
-pub fn singleton_tabs() -> [DockTab; 5] {
+pub fn singleton_tabs() -> [DockTab; 6] {
     [
         DockTab::Transcript,
         DockTab::SpecTree,
+        DockTab::FileTree,
         DockTab::ExplorationList,
         DockTab::DiagnosticPreview,
         DockTab::ChatInput,

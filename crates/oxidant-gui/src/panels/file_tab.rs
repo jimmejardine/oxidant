@@ -1,21 +1,21 @@
 // Realises spec/components/gui/file-tabs.md.
 //
-// Two modes:
-//   Code source  → read-only monospace view. The agent makes the edits.
-//   Spec source  → multi-line editor with Save. Specs are canonical
-//                  (decision 0008) and the user editing one is the
-//                  normal path. Per-tab buffers live in
-//                  SharedState::editor_buffers so closing+reopening a
-//                  tab preserves unsaved work.
+// One mode now: an editable text editor with syntect-driven syntax
+// highlighting (per the spec's "Render" section). The FileSource tag
+// only changes the editor's "(editable spec)" / "(editable code)"
+// hint and which syntax the highlighter picks. Code edits are
+// allowed — the user accepted that trade-off when the file tree
+// shipped; see "Editability across sources" in the spec.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::SystemTime;
 
-use egui::{Color32, RichText};
+use egui::{Color32, FontId, RichText};
 
 use crate::app::{EditorBuffer, SharedState};
 use crate::dock::FileSource;
+use crate::highlighter;
 use crate::theme;
 
 pub struct FileTabPanel;
@@ -39,43 +39,15 @@ impl FileTabPanel {
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .unwrap_or_else(|_| absolute.to_string_lossy().to_string());
 
-        match source {
-            FileSource::Code => render_code(ui, &header_path, &absolute),
-            FileSource::Spec => render_spec_editor(ui, &header_path, &absolute, state),
-        }
+        render_editor(ui, &header_path, &absolute, source, state);
     }
 }
 
-fn render_code(ui: &mut egui::Ui, header_path: &str, absolute: &Path) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(header_path).strong());
-        ui.label(
-            RichText::new("(read-only — edits go through the agent)").color(theme::muted_text()),
-        );
-    });
-    ui.separator();
-
-    match std::fs::read_to_string(absolute) {
-        Ok(content) => {
-            egui::ScrollArea::both()
-                .auto_shrink([false; 2])
-                .show(ui, |ui| {
-                    ui.code(content);
-                });
-        }
-        Err(e) => {
-            ui.label(
-                RichText::new(format!("could not read {}: {e}", absolute.display()))
-                    .color(Color32::RED),
-            );
-        }
-    }
-}
-
-fn render_spec_editor(
+fn render_editor(
     ui: &mut egui::Ui,
     header_path: &str,
     absolute: &Path,
+    source: FileSource,
     state: &Arc<StdMutex<SharedState>>,
 ) {
     // Load on first sight, or surface a load error.
@@ -143,7 +115,7 @@ fn render_spec_editor(
             header_path.to_string()
         };
         ui.label(RichText::new(title).strong());
-        ui.label(RichText::new("(editable spec)").color(theme::muted_text()));
+        ui.label(RichText::new(source_label(source)).color(theme::muted_text()));
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let save_resp = ui.add_enabled(buf.dirty, egui::Button::new("Save"));
@@ -180,8 +152,15 @@ fn render_spec_editor(
 
     ui.separator();
 
-    // Editor body.
+    // Editor body with syntect-driven syntax highlighting through the
+    // TextEdit `layouter` callback.
     let text_before = buf.text.clone();
+    let path_for_layout = absolute.to_path_buf();
+    let font_id = FontId::monospace(13.0);
+    let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+        let job = highlighter::highlight(&path_for_layout, text, font_id.clone(), wrap_width);
+        ui.fonts(|f| f.layout_job(job))
+    };
     egui::ScrollArea::both()
         .auto_shrink([false; 2])
         .show(ui, |ui| {
@@ -189,7 +168,8 @@ fn render_spec_editor(
                 [ui.available_width(), ui.available_height().max(120.0)],
                 egui::TextEdit::multiline(&mut buf.text)
                     .code_editor()
-                    .desired_rows(20),
+                    .desired_rows(20)
+                    .layouter(&mut layouter),
             );
         });
     if buf.text != text_before {
@@ -197,7 +177,6 @@ fn render_spec_editor(
     }
 
     // Apply actions in this order: discard / reload (destructive) → save.
-    // Save reads the freshly-edited buf.text below.
     if do_discard || do_reload {
         match std::fs::read_to_string(absolute) {
             Ok(t) => {
@@ -226,6 +205,13 @@ fn render_spec_editor(
     // Write the working copy back into shared state.
     if let Ok(mut s) = state.lock() {
         s.editor_buffers.insert(absolute.to_path_buf(), buf);
+    }
+}
+
+fn source_label(source: FileSource) -> &'static str {
+    match source {
+        FileSource::Code => "(editable code — competes with the agent's edits)",
+        FileSource::Spec => "(editable spec)",
     }
 }
 

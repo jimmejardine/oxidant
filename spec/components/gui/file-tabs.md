@@ -17,8 +17,10 @@ Opened files dock as siblings of the [[components/gui/transcript-tab]] in the ce
 
 ## File sources
 
-- **Code**: `crates/**/*.rs`, `Cargo.toml`, etc. Read from disk; live-reloaded on `notify` events. Read-only in MVP; edit happens via the agent (`apply_edits` / `edit_string`).
+- **Code**: `crates/**/*.rs`, `Cargo.toml`, and anything else opened from [[components/gui/file-tree-panel]]. **Editable** via the same flow as Spec. Letting the user hand-edit code while the agent is also editing it does risk contention with `expected_text` checks; the user accepts that trade-off in exchange for being able to make targeted manual fixes without round-tripping through the chat. v2 may add a soft lock against the agent while a code tab is dirty.
 - **Spec**: `spec/**/*.md`. **Editable** — opened via double-click from the spec tree. Rendered as a raw multi-line text editor with a Save button; the markdown preview toggle lands later. Edits are flushed to disk only when the user presses Save. While unsaved, the tab title carries a `●` marker.
+
+Both sources share the edit-lifecycle, the on-disk-changed banner, and the same `SharedState::editor_buffers` map. The only difference is which syntax definition the highlighter loads.
 
 ### Edit lifecycle for specs
 
@@ -31,8 +33,20 @@ The buffer survives a tab close+reopen — the user can dock-close a spec tab wi
 
 ## Render
 
-- Code: `syntect`-tokenised via the `egui_syntax_highlight` (or in-house) helper. Line numbers in a gutter. Diagnostic markers (red squiggle / yellow underline) overlaid from [[components/gui/diagnostic-panel]] data.
-- Spec markdown: rendered via `egui_commonmark`. A toggle switches to raw view for cases where the user wants to read the source.
+Both Code and Spec render through the same multi-line `egui::TextEdit` with a `layouter` callback that paints **syntect-driven syntax highlighting** in place. The highlighter lives in `crates/oxidant-gui/src/highlighter.rs` and:
+
+- Picks the syntect `SyntaxReference` by file extension (`.rs` → Rust, `.md` → Markdown, `.toml` → TOML, falling back to plain text on unknown extensions).
+- Caches `SyntaxSet` and `ThemeSet` in a `OnceLock` so subsequent edits don't repay parsing cost.
+- Maps the active oxidant theme ([[components/gui/theme]]) onto a syntect highlighting theme:
+  - Espresso, Monokai → `Monokai`
+  - Dracula → `Solarized (dark)` (closest dark contrast match in syntect's defaults)
+  - One Dark → `base16-ocean.dark`
+  - Classic Dark → `base16-eighties.dark`
+- Returns an `egui::text::LayoutJob` per visible line so the TextEdit lays out coloured spans without us shipping our own glyph cache.
+
+Line numbers and diagnostic markers (red squiggle / yellow underline overlaid from [[components/gui/diagnostic-panel]] data) land in a follow-up — the highlighter contract is already shaped for that.
+
+Markdown preview via `egui_commonmark` is a deferred toggle; for now spec files render as highlighted raw markdown, which is what the user double-clicks expecting to edit anyway.
 
 ## Navigation actions
 
@@ -44,6 +58,6 @@ The buffer survives a tab close+reopen — the user can dock-close a spec tab wi
 
 `<filename>` with a unicode marker `●` when there's an unread diagnostic on this file. Path on hover.
 
-## Why specs are editable but code isn't
+## Editability across sources
 
-Specs are the canonical source per [[decisions/0008-spec-is-canonical]], so the user editing one is the *normal* path — every spec change starts as a manual edit. Letting the user hand-edit code while the agent is also editing it, by contrast, creates contention with `expected_text` checks and obscures who changed what. v2 may add a "manual edit mode" for code with a soft lock on the agent.
+Specs are the canonical source per [[decisions/0008-spec-is-canonical]], so the user editing one is the *normal* path — every spec change starts as a manual edit. Code is editable too as of the file-tree work, on the user's call: the contention with the agent's `expected_text` writes is acknowledged and explicit (see the "Code" bullet under File sources). The conservative position of v0 (code read-only) was reversed once the file tree shipped, because gating manual code fixes behind the agent forced an awkward round-trip for typo-level edits.
