@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use egui::{Color32, RichText};
 
 use crate::dock::FileSource;
+use crate::theme;
 
 pub struct FileTabPanel;
 
@@ -34,7 +35,7 @@ impl FileTabPanel {
             ui.label(RichText::new(&header_path).strong());
             ui.label(
                 RichText::new("(read-only — edits go through the agent)")
-                    .color(Color32::DARK_GRAY)
+                    .color(theme::MUTED_TEXT)
                     .small(),
             );
         });

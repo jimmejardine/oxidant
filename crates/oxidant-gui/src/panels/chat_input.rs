@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
-use egui::{Color32, RichText, TextEdit};
+use egui::{RichText, TextEdit};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
@@ -18,6 +18,7 @@ use oxidant_core::{
 use oxidant_providers::{ChatEvent, Provider};
 
 use crate::app::{AgentEvent, SharedState, TurnOutcome};
+use crate::theme;
 
 pub struct ChatInputPanel {
     draft: String,
@@ -55,7 +56,7 @@ impl ChatInputPanel {
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(format!("model: {model}"))
-                    .color(Color32::DARK_GRAY)
+                    .color(theme::MUTED_TEXT)
                     .small(),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

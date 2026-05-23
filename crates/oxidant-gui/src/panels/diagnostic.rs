@@ -8,6 +8,7 @@
 use egui::{Color32, RichText};
 
 use crate::app::{DiagnosticEntry, SharedState};
+use crate::theme;
 
 pub struct DiagnosticPanel;
 
@@ -20,7 +21,7 @@ impl DiagnosticPanel {
                 RichText::new(
                     "no diagnostics yet — the agent populates this panel after a cargo_check / rust_diagnostics call",
                 )
-                .color(Color32::DARK_GRAY),
+                .color(theme::MUTED_TEXT),
             );
             return;
         }
@@ -39,7 +40,7 @@ fn render_diag(ui: &mut egui::Ui, d: &DiagnosticEntry) {
         "error" => Color32::RED,
         "warning" => Color32::from_rgb(255, 200, 100),
         "info" => Color32::LIGHT_BLUE,
-        _ => Color32::LIGHT_GRAY,
+        _ => theme::MUTED_TEXT,
     };
     ui.horizontal(|ui| {
         ui.label(
@@ -49,7 +50,7 @@ fn render_diag(ui: &mut egui::Ui, d: &DiagnosticEntry) {
         );
         ui.label(
             RichText::new(format!("{}:{}:{}", d.file, d.line, d.character))
-                .color(Color32::LIGHT_GRAY)
+                .color(theme::MUTED_TEXT)
                 .small(),
         );
     });

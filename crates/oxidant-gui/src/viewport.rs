@@ -14,6 +14,7 @@ use eframe::NativeOptions;
 use tokio::runtime::Handle;
 
 use crate::app::App;
+use crate::theme;
 
 #[derive(Clone)]
 pub struct ViewportConfig {
@@ -43,6 +44,9 @@ pub fn run_viewport(config: ViewportConfig) -> Result<(), eframe::Error> {
     eframe::run_native(
         &title,
         native_options,
-        Box::new(move |_cc| Ok(Box::new(App::new(config)))),
+        Box::new(move |cc| {
+            cc.egui_ctx.set_visuals(theme::dark_palette());
+            Ok(Box::new(App::new(config)))
+        }),
     )
 }

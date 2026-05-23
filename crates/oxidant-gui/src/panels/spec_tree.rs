@@ -12,6 +12,8 @@ use egui::{Color32, RichText};
 
 use oxidant_spec_tools::{SpecRecord, walk_specs};
 
+use crate::theme;
+
 pub struct SpecTreePanel {
     workspace_root: PathBuf,
     tree: Option<DirNode>,
@@ -95,7 +97,7 @@ fn sort_dir(node: &mut DirNode) {
 }
 
 fn render_node(ui: &mut egui::Ui, node: &DirNode, label: &str) {
-    egui::CollapsingHeader::new(RichText::new(label).color(Color32::LIGHT_GRAY).strong())
+    egui::CollapsingHeader::new(RichText::new(label).strong())
         .default_open(label == "spec")
         .show(ui, |ui| {
             for (name, child) in &node.dirs {
@@ -123,13 +125,13 @@ fn render_leaf(ui: &mut egui::Ui, rec: &SpecRecord) {
         "flow" => Color32::from_rgb(220, 180, 255),
         "invariant" => Color32::from_rgb(255, 200, 200),
         "decision" => Color32::from_rgb(200, 200, 200),
-        _ => Color32::GRAY,
+        _ => theme::MUTED_TEXT,
     };
     ui.horizontal(|ui| {
         ui.label(RichText::new(format!("[{kind}]")).color(kind_color).small());
         let text = RichText::new(leaf_name);
         let text = if matches!(status, oxidant_spec_tools::SpecStatus::Deprecated) {
-            text.color(Color32::DARK_GRAY).strikethrough()
+            text.color(theme::FAINT_TEXT).strikethrough()
         } else if matches!(status, oxidant_spec_tools::SpecStatus::Draft) {
             text.color(Color32::from_rgb(255, 200, 100))
         } else {

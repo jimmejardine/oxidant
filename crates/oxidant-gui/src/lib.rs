@@ -14,6 +14,7 @@
 pub mod app;
 pub mod dock;
 pub mod panels;
+pub mod theme;
 pub mod viewport;
 
 pub use app::App;

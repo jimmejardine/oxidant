@@ -9,6 +9,7 @@ use egui::{Color32, RichText, ScrollArea};
 use oxidant_core::{ContentBlock, Message, ToolResultContent};
 
 use crate::app::{LiveTurn, SharedState};
+use crate::theme;
 
 pub struct TranscriptPanel;
 
@@ -34,7 +35,7 @@ impl TranscriptPanel {
                             "done · {} iterations · {} tool calls · in {} / out {}",
                             o.iterations, o.tool_calls, o.usage.input_tokens, o.usage.output_tokens
                         ))
-                        .color(Color32::DARK_GRAY)
+                        .color(theme::MUTED_TEXT)
                         .small()
                     };
                     ui.label(summary);
@@ -45,11 +46,11 @@ impl TranscriptPanel {
                         ui.label(
                             RichText::new("oxidant")
                                 .size(32.0)
-                                .color(Color32::DARK_GRAY),
+                                .color(theme::FAINT_TEXT),
                         );
                         ui.label(
                             RichText::new("Type a prompt below and press Ctrl+Enter to send.")
-                                .color(Color32::GRAY),
+                                .color(theme::MUTED_TEXT),
                         );
                     });
                 }
@@ -79,14 +80,14 @@ fn render_message(ui: &mut egui::Ui, msg: &Message) {
                 if let Some(sr) = stop_reason {
                     ui.label(
                         RichText::new(format!("[{sr:?}]"))
-                            .color(Color32::DARK_GRAY)
+                            .color(theme::MUTED_TEXT)
                             .small(),
                     );
                 }
                 if let Some(u) = usage {
                     ui.label(
                         RichText::new(format!("in {} out {}", u.input_tokens, u.output_tokens))
-                            .color(Color32::DARK_GRAY)
+                            .color(theme::MUTED_TEXT)
                             .small(),
                     );
                 }
@@ -128,7 +129,7 @@ fn render_block(ui: &mut egui::Ui, block: &ContentBlock) {
         }
         ContentBlock::Thinking(s) => {
             ui.collapsing(
-                RichText::new("thinking").color(Color32::DARK_GRAY).small(),
+                RichText::new("thinking").color(theme::MUTED_TEXT).small(),
                 |ui| {
                     ui.label(s);
                 },
@@ -144,7 +145,7 @@ fn render_block(ui: &mut egui::Ui, block: &ContentBlock) {
             );
         }
         ContentBlock::Image { .. } => {
-            ui.label(RichText::new("[image — not rendered in MVP]").color(Color32::DARK_GRAY));
+            ui.label(RichText::new("[image — not rendered in MVP]").color(theme::MUTED_TEXT));
         }
     }
 }
@@ -160,7 +161,7 @@ fn render_live_turn(ui: &mut egui::Ui, turn: &LiveTurn) {
     });
     if !turn.thinking.is_empty() {
         ui.collapsing(
-            RichText::new("thinking").color(Color32::DARK_GRAY).small(),
+            RichText::new("thinking").color(theme::MUTED_TEXT).small(),
             |ui| {
                 ui.label(&turn.thinking);
             },
