@@ -55,9 +55,7 @@ impl ChatInputPanel {
         // Header row: model + send/cancel buttons.
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(format!("model: {model}"))
-                    .color(theme::MUTED_TEXT)
-                    .small(),
+                RichText::new(format!("model: {model}")).color(theme::muted_text()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if streaming {

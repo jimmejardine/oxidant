@@ -35,8 +35,7 @@ impl TranscriptPanel {
                             "done · {} iterations · {} tool calls · in {} / out {}",
                             o.iterations, o.tool_calls, o.usage.input_tokens, o.usage.output_tokens
                         ))
-                        .color(theme::MUTED_TEXT)
-                        .small()
+                        .color(theme::muted_text())
                     };
                     ui.label(summary);
                 }
@@ -46,11 +45,11 @@ impl TranscriptPanel {
                         ui.label(
                             RichText::new("oxidant")
                                 .size(32.0)
-                                .color(theme::FAINT_TEXT),
+                                .color(theme::faint_text()),
                         );
                         ui.label(
                             RichText::new("Type a prompt below and press Ctrl+Enter to send.")
-                                .color(theme::MUTED_TEXT),
+                                .color(theme::muted_text()),
                         );
                     });
                 }
@@ -80,15 +79,13 @@ fn render_message(ui: &mut egui::Ui, msg: &Message) {
                 if let Some(sr) = stop_reason {
                     ui.label(
                         RichText::new(format!("[{sr:?}]"))
-                            .color(theme::MUTED_TEXT)
-                            .small(),
+                            .color(theme::muted_text()),
                     );
                 }
                 if let Some(u) = usage {
                     ui.label(
                         RichText::new(format!("in {} out {}", u.input_tokens, u.output_tokens))
-                            .color(theme::MUTED_TEXT)
-                            .small(),
+                            .color(theme::muted_text()),
                     );
                 }
             });
@@ -107,9 +104,7 @@ fn render_message(ui: &mut egui::Ui, msg: &Message) {
                 Color32::YELLOW
             };
             ui.label(
-                RichText::new(format!("tool_result ({call_id})"))
-                    .color(header_color)
-                    .small(),
+                RichText::new(format!("tool_result ({call_id})")).color(header_color),
             );
             let body = match content {
                 ToolResultContent::Text(s) => s.clone(),
@@ -129,7 +124,7 @@ fn render_block(ui: &mut egui::Ui, block: &ContentBlock) {
         }
         ContentBlock::Thinking(s) => {
             ui.collapsing(
-                RichText::new("thinking").color(theme::MUTED_TEXT).small(),
+                RichText::new("thinking").color(theme::muted_text()),
                 |ui| {
                     ui.label(s);
                 },
@@ -145,7 +140,7 @@ fn render_block(ui: &mut egui::Ui, block: &ContentBlock) {
             );
         }
         ContentBlock::Image { .. } => {
-            ui.label(RichText::new("[image — not rendered in MVP]").color(theme::MUTED_TEXT));
+            ui.label(RichText::new("[image — not rendered in MVP]").color(theme::muted_text()));
         }
     }
 }
@@ -161,7 +156,7 @@ fn render_live_turn(ui: &mut egui::Ui, turn: &LiveTurn) {
     });
     if !turn.thinking.is_empty() {
         ui.collapsing(
-            RichText::new("thinking").color(theme::MUTED_TEXT).small(),
+            RichText::new("thinking").color(theme::muted_text()).small(),
             |ui| {
                 ui.label(&turn.thinking);
             },

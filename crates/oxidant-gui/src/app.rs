@@ -15,6 +15,7 @@ use oxidant_providers::{ChatEvent, Provider, StopReason, Usage};
 use crate::dock::{
     DockTab, default_layout, is_tab_open, open_tab, reset_layout_preserving_files, singleton_tabs,
 };
+use crate::theme::{self, Theme};
 use crate::panels::{
     chat_input::ChatInputPanel, diagnostic::DiagnosticPanel,
     exploration_list::ExplorationListPanel, file_tab::FileTabPanel, spec_tree::SpecTreePanel,
@@ -30,6 +31,11 @@ pub struct App {
     event_tx: UnboundedSender<AgentEvent>,
     chat_panel: ChatInputPanel,
     spec_panel: SpecTreePanel,
+    diag_panel: DiagnosticPanel,
+    /// Currently-active theme. Mirrors what `theme::apply` recorded;
+    /// kept here so the View → Theme submenu can render the radio
+    /// state without a global lock.
+    active_theme: Theme,
 }
 
 /// The mutable bits shared between the GUI thread and the agent task.
@@ -141,15 +147,37 @@ impl App {
         let (event_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
 
         let spec_panel = SpecTreePanel::new(config.workspace_root.clone());
+        let active_theme = config.theme;
         Self {
             chat_panel: ChatInputPanel::new(),
             spec_panel,
+            diag_panel: DiagnosticPanel::new(),
             config,
             dock: default_layout(),
             state,
             event_rx,
             event_tx,
+            active_theme,
         }
+    }
+
+    /// Build the "View" menu — currently a Theme submenu with one radio
+    /// entry per `Theme::ALL`. Clicking a different entry swaps the
+    /// palette immediately via `theme::apply`. See
+    /// spec/components/gui/theme.md.
+    fn render_view_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button("View", |ui| {
+            ui.menu_button("Theme", |ui| {
+                for t in Theme::ALL {
+                    let resp =
+                        ui.radio_value(&mut self.active_theme, *t, t.display_name());
+                    if resp.clicked() {
+                        theme::apply(ui.ctx(), self.active_theme);
+                        ui.close_menu();
+                    }
+                }
+            });
+        });
     }
 }
 
@@ -177,6 +205,7 @@ impl eframe::App for App {
                 ui.label(egui::RichText::new("oxidant").strong());
                 ui.separator();
                 self.render_window_menu(ui);
+                self.render_view_menu(ui);
                 ui.separator();
                 let state = self.state.lock().unwrap();
                 let n = state.exploration.conversation.len();
@@ -201,6 +230,7 @@ impl eframe::App for App {
             state: self.state.clone(),
             chat_panel: &mut self.chat_panel,
             spec_panel: &mut self.spec_panel,
+            diag_panel: &mut self.diag_panel,
             event_tx: self.event_tx.clone(),
             tokio_handle: self.config.tokio_handle.clone(),
             workspace_root: self.config.workspace_root.clone(),
@@ -257,6 +287,7 @@ pub(crate) struct TabViewer<'a> {
     pub state: Arc<StdMutex<SharedState>>,
     pub chat_panel: &'a mut ChatInputPanel,
     pub spec_panel: &'a mut SpecTreePanel,
+    pub diag_panel: &'a mut DiagnosticPanel,
     pub event_tx: UnboundedSender<AgentEvent>,
     pub tokio_handle: Handle,
     pub workspace_root: std::path::PathBuf,
@@ -286,8 +317,13 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                 ExplorationListPanel.render(ui, &self.workspace_root);
             }
             DockTab::DiagnosticPreview => {
-                let state = self.state.lock().unwrap();
-                DiagnosticPanel.render(ui, &state);
+                self.diag_panel.render(
+                    ui,
+                    &self.state,
+                    &self.tokio_handle,
+                    &self.workspace_root,
+                    &self.egui_ctx,
+                );
             }
             DockTab::ChatInput => {
                 self.chat_panel.render(

@@ -101,7 +101,10 @@ impl LocalSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GuiSettings {
-    /// "light" | "dark" | "system"
+    /// Active colour scheme. One of the slugs from
+    /// `oxidant_gui::theme::Theme::ALL`:
+    ///   "espresso" | "monokai" | "dracula" | "one_dark" | "classic_dark"
+    /// Unknown values fall back to the default ("espresso").
     pub theme: String,
     /// If true, Enter sends and Shift+Enter inserts a newline.
     pub enter_sends: bool,
@@ -110,7 +113,7 @@ pub struct GuiSettings {
 impl Default for GuiSettings {
     fn default() -> Self {
         Self {
-            theme: "system".into(),
+            theme: "espresso".into(),
             enter_sends: false,
         }
     }

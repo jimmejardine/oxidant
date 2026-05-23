@@ -125,13 +125,13 @@ fn render_leaf(ui: &mut egui::Ui, rec: &SpecRecord) {
         "flow" => Color32::from_rgb(220, 180, 255),
         "invariant" => Color32::from_rgb(255, 200, 200),
         "decision" => Color32::from_rgb(200, 200, 200),
-        _ => theme::MUTED_TEXT,
+        _ => theme::muted_text(),
     };
     ui.horizontal(|ui| {
-        ui.label(RichText::new(format!("[{kind}]")).color(kind_color).small());
+        ui.label(RichText::new(format!("[{kind}]")).color(kind_color));
         let text = RichText::new(leaf_name);
         let text = if matches!(status, oxidant_spec_tools::SpecStatus::Deprecated) {
-            text.color(theme::FAINT_TEXT).strikethrough()
+            text.color(theme::faint_text()).strikethrough()
         } else if matches!(status, oxidant_spec_tools::SpecStatus::Draft) {
             text.color(Color32::from_rgb(255, 200, 100))
         } else {

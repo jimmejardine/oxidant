@@ -26,17 +26,14 @@ impl ExplorationListPanel {
             ui.label(label);
         });
         ui.label(
-            RichText::new(workspace_root.to_string_lossy())
-                .color(theme::MUTED_TEXT)
-                .small(),
+            RichText::new(workspace_root.to_string_lossy()).color(theme::muted_text()),
         );
         ui.add_space(8.0);
         ui.label(
             RichText::new(
                 "Sub-exploration spawn / merge / discard are GUI-only ops landing once multi-viewport ships. The vcs_explorations_list tool exposes the read view to the agent.",
             )
-            .color(theme::MUTED_TEXT)
-            .small(),
+            .color(theme::muted_text()),
         );
     }
 }

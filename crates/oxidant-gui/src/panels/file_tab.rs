@@ -35,8 +35,7 @@ impl FileTabPanel {
             ui.label(RichText::new(&header_path).strong());
             ui.label(
                 RichText::new("(read-only — edits go through the agent)")
-                    .color(theme::MUTED_TEXT)
-                    .small(),
+                    .color(theme::muted_text()),
             );
         });
         ui.separator();

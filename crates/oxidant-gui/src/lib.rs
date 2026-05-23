@@ -9,6 +9,8 @@
 //   spec/components/gui/diagnostic-panel.md
 //   spec/components/gui/file-tabs.md
 //   spec/components/gui/exploration-list.md
+//   spec/components/gui/theme.md
+//   spec/components/gui/typography.md
 //   spec/decisions/0003-egui-gui-over-tui.md
 
 pub mod app;
@@ -28,7 +30,10 @@ use oxidant_providers::{OllamaConfig, OllamaProvider, Provider};
 use tokio::runtime::Handle;
 
 /// Entry point used by the `oxidant` binary. Spawns a single viewport
-/// for `workspace_root` with `provider` driving the agent loop.
+/// for `workspace_root` with `provider` driving the agent loop. The
+/// initial theme is read from `[gui] theme = "..."` in
+/// `<worktree>/.oxidant/oxidant.toml` (or the per-user file); unknown
+/// slugs fall back to the default.
 pub fn launch_gui(
     workspace_root: &Path,
     provider: Arc<dyn Provider>,
@@ -38,12 +43,17 @@ pub fn launch_gui(
 ) -> Result<(), eframe::Error> {
     let canonical =
         dunce::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
+    let theme = oxidant_config::load(&canonical)
+        .ok()
+        .and_then(|s| theme::Theme::from_slug(&s.gui.theme))
+        .unwrap_or_default();
     let config = ViewportConfig {
         workspace_root: canonical,
         provider,
         model,
         system_prompt,
         tokio_handle,
+        theme,
     };
     run_viewport(config)
 }

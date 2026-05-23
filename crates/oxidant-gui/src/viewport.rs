@@ -23,6 +23,9 @@ pub struct ViewportConfig {
     pub model: String,
     pub system_prompt: Option<String>,
     pub tokio_handle: Handle,
+    /// Initial theme. Loaded from `[gui] theme = "..."` in settings;
+    /// flipped at runtime via the View → Theme menu.
+    pub theme: theme::Theme,
 }
 
 pub fn run_viewport(config: ViewportConfig) -> Result<(), eframe::Error> {
@@ -45,7 +48,7 @@ pub fn run_viewport(config: ViewportConfig) -> Result<(), eframe::Error> {
         &title,
         native_options,
         Box::new(move |cc| {
-            cc.egui_ctx.set_visuals(theme::dark_palette());
+            theme::apply(&cc.egui_ctx, config.theme);
             Ok(Box::new(App::new(config)))
         }),
     )
