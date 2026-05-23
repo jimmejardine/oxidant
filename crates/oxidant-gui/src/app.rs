@@ -2,7 +2,10 @@
 // drains agent events from the tokio runtime, and dispatches the dock
 // tabs to their respective panel renderers.
 
+use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::SystemTime;
 
 use egui_dock::{DockArea, DockState, Style};
 use tokio::runtime::Handle;
@@ -15,12 +18,12 @@ use oxidant_providers::{ChatEvent, Provider, StopReason, Usage};
 use crate::dock::{
     DockTab, default_layout, is_tab_open, open_tab, reset_layout_preserving_files, singleton_tabs,
 };
-use crate::theme::{self, Theme};
 use crate::panels::{
     chat_input::ChatInputPanel, diagnostic::DiagnosticPanel,
     exploration_list::ExplorationListPanel, file_tab::FileTabPanel, spec_tree::SpecTreePanel,
     transcript::TranscriptPanel,
 };
+use crate::theme::{self, Theme};
 use crate::viewport::ViewportConfig;
 
 pub struct App {
@@ -53,6 +56,27 @@ pub struct SharedState {
     /// `exploration.cancellation`, which tears down the whole window.
     pub cancellation: Option<CancellationToken>,
     pub diagnostics: Vec<DiagnosticEntry>,
+    /// Centre-tab opens requested by a panel that doesn't own the dock
+    /// (e.g. spec-tree double-click). Drained once per frame after
+    /// `DockArea::show`; see spec/components/gui/spec-tree-panel.md.
+    pub pending_centre_tabs: Vec<DockTab>,
+    /// Per-path edit buffers for File tabs. Keyed by absolute path so
+    /// the same file in two tabs (which can't actually happen — dock
+    /// tabs are unique) would share state. See
+    /// spec/components/gui/file-tabs.md "Edit lifecycle for specs".
+    pub editor_buffers: HashMap<PathBuf, EditorBuffer>,
+}
+
+#[derive(Debug, Clone)]
+pub struct EditorBuffer {
+    pub text: String,
+    pub dirty: bool,
+    /// Filesystem mtime at the moment we loaded `text`. Used to detect
+    /// "the agent edited the file underneath this tab" — when the
+    /// current mtime differs from this, a reload banner shows.
+    pub mtime_at_load: Option<SystemTime>,
+    /// Most recent save error, if any. Cleared on next successful save.
+    pub last_save_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -143,6 +167,8 @@ impl App {
             last_outcome: None,
             cancellation: None,
             diagnostics: Vec::new(),
+            pending_centre_tabs: Vec::new(),
+            editor_buffers: HashMap::new(),
         }));
         let (event_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
 
@@ -169,8 +195,7 @@ impl App {
         ui.menu_button("View", |ui| {
             ui.menu_button("Theme", |ui| {
                 for t in Theme::ALL {
-                    let resp =
-                        ui.radio_value(&mut self.active_theme, *t, t.display_name());
+                    let resp = ui.radio_value(&mut self.active_theme, *t, t.display_name());
                     if resp.clicked() {
                         theme::apply(ui.ctx(), self.active_theme);
                         ui.close_menu();
@@ -242,6 +267,21 @@ impl eframe::App for App {
         DockArea::new(&mut self.dock)
             .style(Style::from_egui(ctx.style().as_ref()))
             .show(ctx, &mut viewer);
+
+        // Drain any tab-open requests pushed by panels during render
+        // (the spec tree's double-click handler is the main caller).
+        // We do this AFTER DockArea::show because that's where panels
+        // ran their handlers; pushing now applies on the next frame.
+        let pending: Vec<DockTab> = {
+            let mut s = self.state.lock().unwrap();
+            std::mem::take(&mut s.pending_centre_tabs)
+        };
+        if !pending.is_empty() {
+            for tab in pending {
+                open_tab(&mut self.dock, tab);
+            }
+            ctx.request_repaint();
+        }
     }
 }
 
@@ -311,7 +351,7 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                 TranscriptPanel.render(ui, &state);
             }
             DockTab::SpecTree => {
-                self.spec_panel.render(ui);
+                self.spec_panel.render(ui, &self.state);
             }
             DockTab::ExplorationList => {
                 ExplorationListPanel.render(ui, &self.workspace_root);
@@ -339,7 +379,7 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                 );
             }
             DockTab::File { path, source } => {
-                FileTabPanel.render(ui, path, *source, &self.workspace_root);
+                FileTabPanel.render(ui, path, *source, &self.workspace_root, &self.state);
             }
         }
     }

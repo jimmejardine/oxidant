@@ -18,7 +18,16 @@ Opened files dock as siblings of the [[components/gui/transcript-tab]] in the ce
 ## File sources
 
 - **Code**: `crates/**/*.rs`, `Cargo.toml`, etc. Read from disk; live-reloaded on `notify` events. Read-only in MVP; edit happens via the agent (`apply_edits` / `edit_string`).
-- **Spec**: `spec/**/*.md`. Same read-only treatment; edits via the agent.
+- **Spec**: `spec/**/*.md`. **Editable** — opened via double-click from the spec tree. Rendered as a raw multi-line text editor with a Save button; the markdown preview toggle lands later. Edits are flushed to disk only when the user presses Save. While unsaved, the tab title carries a `●` marker.
+
+### Edit lifecycle for specs
+
+1. Tab opens → contents are loaded from disk into `SharedState::editor_buffers[path]` (a `HashMap<PathBuf, EditorBuffer>` keyed by absolute path).
+2. The text edit binds to the buffer's `text` field. Mutations flip `dirty = true` and update `mtime_at_load` is NOT touched.
+3. Save button is enabled iff `dirty`. Click writes the buffer to disk; on success, clears `dirty`. On error, surfaces the error inline in red and leaves `dirty` set.
+4. If the on-disk mtime advances while a tab is dirty (the agent edited the file out from under us), a banner offers Reload / Discard. Conflict resolution beyond that is out of scope for the MVP.
+
+The buffer survives a tab close+reopen — the user can dock-close a spec tab without losing unsaved changes until they explicitly Discard. (This is opinionated; the alternative — prompting on close — is more ceremonial than it's worth for a single-user editor.)
 
 ## Render
 
@@ -35,6 +44,6 @@ Opened files dock as siblings of the [[components/gui/transcript-tab]] in the ce
 
 `<filename>` with a unicode marker `●` when there's an unread diagnostic on this file. Path on hover.
 
-## Read-only justification
+## Why specs are editable but code isn't
 
-Letting the user hand-edit while the agent is also editing creates contention with `expected_text` checks and obscures who changed what. v2 may add a "manual edit mode" with a soft lock on the agent.
+Specs are the canonical source per [[decisions/0008-spec-is-canonical]], so the user editing one is the *normal* path — every spec change starts as a manual edit. Letting the user hand-edit code while the agent is also editing it, by contrast, creates contention with `expected_text` checks and obscures who changed what. v2 may add a "manual edit mode" for code with a soft lock on the agent.

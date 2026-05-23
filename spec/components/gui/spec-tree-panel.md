@@ -47,9 +47,12 @@ Tooltip on hover gives last-modified timestamp + commit subject.
 
 ## Interactions
 
-- Click: open the spec as a centre tab (via [[components/gui/file-tabs]]).
+- Single-click: select the leaf (visual highlight; no tab opens). MVP renders this as no-op — selection state lands when the right-click context menu does.
+- **Double-click**: open the spec as an **editable** centre tab via [[components/gui/file-tabs]]. The tab dock-key is the spec's path, so double-clicking the same spec twice just focuses the already-open tab.
 - Right-click: context menu — Reveal in code (jumps to first `code:` path), Show inbound refs, Show outbound refs, Show drift.
 - Drag onto a chat input: inserts the canonical ref as a `[[ref]]`.
+
+The double-click handler MUST NOT mutate the dock directly — the spec-tree panel is rendered inside `egui_dock`'s `TabViewer::ui`, which doesn't see the `DockState`. Instead it pushes a `DockTab::File { ..., source: Spec }` onto `SharedState::pending_centre_tabs`; the host viewport drains that queue after `DockArea::show` and inserts the tab via [[components/gui/dock-layout]]'s `open_tab` helper.
 
 ## Backing query
 

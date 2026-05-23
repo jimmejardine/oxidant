@@ -6,12 +6,15 @@
 // dots will plug in once the SQLite index + watcher land in the GUI.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex as StdMutex};
 
-use egui::{Color32, RichText};
+use egui::{Color32, RichText, Sense};
 
 use oxidant_spec_tools::{SpecRecord, walk_specs};
 
+use crate::app::SharedState;
+use crate::dock::{DockTab, FileSource};
 use crate::theme;
 
 pub struct SpecTreePanel {
@@ -33,7 +36,7 @@ impl SpecTreePanel {
         }
     }
 
-    pub fn render(&mut self, ui: &mut egui::Ui) {
+    pub fn render(&mut self, ui: &mut egui::Ui, state: &Arc<StdMutex<SharedState>>) {
         if self.tree.is_none() {
             self.tree = Some(self.build_tree());
         }
@@ -50,11 +53,12 @@ impl SpecTreePanel {
         });
         ui.separator();
 
+        let workspace_root = self.workspace_root.clone();
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
             .show(ui, |ui| {
                 if let Some(tree) = &self.tree {
-                    render_node(ui, tree, "spec");
+                    render_node(ui, tree, "spec", &workspace_root, state);
                 }
             });
     }
@@ -96,20 +100,31 @@ fn sort_dir(node: &mut DirNode) {
     }
 }
 
-fn render_node(ui: &mut egui::Ui, node: &DirNode, label: &str) {
+fn render_node(
+    ui: &mut egui::Ui,
+    node: &DirNode,
+    label: &str,
+    workspace_root: &Path,
+    state: &Arc<StdMutex<SharedState>>,
+) {
     egui::CollapsingHeader::new(RichText::new(label).strong())
         .default_open(label == "spec")
         .show(ui, |ui| {
             for (name, child) in &node.dirs {
-                render_node(ui, child, name);
+                render_node(ui, child, name, workspace_root, state);
             }
             for rec in &node.files {
-                render_leaf(ui, rec);
+                render_leaf(ui, rec, workspace_root, state);
             }
         });
 }
 
-fn render_leaf(ui: &mut egui::Ui, rec: &SpecRecord) {
+fn render_leaf(
+    ui: &mut egui::Ui,
+    rec: &SpecRecord,
+    workspace_root: &Path,
+    state: &Arc<StdMutex<SharedState>>,
+) {
     let leaf_name = rec
         .canonical_id
         .rsplit('/')
@@ -127,16 +142,44 @@ fn render_leaf(ui: &mut egui::Ui, rec: &SpecRecord) {
         "decision" => Color32::from_rgb(200, 200, 200),
         _ => theme::muted_text(),
     };
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(format!("[{kind}]")).color(kind_color));
-        let text = RichText::new(leaf_name);
-        let text = if matches!(status, oxidant_spec_tools::SpecStatus::Deprecated) {
-            text.color(theme::faint_text()).strikethrough()
-        } else if matches!(status, oxidant_spec_tools::SpecStatus::Draft) {
-            text.color(Color32::from_rgb(255, 200, 100))
-        } else {
-            text
-        };
-        ui.label(text).on_hover_text(&rec.canonical_id);
-    });
+    let text = RichText::new(leaf_name);
+    let text = if matches!(status, oxidant_spec_tools::SpecStatus::Deprecated) {
+        text.color(theme::faint_text()).strikethrough()
+    } else if matches!(status, oxidant_spec_tools::SpecStatus::Draft) {
+        text.color(Color32::from_rgb(255, 200, 100))
+    } else {
+        text
+    };
+    let resp = ui
+        .horizontal(|ui| {
+            ui.label(RichText::new(format!("[{kind}]")).color(kind_color));
+            ui.add(egui::Label::new(text).sense(Sense::click()))
+        })
+        .inner
+        .on_hover_text(format!("{} — double-click to edit", rec.canonical_id));
+    if resp.double_clicked() {
+        request_open(state, &rec.path, workspace_root);
+    }
+}
+
+/// Push a `DockTab::File { source: Spec }` onto the shared state's
+/// `pending_centre_tabs` queue. The App drains the queue after
+/// `DockArea::show` and inserts the tab into the dock — we can't
+/// touch the dock from here because we're inside the dock's render.
+fn request_open(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, workspace_root: &Path) {
+    let path = abs_path
+        .strip_prefix(workspace_root)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|_| abs_path.to_path_buf());
+    let tab = DockTab::File {
+        path,
+        source: FileSource::Spec,
+    };
+    if let Ok(mut s) = state.lock() {
+        // De-duplicate: if the same tab is already pending this frame
+        // (e.g. accidental triple-click), don't queue twice.
+        if !s.pending_centre_tabs.contains(&tab) {
+            s.pending_centre_tabs.push(tab);
+        }
+    }
 }
