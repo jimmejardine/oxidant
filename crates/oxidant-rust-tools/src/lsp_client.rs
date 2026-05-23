@@ -27,7 +27,7 @@ use tokio::process::{Child, Command};
 use tokio::sync::{Mutex as AsyncMutex, mpsc, oneshot, watch};
 use tokio::time::timeout;
 
-use oxidant_core::{Tool, ToolCategory, ToolContext, ToolResult};
+use oxidant_core::{LspHandle, Tool, ToolCategory, ToolContext, ToolResult};
 
 const INITIALIZE_TIMEOUT_SECS: u64 = 60;
 const REQUEST_TIMEOUT_SECS: u64 = 30;
@@ -64,6 +64,28 @@ pub struct LspClient {
     /// the first such notification arrives.
     server_status: watch::Receiver<Option<ServerStatus>>,
     _child: Child, // kept to ensure lifetime
+}
+
+// Concrete LspHandle impl, plugging this client into the Exploration
+// aggregate's `lsp_handle: Option<Arc<dyn LspHandle>>` slot without
+// pulling oxidant-rust-tools into oxidant-core's dependency graph.
+// See spec/components/core/exploration.md.
+impl LspHandle for LspClient {}
+
+impl std::fmt::Debug for LspClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LspClient")
+            .field("workspace", &self.workspace)
+            .field(
+                "pending",
+                &self.pending.lock().map(|m| m.len()).unwrap_or(0),
+            )
+            .field(
+                "opened_files",
+                &self.opened_files.lock().map(|s| s.len()).unwrap_or(0),
+            )
+            .finish_non_exhaustive()
+    }
 }
 
 impl LspClient {
