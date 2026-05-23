@@ -28,8 +28,14 @@ use crate::theme::{self, Theme as OxidantTheme};
 // needed for those.
 const BUNDLED_SYNTAXES: &[(&str, &str)] = &[
     ("toml", include_str!("../assets/toml.sublime-syntax")),
-    ("gitignore", include_str!("../assets/gitignore.sublime-syntax")),
-    ("gitattributes", include_str!("../assets/gitattributes.sublime-syntax")),
+    (
+        "gitignore",
+        include_str!("../assets/gitignore.sublime-syntax"),
+    ),
+    (
+        "gitattributes",
+        include_str!("../assets/gitattributes.sublime-syntax"),
+    ),
 ];
 
 fn syntax_set() -> &'static SyntaxSet {
@@ -68,17 +74,17 @@ fn theme_set() -> &'static ThemeSet {
 ///      (`Cargo.toml`, `Makefile`).
 fn syntax_for(path: &Path) -> &'static SyntaxReference {
     let ss = syntax_set();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        if let Some(s) = ss.find_syntax_by_extension(ext) {
-            return s;
-        }
+    if let Some(ext) = path.extension().and_then(|e| e.to_str())
+        && let Some(s) = ss.find_syntax_by_extension(ext)
+    {
+        return s;
     }
     if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
         let dot_stripped = name.trim_start_matches('.');
-        if !dot_stripped.is_empty() {
-            if let Some(s) = ss.find_syntax_by_extension(dot_stripped) {
-                return s;
-            }
+        if !dot_stripped.is_empty()
+            && let Some(s) = ss.find_syntax_by_extension(dot_stripped)
+        {
+            return s;
         }
         if let Some(s) = ss.find_syntax_by_token(name) {
             return s;

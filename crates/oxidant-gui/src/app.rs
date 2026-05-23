@@ -22,7 +22,7 @@ use crate::dock::{
 use crate::panels::{
     chat_input::ChatInputPanel, diagnostic::DiagnosticPanel,
     exploration_list::ExplorationListPanel, file_tab::FileTabPanel, file_tree::FileTreePanel,
-    spec_tree::SpecTreePanel, transcript::TranscriptPanel,
+    settings::SettingsPanel, spec_tree::SpecTreePanel, transcript::TranscriptPanel,
 };
 use crate::theme::{self, Theme};
 use crate::viewport::ViewportConfig;
@@ -37,6 +37,7 @@ pub struct App {
     spec_panel: SpecTreePanel,
     file_tree_panel: FileTreePanel,
     diag_panel: DiagnosticPanel,
+    settings_panel: SettingsPanel,
     /// Currently-active theme. Mirrors what `theme::apply` recorded;
     /// kept here so the View → Theme submenu can render the radio
     /// state without a global lock.
@@ -177,11 +178,13 @@ impl App {
         let spec_panel = SpecTreePanel::new(config.workspace_root.clone());
         let file_tree_panel = FileTreePanel::new(config.workspace_root.clone());
         let active_theme = config.theme;
+        let settings_panel = SettingsPanel::new(&config.settings);
         Self {
             chat_panel: ChatInputPanel::new(),
             spec_panel,
             file_tree_panel,
             diag_panel: DiagnosticPanel::new(),
+            settings_panel,
             config,
             dock: default_layout(),
             state,
@@ -261,6 +264,9 @@ impl eframe::App for App {
             spec_panel: &mut self.spec_panel,
             file_tree_panel: &mut self.file_tree_panel,
             diag_panel: &mut self.diag_panel,
+            settings_panel: &mut self.settings_panel,
+            settings: self.config.settings.clone(),
+            active_theme: &mut self.active_theme,
             event_tx: self.event_tx.clone(),
             tokio_handle: self.config.tokio_handle.clone(),
             workspace_root: self.config.workspace_root.clone(),
@@ -338,6 +344,9 @@ pub(crate) struct TabViewer<'a> {
     pub spec_panel: &'a mut SpecTreePanel,
     pub file_tree_panel: &'a mut FileTreePanel,
     pub diag_panel: &'a mut DiagnosticPanel,
+    pub settings_panel: &'a mut SettingsPanel,
+    pub settings: Arc<StdMutex<oxidant_config::Settings>>,
+    pub active_theme: &'a mut Theme,
     pub event_tx: UnboundedSender<AgentEvent>,
     pub tokio_handle: Handle,
     pub workspace_root: std::path::PathBuf,
@@ -390,6 +399,10 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                     self.system_prompt.as_deref(),
                     &self.egui_ctx,
                 );
+            }
+            DockTab::Settings => {
+                self.settings_panel
+                    .render(ui, &self.settings, self.active_theme);
             }
             DockTab::File { path, source } => {
                 FileTabPanel.render(ui, path, *source, &self.workspace_root, &self.state);

@@ -135,9 +135,16 @@ static CURRENT_COLOURS: Mutex<(Color32, Color32)> = Mutex::new((
 
 /// Apply `theme` to the egui context and remember it as the active
 /// theme so panel-level `muted_text()` / `faint_text()` agree.
+///
+/// Forces egui's active theme to Dark and binds the palette to *both*
+/// egui themes, so a platform-driven theme switch (Windows light mode,
+/// follow-system tracking) can't wash our colours out — every oxidant
+/// palette ships dark.
 pub fn apply(ctx: &egui::Context, theme: Theme) {
     let p = theme.palette();
-    ctx.set_visuals(p.visuals);
+    ctx.set_theme(egui::Theme::Dark);
+    ctx.set_visuals_of(egui::Theme::Dark, p.visuals.clone());
+    ctx.set_visuals_of(egui::Theme::Light, p.visuals);
     CURRENT_TAG.store(theme.as_u8(), Ordering::Relaxed);
     if let Ok(mut g) = CURRENT_COLOURS.lock() {
         *g = (p.muted, p.faint);

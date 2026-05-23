@@ -95,7 +95,7 @@ impl FileTreePanel {
             .filter_entry(|entry| {
                 let name = entry.file_name().to_string_lossy().to_string();
                 if entry.file_type().map(|t| t.is_dir()).unwrap_or(false)
-                    && ALWAYS_SKIP_DIRS.iter().any(|d| *d == name.as_str())
+                    && ALWAYS_SKIP_DIRS.contains(&name.as_str())
                 {
                     return false;
                 }
@@ -124,10 +124,10 @@ impl FileTreePanel {
                 continue;
             }
             let metadata = entry.metadata().ok();
-            if let Some(m) = &metadata {
-                if m.len() > MAX_FILE_BYTES {
-                    continue;
-                }
+            if let Some(m) = &metadata
+                && m.len() > MAX_FILE_BYTES
+            {
+                continue;
             }
             if looks_binary(path) {
                 continue;
@@ -244,10 +244,7 @@ fn tag_for(name: &str) -> (Option<&'static str>, Color32) {
         (Some("md"), Color32::from_rgb(255, 160, 0))
     } else if lower.ends_with(".toml") {
         (Some("toml"), theme::muted_text())
-    } else if lower.ends_with(".json")
-        || lower.ends_with(".yml")
-        || lower.ends_with(".yaml")
-    {
+    } else if lower.ends_with(".json") || lower.ends_with(".yml") || lower.ends_with(".yaml") {
         (Some("data"), theme::faint_text())
     } else {
         (None, theme::faint_text())
@@ -261,10 +258,10 @@ fn request_open(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, workspace_r
         .unwrap_or_else(|_| abs_path.to_path_buf());
     let source = source_for(abs_path, workspace_root);
     let tab = DockTab::File { path, source };
-    if let Ok(mut s) = state.lock() {
-        if !s.pending_centre_tabs.contains(&tab) {
-            s.pending_centre_tabs.push(tab);
-        }
+    if let Ok(mut s) = state.lock()
+        && !s.pending_centre_tabs.contains(&tab)
+    {
+        s.pending_centre_tabs.push(tab);
     }
 }
 
@@ -310,7 +307,14 @@ mod tests {
     fn source_for_routes_rust_as_code() {
         let root = Path::new("/work/repo");
         assert_eq!(
-            source_for(&root.join("crates").join("oxidant-gui").join("src").join("app.rs"), root),
+            source_for(
+                &root
+                    .join("crates")
+                    .join("oxidant-gui")
+                    .join("src")
+                    .join("app.rs"),
+                root
+            ),
             FileSource::Code
         );
     }

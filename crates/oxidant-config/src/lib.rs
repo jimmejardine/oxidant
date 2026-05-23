@@ -11,5 +11,5 @@ pub mod settings;
 pub use permissions::{PermissionDecision, PermissionEngine, PermissionState};
 pub use settings::{
     AnthropicSettings, GuiSettings, LocalSettings, OpenAISettings, PermissionsSettings,
-    ProviderSettings, Settings, SettingsError, load, repo_config_path, user_config_path,
+    ProviderSettings, Settings, SettingsError, load, repo_config_path, save_user, user_config_path,
 };

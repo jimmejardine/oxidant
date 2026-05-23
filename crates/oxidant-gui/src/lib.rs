@@ -26,7 +26,7 @@ pub use dock::{DockTab, FileSource, default_layout};
 pub use viewport::{ViewportConfig, run_viewport};
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use oxidant_providers::{OllamaConfig, OllamaProvider, Provider};
 use tokio::runtime::Handle;
@@ -45,10 +45,8 @@ pub fn launch_gui(
 ) -> Result<(), eframe::Error> {
     let canonical =
         dunce::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
-    let theme = oxidant_config::load(&canonical)
-        .ok()
-        .and_then(|s| theme::Theme::from_slug(&s.gui.theme))
-        .unwrap_or_default();
+    let settings = oxidant_config::load(&canonical).unwrap_or_default();
+    let theme = theme::Theme::from_slug(&settings.gui.theme).unwrap_or_default();
     let config = ViewportConfig {
         workspace_root: canonical,
         provider,
@@ -56,6 +54,7 @@ pub fn launch_gui(
         system_prompt,
         tokio_handle,
         theme,
+        settings: Arc::new(StdMutex::new(settings)),
     };
     run_viewport(config)
 }

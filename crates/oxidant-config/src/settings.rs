@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub provider: ProviderSettings,
@@ -23,7 +23,7 @@ pub struct Settings {
     pub permissions: PermissionsSettings,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProviderSettings {
     /// Which provider to use by default: "anthropic" | "openai" | "ollama" | "textgen" | "lmstudio" | "llamacpp".
@@ -53,7 +53,7 @@ impl Default for ProviderSettings {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AnthropicSettings {
     pub api_key_env: Option<String>,
@@ -61,7 +61,7 @@ pub struct AnthropicSettings {
     pub extended_thinking_budget: Option<u32>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OpenAISettings {
     pub api_key_env: Option<String>,
@@ -70,7 +70,7 @@ pub struct OpenAISettings {
     pub default_model: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LocalSettings {
     pub base_url: Option<String>,
@@ -88,7 +88,7 @@ impl LocalSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GuiSettings {
     /// Active colour scheme. One of the slugs from
@@ -109,7 +109,7 @@ impl Default for GuiSettings {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PermissionsSettings {
     /// ReadOnly tools auto-approve unconditionally when this is true (default).
@@ -148,6 +148,10 @@ pub enum SettingsError {
     Io { path: PathBuf, message: String },
     #[error("parse {path}: {message}", path = path.display())]
     Parse { path: PathBuf, message: String },
+    #[error("serialize: {0}")]
+    Serialize(String),
+    #[error("no user config directory available on this platform")]
+    NoUserConfigDir,
 }
 
 /// Compute the per-user config path (Linux/macOS: ~/.config/oxidant/config.toml,
@@ -197,6 +201,29 @@ pub fn load(worktree: &Path) -> Result<Settings, SettingsError> {
 
     apply_env_overrides(&mut settings);
     Ok(settings)
+}
+
+/// Serialize `settings` to TOML and write to the user-level config path
+/// (`user_config_path()`). Creates the parent directory if missing.
+/// Errors:
+///   * NoUserConfigDir — platform has no project dirs (CI sandbox etc.).
+///   * Serialize       — TOML serialization failed.
+///   * Io              — directory create / file write failed.
+pub fn save_user(settings: &Settings) -> Result<PathBuf, SettingsError> {
+    let path = user_config_path().ok_or(SettingsError::NoUserConfigDir)?;
+    let toml_text =
+        toml::to_string_pretty(settings).map_err(|e| SettingsError::Serialize(e.to_string()))?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| SettingsError::Io {
+            path: parent.to_path_buf(),
+            message: e.to_string(),
+        })?;
+    }
+    std::fs::write(&path, toml_text).map_err(|e| SettingsError::Io {
+        path: path.clone(),
+        message: e.to_string(),
+    })?;
+    Ok(path)
 }
 
 fn apply_env_overrides(settings: &mut Settings) {
@@ -310,5 +337,34 @@ mod tests {
         .unwrap();
         let err = load(dir.path()).unwrap_err();
         assert!(matches!(err, SettingsError::Parse { .. }));
+    }
+
+    #[test]
+    fn settings_roundtrip_through_toml() {
+        // Mutate, serialise, deserialise, compare. Catches serde-rename drift
+        // and ensures save_user produces output `load` will accept.
+        let mut original = Settings::default();
+        original.provider.default = "anthropic".into();
+        original.provider.anthropic.api_key = Some("sk-ant-test".into());
+        original.gui.theme = "monokai".into();
+        original.gui.enter_sends = true;
+        original.permissions.auto_approve_readonly = false;
+        original.permissions.allowlist.push("fs_write".into());
+
+        let toml_text = toml::to_string_pretty(&original).expect("serialize");
+        let parsed: Settings = toml::from_str(&toml_text).expect("parse");
+
+        assert_eq!(parsed.provider.default, original.provider.default);
+        assert_eq!(
+            parsed.provider.anthropic.api_key,
+            original.provider.anthropic.api_key
+        );
+        assert_eq!(parsed.gui.theme, original.gui.theme);
+        assert_eq!(parsed.gui.enter_sends, original.gui.enter_sends);
+        assert_eq!(
+            parsed.permissions.auto_approve_readonly,
+            original.permissions.auto_approve_readonly
+        );
+        assert_eq!(parsed.permissions.allowlist, original.permissions.allowlist);
     }
 }

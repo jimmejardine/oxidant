@@ -19,6 +19,7 @@ pub enum DockTab {
     ExplorationList,
     DiagnosticPreview,
     ChatInput,
+    Settings,
     File { path: PathBuf, source: FileSource },
 }
 
@@ -37,6 +38,7 @@ impl DockTab {
             DockTab::ExplorationList => "Explorations".into(),
             DockTab::DiagnosticPreview => "Diagnostics".into(),
             DockTab::ChatInput => "Chat".into(),
+            DockTab::Settings => "Settings".into(),
             DockTab::File { path, .. } => path
                 .file_name()
                 .map(|s| s.to_string_lossy().to_string())
@@ -63,17 +65,20 @@ pub fn default_layout() -> DockState<DockTab> {
             DockTab::ExplorationList,
         ],
     );
-    let [_centre, _right] =
-        surface.split_right(NodeIndex::root(), 0.78, vec![DockTab::DiagnosticPreview]);
+    let [_centre, _right] = surface.split_right(
+        NodeIndex::root(),
+        0.78,
+        vec![DockTab::DiagnosticPreview, DockTab::Settings],
+    );
     let [_centre, _bottom] = surface.split_below(NodeIndex::root(), 0.75, vec![DockTab::ChatInput]);
     let _ = left;
     tree
 }
 
 /// The singletons offered in the Window menu. Order matches the spec
-/// (transcript, specs, explorations, diagnostics, chat). File tabs are
-/// excluded — they have their own discovery flow.
-pub fn singleton_tabs() -> [DockTab; 6] {
+/// (transcript, specs, explorations, diagnostics, chat, settings). File
+/// tabs are excluded — they have their own discovery flow.
+pub fn singleton_tabs() -> [DockTab; 7] {
     [
         DockTab::Transcript,
         DockTab::SpecTree,
@@ -81,6 +86,7 @@ pub fn singleton_tabs() -> [DockTab; 6] {
         DockTab::ExplorationList,
         DockTab::DiagnosticPreview,
         DockTab::ChatInput,
+        DockTab::Settings,
     ]
 }
 
@@ -228,16 +234,10 @@ mod tests {
             source: FileSource::Spec,
         };
         open_in_centre(&mut state, file.clone());
-        let count_before: usize = state
-            .iter_all_tabs()
-            .filter(|(_, t)| **t == file)
-            .count();
+        let count_before: usize = state.iter_all_tabs().filter(|(_, t)| **t == file).count();
         assert_eq!(count_before, 1);
         open_in_centre(&mut state, file.clone());
-        let count_after: usize = state
-            .iter_all_tabs()
-            .filter(|(_, t)| **t == file)
-            .count();
+        let count_after: usize = state.iter_all_tabs().filter(|(_, t)| **t == file).count();
         assert_eq!(count_after, 1, "open_in_centre duplicated an open tab");
     }
 

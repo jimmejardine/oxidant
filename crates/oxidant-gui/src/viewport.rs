@@ -8,9 +8,10 @@
 // title formatting. The persistent App state lives in app.rs.
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 
 use eframe::NativeOptions;
+use oxidant_config::Settings;
 use tokio::runtime::Handle;
 
 use crate::app::App;
@@ -26,6 +27,9 @@ pub struct ViewportConfig {
     /// Initial theme. Loaded from `[gui] theme = "..."` in settings;
     /// flipped at runtime via the View → Theme menu.
     pub theme: theme::Theme,
+    /// Live, shared settings. The Settings panel mutates this and writes
+    /// to disk; other panels (theme, model, chat-input) read from it.
+    pub settings: Arc<StdMutex<Settings>>,
 }
 
 pub fn run_viewport(config: ViewportConfig) -> Result<(), eframe::Error> {
