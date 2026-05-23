@@ -159,7 +159,8 @@ A\tsrc/lib.rs
 
     #[test]
     fn handles_renames() {
-        let out = "OXIDANT-COMMIT\tabc\t2026-05-22T00:00:00Z\tX\tRename\nR100\tsrc/old.rs\tsrc/new.rs\n";
+        let out =
+            "OXIDANT-COMMIT\tabc\t2026-05-22T00:00:00Z\tX\tRename\nR100\tsrc/old.rs\tsrc/new.rs\n";
         let commits = parse_log_output(out);
         assert_eq!(commits[0].files_touched, vec!["src/new.rs"]);
     }

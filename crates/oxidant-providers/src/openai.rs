@@ -71,7 +71,10 @@ impl OpenAIProvider {
 impl Provider for OpenAIProvider {
     async fn chat(&self, req: ChatRequest) -> anyhow::Result<BoxStream<'static, ChatEvent>> {
         let body = build_request_body(&req);
-        let url = format!("{}/chat/completions", self.config.base_url.trim_end_matches('/'));
+        let url = format!(
+            "{}/chat/completions",
+            self.config.base_url.trim_end_matches('/')
+        );
 
         let mut builder = self.http.post(&url).json(&body);
         if let Some(key) = &self.config.api_key {
@@ -80,9 +83,10 @@ impl Provider for OpenAIProvider {
 
         tracing::debug!(provider = %self.config.name, model = %req.model, "POST /chat/completions");
 
-        let response = builder.send().await.with_context(|| {
-            format!("HTTP request to {url} failed before response headers")
-        })?;
+        let response = builder
+            .send()
+            .await
+            .with_context(|| format!("HTTP request to {url} failed before response headers"))?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
@@ -244,10 +248,10 @@ fn translate_chunk(
 
     if let Some(choice) = chunk.choices.first() {
         let delta = &choice.delta;
-        if let Some(text) = delta.content.as_deref() {
-            if !text.is_empty() {
-                events.push(ChatEvent::TextDelta(text.to_string()));
-            }
+        if let Some(text) = delta.content.as_deref()
+            && !text.is_empty()
+        {
+            events.push(ChatEvent::TextDelta(text.to_string()));
         }
 
         if let Some(tcs) = &delta.tool_calls {
@@ -268,13 +272,14 @@ fn translate_chunk(
                             name: state.name.clone(),
                         });
                     }
-                    if let Some(args) = &func.arguments {
-                        if !args.is_empty() && !state.id.is_empty() {
-                            events.push(ChatEvent::ToolUseInputDelta {
-                                id: state.id.clone(),
-                                json_delta: args.clone(),
-                            });
-                        }
+                    if let Some(args) = &func.arguments
+                        && !args.is_empty()
+                        && !state.id.is_empty()
+                    {
+                        events.push(ChatEvent::ToolUseInputDelta {
+                            id: state.id.clone(),
+                            json_delta: args.clone(),
+                        });
                     }
                 }
             }
@@ -285,7 +290,11 @@ fn translate_chunk(
         }
     }
 
-    ChunkOutcome { events, stop_reason, usage }
+    ChunkOutcome {
+        events,
+        stop_reason,
+        usage,
+    }
 }
 
 fn parse_finish_reason(s: &str) -> StopReason {
@@ -299,7 +308,11 @@ fn parse_finish_reason(s: &str) -> StopReason {
 }
 
 fn truncate(s: &str, n: usize) -> String {
-    if s.len() <= n { s.to_string() } else { format!("{}…", &s[..n]) }
+    if s.len() <= n {
+        s.to_string()
+    } else {
+        format!("{}…", &s[..n])
+    }
 }
 
 // ---------- Request body construction ----------
@@ -354,7 +367,11 @@ fn translate_user_message(msg: &RequestMessage, out: &mut Vec<Value>) {
                 }
                 text_buf.push_str(s);
             }
-            ContentPart::ToolResult { call_id, content, is_error: _ } => {
+            ContentPart::ToolResult {
+                call_id,
+                content,
+                is_error: _,
+            } => {
                 flush_text(&mut text_buf, out);
                 out.push(serde_json::json!({
                     "role": "tool",
@@ -478,6 +495,7 @@ struct OpenAIUsage {
 }
 
 impl OpenAIUsage {
+    #[allow(clippy::wrong_self_convention)] // borrowed input by design; method name kept for symmetry with sibling conversions
     fn into_oxidant(&self) -> Usage {
         Usage {
             input_tokens: self.prompt_tokens,
@@ -541,8 +559,12 @@ mod tests {
         assert_eq!(m["content"], "looking up…");
         assert_eq!(m["tool_calls"][0]["id"], "call_1");
         assert_eq!(m["tool_calls"][0]["function"]["name"], "get_weather");
-        let args: serde_json::Value =
-            serde_json::from_str(m["tool_calls"][0]["function"]["arguments"].as_str().unwrap()).unwrap();
+        let args: serde_json::Value = serde_json::from_str(
+            m["tool_calls"][0]["function"]["arguments"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
         assert_eq!(args, json!({"location": "Paris"}));
     }
 
@@ -591,6 +613,9 @@ mod tests {
         assert_eq!(parse_finish_reason("stop"), StopReason::EndTurn);
         assert_eq!(parse_finish_reason("length"), StopReason::MaxTokens);
         assert_eq!(parse_finish_reason("tool_calls"), StopReason::ToolUse);
-        assert_eq!(parse_finish_reason("content_filter"), StopReason::StopSequence);
+        assert_eq!(
+            parse_finish_reason("content_filter"),
+            StopReason::StopSequence
+        );
     }
 }

@@ -24,7 +24,7 @@ pub use syn_query::{SynAddDerive, SynAddUse, SynFindItems, SynRenameLocal};
 /// Register every model-facing rust-tool currently realised:
 /// - cargo: cargo_check, cargo_clippy, cargo_test
 /// - lsp:   rust_hover, rust_goto_definition, rust_find_references,
-///          rust_workspace_symbols, rust_rename, rust_code_actions, rust_diagnostics
+///   rust_workspace_symbols, rust_rename, rust_code_actions, rust_diagnostics
 /// - syn:   syn_find_items, syn_add_use, syn_add_derive, syn_rename_local
 pub fn register_standard_tools(registry: &mut ToolRegistry) {
     let tools: Vec<Arc<dyn Tool>> = vec![

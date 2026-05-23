@@ -58,10 +58,8 @@ impl Tool for SpecValidate {
         }
 
         if let Some(kind_filter) = &args.kinds {
-            let allowed: Vec<WarningKind> = kind_filter
-                .iter()
-                .filter_map(|s| parse_kind(s))
-                .collect();
+            let allowed: Vec<WarningKind> =
+                kind_filter.iter().filter_map(|s| parse_kind(s)).collect();
             warnings.retain(|w| allowed.contains(&w.kind));
         }
 
@@ -81,9 +79,10 @@ impl Tool for SpecValidate {
 }
 
 fn warning_to_json(w: &Warning) -> Value {
-    let location = w.location.as_ref().map(|(path, line, col)| {
-        json!([path.to_string_lossy().replace('\\', "/"), line, col])
-    });
+    let location = w
+        .location
+        .as_ref()
+        .map(|(path, line, col)| json!([path.to_string_lossy().replace('\\', "/"), line, col]));
     json!({
         "spec_id":  w.spec_id,
         "kind":     format!("{:?}", w.kind),

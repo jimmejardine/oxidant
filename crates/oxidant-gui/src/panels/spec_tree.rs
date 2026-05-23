@@ -38,17 +38,23 @@ impl SpecTreePanel {
 
         ui.horizontal(|ui| {
             ui.label(RichText::new("specs").strong());
-            if ui.small_button("⟳").on_hover_text("rebuild from disk").clicked() {
+            if ui
+                .small_button("⟳")
+                .on_hover_text("rebuild from disk")
+                .clicked()
+            {
                 self.tree = Some(self.build_tree());
             }
         });
         ui.separator();
 
-        egui::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
-            if let Some(tree) = &self.tree {
-                render_node(ui, tree, "spec");
-            }
-        });
+        egui::ScrollArea::vertical()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| {
+                if let Some(tree) = &self.tree {
+                    render_node(ui, tree, "spec");
+                }
+            });
     }
 
     fn build_tree(&self) -> DirNode {
@@ -120,11 +126,7 @@ fn render_leaf(ui: &mut egui::Ui, rec: &SpecRecord) {
         _ => Color32::GRAY,
     };
     ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(format!("[{kind}]"))
-                .color(kind_color)
-                .small(),
-        );
+        ui.label(RichText::new(format!("[{kind}]")).color(kind_color).small());
         let text = RichText::new(leaf_name);
         let text = if matches!(status, oxidant_spec_tools::SpecStatus::Deprecated) {
             text.color(Color32::DARK_GRAY).strikethrough()

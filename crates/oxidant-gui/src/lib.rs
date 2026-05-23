@@ -35,7 +35,8 @@ pub fn launch_gui(
     system_prompt: Option<String>,
     tokio_handle: Handle,
 ) -> Result<(), eframe::Error> {
-    let canonical = dunce::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
+    let canonical =
+        dunce::canonicalize(workspace_root).unwrap_or_else(|_| workspace_root.to_path_buf());
     let config = ViewportConfig {
         workspace_root: canonical,
         provider,

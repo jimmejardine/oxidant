@@ -137,7 +137,13 @@ fn build_subtree(
             .collect();
         neighbours.sort();
         for child_id in neighbours {
-            children.push(build_subtree(graph, child_id, kind, remaining_depth - 1, visited));
+            children.push(build_subtree(
+                graph,
+                child_id,
+                kind,
+                remaining_depth - 1,
+                visited,
+            ));
         }
     }
 

@@ -105,7 +105,9 @@ pub enum ParseError {
     UnterminatedFrontmatter,
     #[error("invalid YAML in frontmatter: {0}")]
     InvalidYaml(String),
-    #[error("invalid `kind` value: {0:?} (expected one of overview|glossary|component|contract|tool|flow|invariant|decision)")]
+    #[error(
+        "invalid `kind` value: {0:?} (expected one of overview|glossary|component|contract|tool|flow|invariant|decision)"
+    )]
     InvalidKind(String),
     #[error("invalid `status` value: {0:?} (expected one of draft|active|deprecated)")]
     InvalidStatus(String),
@@ -113,11 +115,15 @@ pub enum ParseError {
 
 pub fn parse(content: &str) -> Result<SpecFile, ParseError> {
     let (yaml_text, body, body_line_offset) = split_frontmatter(content)?;
-    let raw: RawFrontmatter = serde_yaml_ng::from_str(yaml_text)
-        .map_err(|e| ParseError::InvalidYaml(e.to_string()))?;
+    let raw: RawFrontmatter =
+        serde_yaml_ng::from_str(yaml_text).map_err(|e| ParseError::InvalidYaml(e.to_string()))?;
     let frontmatter = raw.into_record()?;
     let refs_in_body = extract_refs(&body, body_line_offset);
-    Ok(SpecFile { frontmatter, body, refs_in_body })
+    Ok(SpecFile {
+        frontmatter,
+        body,
+        refs_in_body,
+    })
 }
 
 fn split_frontmatter(content: &str) -> Result<(&str, String, usize), ParseError> {
@@ -229,15 +235,15 @@ fn parse_test_ref(raw: String) -> TestRef {
             path: PathBuf::from(path),
             name: name.to_string(),
         },
-        _ => TestRef::WholeFile { path: PathBuf::from(raw) },
+        _ => TestRef::WholeFile {
+            path: PathBuf::from(raw),
+        },
     }
 }
 
 fn yaml_map_to_json(map: HashMap<String, serde_yaml_ng::Value>) -> serde_json::Value {
-    let entries: serde_json::Map<String, serde_json::Value> = map
-        .into_iter()
-        .map(|(k, v)| (k, yaml_to_json(v)))
-        .collect();
+    let entries: serde_json::Map<String, serde_json::Value> =
+        map.into_iter().map(|(k, v)| (k, yaml_to_json(v))).collect();
     serde_json::Value::Object(entries)
 }
 
@@ -334,9 +340,8 @@ pub fn extract_fenced_blocks(body: &str, line_offset: usize) -> Vec<FencedBlock>
 // Fence-aware body ref extraction. Lines inside ```...``` or ~~~...~~~ blocks
 // are skipped, and within a non-fenced line, content between single backticks
 // is also skipped — so literals like `[[ref]]` in prose don't count.
-static REF_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\[\[([^\]\n]+)\]\]").expect("known-good regex compiles")
-});
+static REF_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\[\[([^\]\n]+)\]\]").expect("known-good regex compiles"));
 
 fn extract_refs(body: &str, line_offset: usize) -> Vec<RefMention> {
     let mut out = Vec::new();
@@ -387,7 +392,10 @@ fn extract_refs_in_line(line: &str, absolute_line: usize, out: &mut Vec<RefMenti
                 Some(rel) => search + rel,
                 None => return, // unterminated span — bail
             };
-            let close_len = bytes[close_start..].iter().take_while(|&&b| b == b'`').count();
+            let close_len = bytes[close_start..]
+                .iter()
+                .take_while(|&&b| b == b'`')
+                .count();
             if close_len == open_len {
                 pos = close_start + close_len;
                 break;
@@ -397,7 +405,13 @@ fn extract_refs_in_line(line: &str, absolute_line: usize, out: &mut Vec<RefMenti
     }
 }
 
-fn scan_segment(line: &str, start: usize, end: usize, absolute_line: usize, out: &mut Vec<RefMention>) {
+fn scan_segment(
+    line: &str,
+    start: usize,
+    end: usize,
+    absolute_line: usize,
+    out: &mut Vec<RefMention>,
+) {
     if start >= end {
         return;
     }
@@ -454,7 +468,8 @@ mod tests {
 
     #[test]
     fn ignores_refs_inside_inline_backticks() {
-        let src = "---\nid: a\nkind: tool\n---\nUse `[[name]]` syntax to reference [[real/target]].\n";
+        let src =
+            "---\nid: a\nkind: tool\n---\nUse `[[name]]` syntax to reference [[real/target]].\n";
         let f = parse(src).expect("parse");
         let raws: Vec<_> = f.refs_in_body.iter().map(|r| r.raw.as_str()).collect();
         assert_eq!(raws, vec!["real/target"]);
@@ -472,7 +487,8 @@ mod tests {
 
     #[test]
     fn extract_fenced_blocks_captures_language_and_contents() {
-        let body = "intro\n```rust\nfn a() {}\nfn b() {}\n```\nbetween\n~~~json\n{\"x\": 1}\n~~~\nend\n";
+        let body =
+            "intro\n```rust\nfn a() {}\nfn b() {}\n```\nbetween\n~~~json\n{\"x\": 1}\n~~~\nend\n";
         let blocks = extract_fenced_blocks(body, 1);
         assert_eq!(blocks.len(), 2);
         assert_eq!(blocks[0].language, "rust");
@@ -522,7 +538,9 @@ mod tests {
                     path: PathBuf::from("crates/x/tests/y.rs"),
                     name: "it_works".to_string(),
                 },
-                TestRef::WholeFile { path: PathBuf::from("crates/x/tests/y.rs") },
+                TestRef::WholeFile {
+                    path: PathBuf::from("crates/x/tests/y.rs")
+                },
             ]
         );
     }

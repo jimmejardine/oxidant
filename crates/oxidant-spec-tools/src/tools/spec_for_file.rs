@@ -52,9 +52,11 @@ impl Tool for SpecForFile {
         let specs: Vec<Value> = records
             .iter()
             .filter(|r| {
-                r.file.frontmatter.code.iter().any(|p| {
-                    normalise_path(&p.to_string_lossy()) == needle
-                })
+                r.file
+                    .frontmatter
+                    .code
+                    .iter()
+                    .any(|p| normalise_path(&p.to_string_lossy()) == needle)
             })
             .map(|r| {
                 json!({

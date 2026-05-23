@@ -28,13 +28,18 @@ fn validate_runs_on_real_spec_tree() {
     // Smoke check: the function returns. We do not assert on counts because
     // they are the drift baseline; this test will be useful for tracking it
     // by running with `cargo test -p oxidant-spec-tools -- --nocapture`.
-    assert!(!warnings.iter().any(|w| {
-        // A parse error against any of our own specs would mean the parser
-        // doesn't understand a real-world frontmatter shape — that we DO want
-        // to fail on.
-        matches!(w.kind, WarningKind::ParseError)
-            && w.spec_id.as_deref().is_some_and(|id| !id.starts_with("scratch/"))
-    }), "parse error on a non-scratch spec — parser cannot handle real input");
+    assert!(
+        !warnings.iter().any(|w| {
+            // A parse error against any of our own specs would mean the parser
+            // doesn't understand a real-world frontmatter shape — that we DO want
+            // to fail on.
+            matches!(w.kind, WarningKind::ParseError)
+                && w.spec_id
+                    .as_deref()
+                    .is_some_and(|id| !id.starts_with("scratch/"))
+        }),
+        "parse error on a non-scratch spec — parser cannot handle real input"
+    );
 
     sample_diagnostics(&warnings);
 }

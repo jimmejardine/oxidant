@@ -55,7 +55,9 @@ pub async fn spawn(repo: &Path, opts: SpawnOpts) -> Result<WorktreeHandle, Workt
         message: e.to_string(),
     })?;
     let parent = canonical_repo.parent().ok_or_else(|| {
-        WorktreeError::Invalid("repo has no parent dir; expected workspace under a containing directory".into())
+        WorktreeError::Invalid(
+            "repo has no parent dir; expected workspace under a containing directory".into(),
+        )
     })?;
     let repo_name = canonical_repo
         .file_name()
@@ -149,9 +151,7 @@ pub async fn merge_back(
 ) -> Result<MergeOutcome, WorktreeError> {
     let parent_git = Git::at(repo);
     // The merge happens in the *parent* worktree, not the sub.
-    parent_git
-        .checkout(target_branch, false)
-        .await?;
+    parent_git.checkout(target_branch, false).await?;
     let outcome = parent_git
         .merge(
             &sub.branch,
@@ -173,9 +173,8 @@ pub async fn merge_back(
 
 // ---------------------------------------------------------------- helpers
 
-static SLUG_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"[^a-z0-9]+").expect("known-good regex")
-});
+static SLUG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[^a-z0-9]+").expect("known-good regex"));
 
 fn slugify(input: &str) -> String {
     let lower = input.to_lowercase();

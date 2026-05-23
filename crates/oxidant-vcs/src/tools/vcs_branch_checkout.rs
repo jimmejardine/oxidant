@@ -61,7 +61,10 @@ impl Tool for VcsBranchCheckout {
             ));
         }
 
-        match git.checkout(&args.branch, args.create.unwrap_or(false)).await {
+        match git
+            .checkout(&args.branch, args.create.unwrap_or(false))
+            .await
+        {
             Ok(o) => ToolResult::Ok(json!({
                 "branch":        o.branch,
                 "switched_from": o.switched_from,

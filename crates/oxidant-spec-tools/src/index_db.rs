@@ -22,7 +22,7 @@ use rusqlite::{Connection, OpenFlags, params};
 use serde::Serialize;
 
 use crate::frontmatter::SpecFile;
-use crate::walker::{SpecRecord, walk_specs};
+use crate::walker::walk_specs;
 
 static INDEX_DBS: OnceLock<StdMutex<HashMap<PathBuf, Arc<StdMutex<IndexDb>>>>> = OnceLock::new();
 
@@ -66,9 +66,7 @@ impl IndexDb {
     /// walks the spec tree and populates the tables. Subsequent calls
     /// reuse the cached connection — stale wrt on-disk edits made after
     /// init (re-indexing on notify is deferred).
-    pub fn for_workspace(
-        workspace_root: &Path,
-    ) -> Result<Arc<StdMutex<IndexDb>>, String> {
+    pub fn for_workspace(workspace_root: &Path) -> Result<Arc<StdMutex<IndexDb>>, String> {
         let canonical = dunce::canonicalize(workspace_root)
             .map_err(|e| format!("canonicalise workspace failed: {e}"))?;
         {
@@ -85,8 +83,7 @@ impl IndexDb {
 
     fn build(workspace: &Path) -> Result<Self, String> {
         let oxidant_dir = workspace.join(".oxidant");
-        std::fs::create_dir_all(&oxidant_dir)
-            .map_err(|e| format!("create .oxidant dir: {e}"))?;
+        std::fs::create_dir_all(&oxidant_dir).map_err(|e| format!("create .oxidant dir: {e}"))?;
         let db_path = oxidant_dir.join("spec-index.db");
         // Open the DB; remove any stale one so the schema/data starts fresh
         // each process. (Persistent caching across process restarts is a
@@ -194,7 +191,6 @@ impl IndexDb {
         tx.commit().map_err(|e| format!("commit: {e}"))
     }
 
-
     /// Run a filtered query against the specs table. Multiple filters AND
     /// together. Returns rows sorted by id for stability.
     pub fn query(&self, filter: &SpecFilter) -> Result<Vec<SpecRow>, String> {
@@ -235,9 +231,7 @@ impl IndexDb {
             bindings.push(r.clone());
         }
         if filter.orphans_only {
-            clauses.push(
-                "NOT EXISTS (SELECT 1 FROM spec_edges WHERE dst_ref = s.id)".into(),
-            );
+            clauses.push("NOT EXISTS (SELECT 1 FROM spec_edges WHERE dst_ref = s.id)".into());
             // Exclude overview/glossary from the orphan list — they're roots by
             // construction (no inbound edges is correct, not a smell).
             clauses.push("s.kind NOT IN ('overview', 'glossary')".into());
@@ -262,10 +256,8 @@ impl IndexDb {
             .conn
             .prepare(&sql)
             .map_err(|e| format!("prepare query: {e}"))?;
-        let bindings_refs: Vec<&dyn rusqlite::ToSql> = bindings
-            .iter()
-            .map(|s| s as &dyn rusqlite::ToSql)
-            .collect();
+        let bindings_refs: Vec<&dyn rusqlite::ToSql> =
+            bindings.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
         let rows = stmt
             .query_map(bindings_refs.as_slice(), |row| {
                 Ok(SpecRow {
@@ -343,7 +335,7 @@ fn insert_code_paths_for(
         let s = code.to_string_lossy().replace('\\', "/");
         stmt.execute(params![spec_id, s])
             .map_err(|e| format!("insert code_path: {e}"))?;
-        }
+    }
     Ok(())
 }
 

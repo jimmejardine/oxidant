@@ -11,9 +11,7 @@ use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
 use oxidant_core::{Tool, ToolContext, ToolResult};
-use oxidant_vcs::{
-    VcsBranchCreate, VcsCommit, VcsDiff, VcsExplore, VcsLog, VcsStatus, worktree,
-};
+use oxidant_vcs::{VcsBranchCreate, VcsCommit, VcsDiff, VcsExplore, VcsLog, VcsStatus, worktree};
 
 fn run_git(repo: &Path, args: &[&str]) {
     let status = SyncCommand::new("git")
@@ -49,7 +47,10 @@ fn make_repo(commits: &[(&str, &str)]) -> TempDir {
         }
         std::fs::write(full, content).unwrap();
         run_git(dir.path(), &["add", path]);
-        run_git(dir.path(), &["commit", "-m", &format!("add {path}"), "--quiet"]);
+        run_git(
+            dir.path(),
+            &["commit", "-m", &format!("add {path}"), "--quiet"],
+        );
     }
     dir
 }
@@ -76,7 +77,11 @@ async fn vcs_status_detects_dirty_files() {
     };
     let files = v["files"].as_array().unwrap();
     assert_eq!(files.len(), 2);
-    assert!(files.iter().any(|f| f["path"] == "new.txt" && f["worktree"] == "?"));
+    assert!(
+        files
+            .iter()
+            .any(|f| f["path"] == "new.txt" && f["worktree"] == "?")
+    );
 }
 
 #[tokio::test]
@@ -88,14 +93,28 @@ async fn vcs_log_lists_commits() {
     };
     let commits = v["commits"].as_array().unwrap();
     assert_eq!(commits.len(), 2);
-    assert!(commits[0]["subject"].as_str().unwrap().contains("add b.txt"));
-    assert!(commits[1]["subject"].as_str().unwrap().contains("add a.txt"));
+    assert!(
+        commits[0]["subject"]
+            .as_str()
+            .unwrap()
+            .contains("add b.txt")
+    );
+    assert!(
+        commits[1]["subject"]
+            .as_str()
+            .unwrap()
+            .contains("add a.txt")
+    );
 }
 
 #[tokio::test]
 async fn vcs_diff_with_modifications() {
     let dir = make_repo(&[("a.txt", "line 1\nline 2\n")]);
-    std::fs::write(dir.path().join("a.txt"), "line 1\nline 2 MODIFIED\nline 3\n").unwrap();
+    std::fs::write(
+        dir.path().join("a.txt"),
+        "line 1\nline 2 MODIFIED\nline 3\n",
+    )
+    .unwrap();
     let v = match VcsDiff
         .invoke(json!({ "name_only": true }), &ctx_for(dir.path()))
         .await
@@ -176,7 +195,11 @@ async fn worktree_spawn_creates_dir_and_branch() {
     )
     .await
     .unwrap();
-    assert!(handle.branch.starts_with("oxidant/explore/test-exploration-"));
+    assert!(
+        handle
+            .branch
+            .starts_with("oxidant/explore/test-exploration-")
+    );
     assert!(handle.path.exists());
     assert!(handle.path.join(".oxidant").exists());
 }

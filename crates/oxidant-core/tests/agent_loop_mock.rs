@@ -42,12 +42,7 @@ impl MockProvider {
 impl Provider for MockProvider {
     async fn chat(&self, req: ChatRequest) -> anyhow::Result<BoxStream<'static, ChatEvent>> {
         self.requests.lock().unwrap().push(req);
-        let events = self
-            .turns
-            .lock()
-            .unwrap()
-            .pop()
-            .unwrap_or_default();
+        let events = self.turns.lock().unwrap().pop().unwrap_or_default();
         let stream = futures::stream::iter(events);
         Ok(Box::pin(stream))
     }
@@ -78,7 +73,11 @@ async fn text_only_response_ends_after_one_iteration() {
         ChatEvent::TextDelta(", world!".into()),
         ChatEvent::Finish {
             stop_reason: StopReason::EndTurn,
-            usage: Usage { input_tokens: 10, output_tokens: 3, ..Default::default() },
+            usage: Usage {
+                input_tokens: 10,
+                output_tokens: 3,
+                ..Default::default()
+            },
         },
     ]]);
 
@@ -142,7 +141,11 @@ async fn tool_call_is_dispatched_and_results_feed_next_turn() {
             ChatEvent::TextDelta("It is 2026.".into()),
             ChatEvent::Finish {
                 stop_reason: StopReason::EndTurn,
-                usage: Usage { input_tokens: 40, output_tokens: 4, ..Default::default() },
+                usage: Usage {
+                    input_tokens: 40,
+                    output_tokens: 4,
+                    ..Default::default()
+                },
             },
         ],
         // turn 1: assistant emits a tool call and finishes with StopReason::ToolUse
@@ -158,7 +161,11 @@ async fn tool_call_is_dispatched_and_results_feed_next_turn() {
             ChatEvent::ToolUseEnd { id: "tc1".into() },
             ChatEvent::Finish {
                 stop_reason: StopReason::ToolUse,
-                usage: Usage { input_tokens: 20, output_tokens: 5, ..Default::default() },
+                usage: Usage {
+                    input_tokens: 20,
+                    output_tokens: 5,
+                    ..Default::default()
+                },
             },
         ],
     ]);
@@ -210,7 +217,10 @@ async fn malformed_tool_args_fall_back_to_empty_object() {
             },
         ],
         vec![
-            ChatEvent::ToolUseStart { id: "tc1".into(), name: "current_time".into() },
+            ChatEvent::ToolUseStart {
+                id: "tc1".into(),
+                name: "current_time".into(),
+            },
             ChatEvent::ToolUseInputDelta {
                 id: "tc1".into(),
                 json_delta: "{not valid json".into(),
@@ -245,7 +255,10 @@ async fn malformed_tool_args_fall_back_to_empty_object() {
     // The malformed JSON should not panic; tool dispatched with empty input.
     assert_eq!(outcome.tool_calls_dispatched, 1);
     // Verify the tool result landed (the stub doesn't care about its args)
-    let Message::ToolResult { content, is_error, .. } = &conv.messages[2] else {
+    let Message::ToolResult {
+        content, is_error, ..
+    } = &conv.messages[2]
+    else {
         panic!("expected tool result")
     };
     assert!(!is_error);
@@ -331,20 +344,34 @@ async fn post_edit_hook_fires_after_mutating_tool() {
     let provider = MockProvider::new(vec![
         vec![
             ChatEvent::TextDelta("done".into()),
-            ChatEvent::Finish { stop_reason: StopReason::EndTurn, usage: Usage::default() },
+            ChatEvent::Finish {
+                stop_reason: StopReason::EndTurn,
+                usage: Usage::default(),
+            },
         ],
         vec![
-            ChatEvent::ToolUseStart { id: "m1".into(), name: "scratch_write".into() },
-            ChatEvent::ToolUseInputDelta { id: "m1".into(), json_delta: "{}".into() },
+            ChatEvent::ToolUseStart {
+                id: "m1".into(),
+                name: "scratch_write".into(),
+            },
+            ChatEvent::ToolUseInputDelta {
+                id: "m1".into(),
+                json_delta: "{}".into(),
+            },
             ChatEvent::ToolUseEnd { id: "m1".into() },
-            ChatEvent::Finish { stop_reason: StopReason::ToolUse, usage: Usage::default() },
+            ChatEvent::Finish {
+                stop_reason: StopReason::ToolUse,
+                usage: Usage::default(),
+            },
         ],
     ]);
 
     let invocations = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let mut registry = ToolRegistry::new();
     registry.register(std::sync::Arc::new(ScratchWrite));
-    registry.register(std::sync::Arc::new(DriftCheck { invocations: invocations.clone() }));
+    registry.register(std::sync::Arc::new(DriftCheck {
+        invocations: invocations.clone(),
+    }));
 
     let mut conv = Conversation::new();
     conv.push_user_text("write something");
@@ -386,9 +413,15 @@ async fn post_edit_hook_skipped_when_only_readonly_tools_used() {
     struct PeekTool;
     #[async_trait]
     impl Tool for PeekTool {
-        fn name(&self) -> &str { "peek" }
-        fn schema(&self) -> serde_json::Value { json!({}) }
-        fn category(&self) -> ToolCategory { ToolCategory::ReadOnly }
+        fn name(&self) -> &str {
+            "peek"
+        }
+        fn schema(&self) -> serde_json::Value {
+            json!({})
+        }
+        fn category(&self) -> ToolCategory {
+            ToolCategory::ReadOnly
+        }
         async fn invoke(&self, _: serde_json::Value, _: &ToolContext) -> ToolResult {
             ToolResult::Ok(json!({}))
         }
@@ -397,20 +430,34 @@ async fn post_edit_hook_skipped_when_only_readonly_tools_used() {
     let provider = MockProvider::new(vec![
         vec![
             ChatEvent::TextDelta("done".into()),
-            ChatEvent::Finish { stop_reason: StopReason::EndTurn, usage: Usage::default() },
+            ChatEvent::Finish {
+                stop_reason: StopReason::EndTurn,
+                usage: Usage::default(),
+            },
         ],
         vec![
-            ChatEvent::ToolUseStart { id: "p1".into(), name: "peek".into() },
-            ChatEvent::ToolUseInputDelta { id: "p1".into(), json_delta: "{}".into() },
+            ChatEvent::ToolUseStart {
+                id: "p1".into(),
+                name: "peek".into(),
+            },
+            ChatEvent::ToolUseInputDelta {
+                id: "p1".into(),
+                json_delta: "{}".into(),
+            },
             ChatEvent::ToolUseEnd { id: "p1".into() },
-            ChatEvent::Finish { stop_reason: StopReason::ToolUse, usage: Usage::default() },
+            ChatEvent::Finish {
+                stop_reason: StopReason::ToolUse,
+                usage: Usage::default(),
+            },
         ],
     ]);
 
     let invocations = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let mut registry = ToolRegistry::new();
     registry.register(std::sync::Arc::new(PeekTool));
-    registry.register(std::sync::Arc::new(DriftCheck { invocations: invocations.clone() }));
+    registry.register(std::sync::Arc::new(DriftCheck {
+        invocations: invocations.clone(),
+    }));
 
     let mut conv = Conversation::new();
     conv.push_user_text("look");
@@ -435,13 +482,25 @@ async fn post_edit_hook_silent_when_unconfigured() {
     let provider = MockProvider::new(vec![
         vec![
             ChatEvent::TextDelta("ok".into()),
-            ChatEvent::Finish { stop_reason: StopReason::EndTurn, usage: Usage::default() },
+            ChatEvent::Finish {
+                stop_reason: StopReason::EndTurn,
+                usage: Usage::default(),
+            },
         ],
         vec![
-            ChatEvent::ToolUseStart { id: "m1".into(), name: "scratch_write".into() },
-            ChatEvent::ToolUseInputDelta { id: "m1".into(), json_delta: "{}".into() },
+            ChatEvent::ToolUseStart {
+                id: "m1".into(),
+                name: "scratch_write".into(),
+            },
+            ChatEvent::ToolUseInputDelta {
+                id: "m1".into(),
+                json_delta: "{}".into(),
+            },
             ChatEvent::ToolUseEnd { id: "m1".into() },
-            ChatEvent::Finish { stop_reason: StopReason::ToolUse, usage: Usage::default() },
+            ChatEvent::Finish {
+                stop_reason: StopReason::ToolUse,
+                usage: Usage::default(),
+            },
         ],
     ]);
     let mut registry = ToolRegistry::new();
@@ -469,23 +528,39 @@ async fn max_iterations_bound_returns_error() {
     // Both turns end with ToolUse so the loop never reaches EndTurn.
     let provider = MockProvider::new(vec![
         vec![
-            ChatEvent::ToolUseStart { id: "b".into(), name: "current_time".into() },
-            ChatEvent::ToolUseInputDelta { id: "b".into(), json_delta: "{}".into() },
+            ChatEvent::ToolUseStart {
+                id: "b".into(),
+                name: "current_time".into(),
+            },
+            ChatEvent::ToolUseInputDelta {
+                id: "b".into(),
+                json_delta: "{}".into(),
+            },
             ChatEvent::ToolUseEnd { id: "b".into() },
-            ChatEvent::Finish { stop_reason: StopReason::ToolUse, usage: Usage::default() },
+            ChatEvent::Finish {
+                stop_reason: StopReason::ToolUse,
+                usage: Usage::default(),
+            },
         ],
         vec![
-            ChatEvent::ToolUseStart { id: "a".into(), name: "current_time".into() },
-            ChatEvent::ToolUseInputDelta { id: "a".into(), json_delta: "{}".into() },
+            ChatEvent::ToolUseStart {
+                id: "a".into(),
+                name: "current_time".into(),
+            },
+            ChatEvent::ToolUseInputDelta {
+                id: "a".into(),
+                json_delta: "{}".into(),
+            },
             ChatEvent::ToolUseEnd { id: "a".into() },
-            ChatEvent::Finish { stop_reason: StopReason::ToolUse, usage: Usage::default() },
+            ChatEvent::Finish {
+                stop_reason: StopReason::ToolUse,
+                usage: Usage::default(),
+            },
         ],
     ]);
 
     let mut registry = ToolRegistry::new();
-    registry.register(std::sync::Arc::new(CurrentTimeStub {
-        fixed: "x".into(),
-    }));
+    registry.register(std::sync::Arc::new(CurrentTimeStub { fixed: "x".into() }));
 
     let mut conv = Conversation::new();
     conv.push_user_text("loop!");
@@ -493,15 +568,8 @@ async fn max_iterations_bound_returns_error() {
     let mut config = AgentLoopConfig::new("m");
     config.max_iterations = 2;
 
-    let err = run(
-        &provider,
-        &registry,
-        &ctx(),
-        &mut conv,
-        &config,
-        |_| {},
-    )
-    .await
-    .unwrap_err();
+    let err = run(&provider, &registry, &ctx(), &mut conv, &config, |_| {})
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("max_iterations"));
 }

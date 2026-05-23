@@ -14,8 +14,8 @@ use futures::StreamExt;
 use serde_json::Value;
 
 use oxidant_providers::{
-    ChatEvent, ChatRequest, ContentPart, Provider, RequestMessage, Role, StopReason, ThinkingConfig,
-    ToolSpec, Usage,
+    ChatEvent, ChatRequest, ContentPart, Provider, RequestMessage, Role, StopReason,
+    ThinkingConfig, ToolSpec, Usage,
 };
 
 use crate::conversation::Conversation;
@@ -169,21 +169,23 @@ where
         }
 
         // Post-edit hook — see spec/components/core/agent-loop.md.
-        if any_mutating {
-            if let Some(check_tool) = &config.post_edit_check_tool {
-                if registry.iter().any(|t| t.name() == check_tool.as_str()) {
-                    tracing::debug!(tool = %check_tool, "post-edit check");
-                    let result = registry
-                        .invoke(check_tool, serde_json::Value::Object(Default::default()), ctx)
-                        .await;
-                    let message = format_post_edit_check(check_tool, &result);
-                    conv.push_user_text(message);
-                    outcome.post_edit_checks_fired += 1;
-                } else {
-                    tracing::warn!(
-                        "post_edit_check_tool {check_tool:?} not registered; skipping"
-                    );
-                }
+        if any_mutating
+            && let Some(check_tool) = &config.post_edit_check_tool
+        {
+            if registry.iter().any(|t| t.name() == check_tool.as_str()) {
+                tracing::debug!(tool = %check_tool, "post-edit check");
+                let result = registry
+                    .invoke(
+                        check_tool,
+                        serde_json::Value::Object(Default::default()),
+                        ctx,
+                    )
+                    .await;
+                let message = format_post_edit_check(check_tool, &result);
+                conv.push_user_text(message);
+                outcome.post_edit_checks_fired += 1;
+            } else {
+                tracing::warn!("post_edit_check_tool {check_tool:?} not registered; skipping");
             }
         }
     }
@@ -232,7 +234,9 @@ fn parse_tool_input(buf: &str) -> Value {
     match serde_json::from_str(buf) {
         Ok(v) => v,
         Err(e) => {
-            tracing::warn!("malformed tool input JSON ({e}); falling back to empty object. raw={buf}");
+            tracing::warn!(
+                "malformed tool input JSON ({e}); falling back to empty object. raw={buf}"
+            );
             Value::Object(serde_json::Map::new())
         }
     }
@@ -279,15 +283,25 @@ pub fn build_request(
                 flush_tool_results(&mut tool_result_buf, &mut messages);
                 let parts: Vec<ContentPart> = content.iter().filter_map(block_to_part).collect();
                 if !parts.is_empty() {
-                    messages.push(RequestMessage { role: Role::User, content: parts });
+                    messages.push(RequestMessage {
+                        role: Role::User,
+                        content: parts,
+                    });
                 }
             }
             Message::Assistant { content, .. } => {
                 flush_tool_results(&mut tool_result_buf, &mut messages);
                 let parts: Vec<ContentPart> = content.iter().filter_map(block_to_part).collect();
-                messages.push(RequestMessage { role: Role::Assistant, content: parts });
+                messages.push(RequestMessage {
+                    role: Role::Assistant,
+                    content: parts,
+                });
             }
-            Message::ToolResult { call_id, content, is_error } => {
+            Message::ToolResult {
+                call_id,
+                content,
+                is_error,
+            } => {
                 tool_result_buf.push(ContentPart::ToolResult {
                     call_id: call_id.clone(),
                     content: content.as_string(),
@@ -336,11 +350,16 @@ fn block_to_part(block: &ContentBlock) -> Option<ContentPart> {
             name: name.clone(),
             input: input.clone(),
         }),
-        ContentBlock::Image { source: _, media_type: _ } => {
+        ContentBlock::Image {
+            source: _,
+            media_type: _,
+        } => {
             // ImageSource isn't supported by the local provider path; drop with a debug log.
             // Vision will be wired through when oxidant-providers gains a vision content variant.
             let _ = ImageSource::Base64(String::new()); // keep ImageSource in scope
-            tracing::debug!("dropping ContentBlock::Image (vision not wired through MVP provider path)");
+            tracing::debug!(
+                "dropping ContentBlock::Image (vision not wired through MVP provider path)"
+            );
             None
         }
     }

@@ -47,14 +47,23 @@ pub fn diff_all(repo: &Path) -> Vec<Drift> {
     let mut out = Vec::new();
     let spec_root = repo.join("spec");
     let mut specs: Vec<(String, PathBuf, SpecFile)> = Vec::new();
-    for entry in walkdir::WalkDir::new(&spec_root).into_iter().filter_map(|e| e.ok()) {
+    for entry in walkdir::WalkDir::new(&spec_root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let path = entry.path();
         if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("md") {
             continue;
         }
-        let Ok(canonical_id) = canonical_id(&spec_root, path) else { continue };
-        let Ok(content) = std::fs::read_to_string(path) else { continue };
-        let Ok(file) = frontmatter::parse(&content) else { continue };
+        let Ok(canonical_id) = canonical_id(&spec_root, path) else {
+            continue;
+        };
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(file) = frontmatter::parse(&content) else {
+            continue;
+        };
         specs.push((canonical_id, path.to_path_buf(), file));
     }
     specs.sort_by(|a, b| a.0.cmp(&b.0));
@@ -170,7 +179,7 @@ fn check_contract_drift(repo: &Path, contract_id: &str, file: &SpecFile) -> Vec<
             for method in spec_methods(spec_trait) {
                 out.push(Drift::MethodRemoved {
                     contract_id: contract_id.to_string(),
-                    method: method_name(&method),
+                    method: method_name(method),
                 });
             }
             continue;
@@ -355,7 +364,8 @@ mod tests {
 
     #[test]
     fn nested_generic_with_path_prefixes_normalised() {
-        let spec = "pub trait X { fn a(&self) -> Result<std::collections::HashMap<String, foo::Bar>>; }";
+        let spec =
+            "pub trait X { fn a(&self) -> Result<std::collections::HashMap<String, foo::Bar>>; }";
         let code = "pub trait X { fn a(&self) -> Result<HashMap<String, Bar>>; }";
         let drifts = compare_methods(
             "c/x",

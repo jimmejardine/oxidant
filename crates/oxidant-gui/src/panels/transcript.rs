@@ -32,10 +32,7 @@ impl TranscriptPanel {
                     } else {
                         RichText::new(format!(
                             "done · {} iterations · {} tool calls · in {} / out {}",
-                            o.iterations,
-                            o.tool_calls,
-                            o.usage.input_tokens,
-                            o.usage.output_tokens
+                            o.iterations, o.tool_calls, o.usage.input_tokens, o.usage.output_tokens
                         ))
                         .color(Color32::DARK_GRAY)
                         .small()
@@ -46,7 +43,9 @@ impl TranscriptPanel {
                     ui.add_space(80.0);
                     ui.vertical_centered(|ui| {
                         ui.label(
-                            RichText::new("oxidant").size(32.0).color(Color32::DARK_GRAY),
+                            RichText::new("oxidant")
+                                .size(32.0)
+                                .color(Color32::DARK_GRAY),
                         );
                         ui.label(
                             RichText::new("Type a prompt below and press Ctrl+Enter to send.")
@@ -145,9 +144,7 @@ fn render_block(ui: &mut egui::Ui, block: &ContentBlock) {
             );
         }
         ContentBlock::Image { .. } => {
-            ui.label(
-                RichText::new("[image — not rendered in MVP]").color(Color32::DARK_GRAY),
-            );
+            ui.label(RichText::new("[image — not rendered in MVP]").color(Color32::DARK_GRAY));
         }
     }
 }

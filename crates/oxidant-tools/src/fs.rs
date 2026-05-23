@@ -102,7 +102,10 @@ impl Tool for FsRead {
             }));
         }
 
-        if args.offset.is_none() && args.limit.is_none() && bytes.len() as u64 > FS_READ_DEFAULT_CAP_BYTES {
+        if args.offset.is_none()
+            && args.limit.is_none()
+            && bytes.len() as u64 > FS_READ_DEFAULT_CAP_BYTES
+        {
             return ToolResult::Err(format!(
                 "file exceeds {} byte cap ({} bytes); use offset/limit to page",
                 FS_READ_DEFAULT_CAP_BYTES,
@@ -117,7 +120,12 @@ impl Tool for FsRead {
             (offset, limit) => {
                 let start = offset.unwrap_or(1).saturating_sub(1);
                 let len = limit.unwrap_or(usize::MAX);
-                content.lines().skip(start).take(len).collect::<Vec<_>>().join("\n")
+                content
+                    .lines()
+                    .skip(start)
+                    .take(len)
+                    .collect::<Vec<_>>()
+                    .join("\n")
             }
         };
 
@@ -171,11 +179,10 @@ impl Tool for FsWrite {
         let relative = Path::new(&args.file);
         if let Some(parent) = relative.parent() {
             let abs_parent = workspace.join(parent);
-            if !parent.as_os_str().is_empty() {
-                if let Err(e) = std::fs::create_dir_all(&abs_parent) {
+            if !parent.as_os_str().is_empty()
+                && let Err(e) = std::fs::create_dir_all(&abs_parent) {
                     return ToolResult::Err(format!("mkdir failed: {e}"));
                 }
-            }
         }
 
         let absolute = match resolve_in_workspace(&workspace, relative) {
@@ -184,11 +191,10 @@ impl Tool for FsWrite {
         };
         let created = !absolute.exists();
 
-        if absolute.extension().and_then(|s| s.to_str()) == Some("rs") {
-            if let Err(e) = syn::parse_file(&args.content) {
+        if absolute.extension().and_then(|s| s.to_str()) == Some("rs")
+            && let Err(e) = syn::parse_file(&args.content) {
                 return ToolResult::Err(format!("syn parse failed; refused to write: {e}"));
             }
-        }
 
         let temp = sibling_temp_path(&absolute);
         if let Err(e) = std::fs::write(&temp, args.content.as_bytes()) {
@@ -403,7 +409,10 @@ impl Tool for Grep {
             .build();
 
         let mut matches: Vec<GrepMatch> = Vec::new();
-        'walk: for entry in WalkBuilder::new(&canonical_root).follow_links(false).build() {
+        'walk: for entry in WalkBuilder::new(&canonical_root)
+            .follow_links(false)
+            .build()
+        {
             let entry = match entry {
                 Ok(e) => e,
                 Err(_) => continue,
@@ -416,11 +425,10 @@ impl Tool for Grep {
                 Err(_) => continue,
             };
             let rel_str = path_with_forward_slashes(rel);
-            if let Some(m) = &path_matcher {
-                if !m.is_match(&rel_str) {
+            if let Some(m) = &path_matcher
+                && !m.is_match(&rel_str) {
                     continue;
                 }
-            }
 
             let path = entry.path().to_path_buf();
             let result = searcher.search_path(
@@ -473,7 +481,10 @@ fn resolve_in_workspace(workspace_root: &Path, relative: &Path) -> Result<PathBu
     let canonical_parent = dunce::canonicalize(parent)
         .map_err(|e| format!("path {} not found: {e}", relative.display()))?;
     if !canonical_parent.starts_with(&canonical_root) {
-        return Err(format!("path escapes workspace root: {}", relative.display()));
+        return Err(format!(
+            "path escapes workspace root: {}",
+            relative.display()
+        ));
     }
     let filename = joined
         .file_name()
@@ -499,7 +510,6 @@ fn sibling_temp_path(path: &Path) -> PathBuf {
     PathBuf::from(p)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -519,7 +529,9 @@ mod tests {
     async fn fs_read_whole_file() {
         let dir = TempDir::new().unwrap();
         std::fs::write(dir.path().join("a.txt"), "hello\nworld\n").unwrap();
-        let result = FsRead.invoke(json!({"file": "a.txt"}), &ctx_for(dir.path())).await;
+        let result = FsRead
+            .invoke(json!({"file": "a.txt"}), &ctx_for(dir.path()))
+            .await;
         let v = match result {
             ToolResult::Ok(v) => v,
             ToolResult::Err(e) => panic!("err: {e}"),
@@ -551,7 +563,10 @@ mod tests {
     async fn fs_read_binary_returns_marker() {
         let dir = TempDir::new().unwrap();
         std::fs::write(dir.path().join("bin"), [0u8, 1, 2, 3, 0xFF]).unwrap();
-        let v = match FsRead.invoke(json!({"file": "bin"}), &ctx_for(dir.path())).await {
+        let v = match FsRead
+            .invoke(json!({"file": "bin"}), &ctx_for(dir.path()))
+            .await
+        {
             ToolResult::Ok(v) => v,
             ToolResult::Err(e) => panic!("err: {e}"),
         };
@@ -563,10 +578,7 @@ mod tests {
     async fn fs_read_rejects_escape() {
         let dir = TempDir::new().unwrap();
         let result = FsRead
-            .invoke(
-                json!({"file": "../../../etc/passwd"}),
-                &ctx_for(dir.path()),
-            )
+            .invoke(json!({"file": "../../../etc/passwd"}), &ctx_for(dir.path()))
             .await;
         assert!(matches!(result, ToolResult::Err(_)));
     }
@@ -586,7 +598,10 @@ mod tests {
             ToolResult::Err(e) => panic!("err: {e}"),
         };
         assert_eq!(v["created"], true);
-        assert_eq!(std::fs::read_to_string(dir.path().join("n.txt")).unwrap(), "alpha");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("n.txt")).unwrap(),
+            "alpha"
+        );
 
         // second call overwrites
         let v = match FsWrite
@@ -600,7 +615,10 @@ mod tests {
             ToolResult::Err(e) => panic!("err: {e}"),
         };
         assert_eq!(v["created"], false);
-        assert_eq!(std::fs::read_to_string(dir.path().join("n.txt")).unwrap(), "beta");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("n.txt")).unwrap(),
+            "beta"
+        );
     }
 
     #[tokio::test]

@@ -59,7 +59,12 @@ impl Git {
 
     pub async fn status(&self) -> Result<StatusOutput, GitError> {
         let stdout = self
-            .run(&["status", "--porcelain=v2", "--branch", "--untracked-files=all"])
+            .run(&[
+                "status",
+                "--porcelain=v2",
+                "--branch",
+                "--untracked-files=all",
+            ])
             .await?;
         Ok(parse_status_v2(&stdout))
     }
@@ -244,11 +249,7 @@ impl Git {
         })
     }
 
-    pub async fn checkout(
-        &self,
-        branch: &str,
-        create: bool,
-    ) -> Result<CheckoutOutcome, GitError> {
+    pub async fn checkout(&self, branch: &str, create: bool) -> Result<CheckoutOutcome, GitError> {
         validate_branch_name(branch)?;
         let previous = self.current_branch().await?.unwrap_or_default();
         let mut args: Vec<String> = vec!["checkout".into()];
@@ -264,11 +265,7 @@ impl Git {
         })
     }
 
-    pub async fn merge(
-        &self,
-        branch: &str,
-        opts: MergeOpts,
-    ) -> Result<MergeOutcome, GitError> {
+    pub async fn merge(&self, branch: &str, opts: MergeOpts) -> Result<MergeOutcome, GitError> {
         validate_branch_name(branch)?;
         let mut args: Vec<String> = vec!["merge".into()];
         if opts.no_ff {
@@ -361,9 +358,8 @@ pub enum GitError {
 static BRANCH_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9._\-/]+$").expect("known-good regex"));
 
-static REVSPEC_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[a-zA-Z0-9._\-/@\^~{}!:]+$").expect("known-good regex")
-});
+static REVSPEC_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9._\-/@\^~{}!:]+$").expect("known-good regex"));
 
 fn validate_branch_name(name: &str) -> Result<(), GitError> {
     if name.is_empty() {
@@ -604,25 +600,29 @@ fn attach_hunks_to_files(files: &mut [DiffFile], unified: &str) {
         if let Some(rest) = line.strip_prefix("diff --git a/") {
             // Path is "a/<path> b/<path>"; take part after "b/".
             if let Some(b_part) = rest.split(" b/").nth(1) {
-                if let Some(hunk) = current_hunk.take() {
-                    if let Some(p) = &current_path {
+                if let Some(hunk) = current_hunk.take()
+                    && let Some(p) = &current_path {
                         file_map.entry(p.clone()).or_default().push(hunk);
                     }
-                }
                 current_path = Some(b_part.to_string());
             }
         } else if let Some(caps) = HUNK_HEADER.captures(line) {
-            if let Some(hunk) = current_hunk.take() {
-                if let Some(p) = &current_path {
+            if let Some(hunk) = current_hunk.take()
+                && let Some(p) = &current_path {
                     file_map.entry(p.clone()).or_default().push(hunk);
                 }
-            }
-            let old_start = caps.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+            let old_start = caps
+                .get(1)
+                .and_then(|m| m.as_str().parse().ok())
+                .unwrap_or(0);
             let old_count = caps
                 .get(2)
                 .and_then(|m| m.as_str().parse().ok())
                 .unwrap_or(1);
-            let new_start = caps.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+            let new_start = caps
+                .get(3)
+                .and_then(|m| m.as_str().parse().ok())
+                .unwrap_or(0);
             let new_count = caps
                 .get(4)
                 .and_then(|m| m.as_str().parse().ok())
@@ -637,11 +637,10 @@ fn attach_hunks_to_files(files: &mut [DiffFile], unified: &str) {
             h.text.push('\n');
         }
     }
-    if let Some(hunk) = current_hunk.take() {
-        if let Some(p) = current_path {
+    if let Some(hunk) = current_hunk.take()
+        && let Some(p) = current_path {
             file_map.entry(p).or_default().push(hunk);
         }
-    }
 
     for file in files.iter_mut() {
         if let Some(hunks) = file_map.remove(&file.path) {
@@ -687,10 +686,7 @@ fn parse_worktree_list(stdout: &str) -> Vec<Worktree> {
             current_path = Some(PathBuf::from(rest));
         } else if let Some(rest) = line.strip_prefix("branch ") {
             // "refs/heads/<name>"
-            let name = rest
-                .strip_prefix("refs/heads/")
-                .unwrap_or(rest)
-                .to_string();
+            let name = rest.strip_prefix("refs/heads/").unwrap_or(rest).to_string();
             current_branch = Some(name);
         }
     }

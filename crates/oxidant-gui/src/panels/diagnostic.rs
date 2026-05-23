@@ -24,11 +24,13 @@ impl DiagnosticPanel {
             );
             return;
         }
-        egui::ScrollArea::vertical().auto_shrink([false; 2]).show(ui, |ui| {
-            for d in &state.diagnostics {
-                render_diag(ui, d);
-            }
-        });
+        egui::ScrollArea::vertical()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| {
+                for d in &state.diagnostics {
+                    render_diag(ui, d);
+                }
+            });
     }
 }
 
@@ -40,7 +42,11 @@ fn render_diag(ui: &mut egui::Ui, d: &DiagnosticEntry) {
         _ => Color32::LIGHT_GRAY,
     };
     ui.horizontal(|ui| {
-        ui.label(RichText::new(format!("[{}]", d.severity)).color(color).strong());
+        ui.label(
+            RichText::new(format!("[{}]", d.severity))
+                .color(color)
+                .strong(),
+        );
         ui.label(
             RichText::new(format!("{}:{}:{}", d.file, d.line, d.character))
                 .color(Color32::LIGHT_GRAY)

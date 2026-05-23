@@ -57,16 +57,9 @@ pub fn default_layout() -> DockState<DockTab> {
         0.22,
         vec![DockTab::SpecTree, DockTab::ExplorationList],
     );
-    let [_centre, _right] = surface.split_right(
-        NodeIndex::root(),
-        0.78,
-        vec![DockTab::DiagnosticPreview],
-    );
-    let [_centre, _bottom] = surface.split_below(
-        NodeIndex::root(),
-        0.75,
-        vec![DockTab::ChatInput],
-    );
+    let [_centre, _right] =
+        surface.split_right(NodeIndex::root(), 0.78, vec![DockTab::DiagnosticPreview]);
+    let [_centre, _bottom] = surface.split_below(NodeIndex::root(), 0.75, vec![DockTab::ChatInput]);
     let _ = left;
     tree
 }

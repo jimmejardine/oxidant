@@ -14,11 +14,8 @@ use oxidant_providers::{ChatEvent, Provider, StopReason, Usage};
 
 use crate::dock::{DockTab, default_layout};
 use crate::panels::{
-    chat_input::ChatInputPanel,
-    diagnostic::DiagnosticPanel,
-    exploration_list::ExplorationListPanel,
-    file_tab::FileTabPanel,
-    spec_tree::SpecTreePanel,
+    chat_input::ChatInputPanel, diagnostic::DiagnosticPanel,
+    exploration_list::ExplorationListPanel, file_tab::FileTabPanel, spec_tree::SpecTreePanel,
     transcript::TranscriptPanel,
 };
 use crate::viewport::ViewportConfig;

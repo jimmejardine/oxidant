@@ -24,15 +24,6 @@ use oxidant_tools::{ApplyResult, Position as OxPos, Range as OxRange, TextEdit, 
 
 // ---------------------------------------------------------------- helpers
 
-fn resolve_file(ctx: &ToolContext, raw: &str) -> PathBuf {
-    let p = Path::new(raw);
-    if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        ctx.workspace_root.as_std_path().join(raw)
-    }
-}
-
 fn load_file(workspace_root: &Path, rel: &Path) -> Result<(PathBuf, String), String> {
     let abs = workspace_root.join(rel);
     let canonical = dunce::canonicalize(&abs)
@@ -78,12 +69,7 @@ fn visibility_string(vis: &Visibility) -> &'static str {
 }
 
 fn parse_rust(source: &str, file: &Path) -> Result<SynFile, String> {
-    syn::parse_file(source).map_err(|e| {
-        format!(
-            "syn::parse_file({}) failed: {e}",
-            file.display()
-        )
-    })
+    syn::parse_file(source).map_err(|e| format!("syn::parse_file({}) failed: {e}", file.display()))
 }
 
 fn apply_or_preview(
@@ -498,7 +484,8 @@ impl Tool for SynAddDerive {
         };
 
         let merged_into_existing;
-        let edits = if let Some(existing_attr) = attrs.iter().find(|a| a.path().is_ident("derive")) {
+        let edits = if let Some(existing_attr) = attrs.iter().find(|a| a.path().is_ident("derive"))
+        {
             // Merge into the existing derive attribute.
             let existing_list = match parse_derive_list(existing_attr) {
                 Ok(l) => l,
@@ -565,7 +552,9 @@ fn find_type_target<'a>(
     match found.len() {
         0 => Err(format!("no struct or enum named {type_name:?} in file")),
         1 => Ok(found.into_iter().next().unwrap()),
-        n => Err(format!("{n} structs/enums named {type_name:?} in file; ambiguous")),
+        n => Err(format!(
+            "{n} structs/enums named {type_name:?} in file; ambiguous"
+        )),
     }
 }
 
@@ -813,8 +802,16 @@ fn find_enclosing_fn_byte_range(file: &SynFile, byte: usize) -> Option<(usize, u
 
 fn is_ident_boundary(source: &str, start: usize, end: usize) -> bool {
     let bytes = source.as_bytes();
-    let prev = if start > 0 { Some(bytes[start - 1]) } else { None };
-    let next = if end < bytes.len() { Some(bytes[end]) } else { None };
+    let prev = if start > 0 {
+        Some(bytes[start - 1])
+    } else {
+        None
+    };
+    let next = if end < bytes.len() {
+        Some(bytes[end])
+    } else {
+        None
+    };
     let is_ident_char = |b: u8| b == b'_' || b.is_ascii_alphanumeric();
     !prev.map(is_ident_char).unwrap_or(false) && !next.map(is_ident_char).unwrap_or(false)
 }
@@ -881,8 +878,16 @@ mod tests {
         };
         let items = v["items"].as_array().unwrap();
         assert_eq!(items.len(), 2);
-        assert!(items.iter().any(|i| i["name"] == "Alpha" && i["visibility"] == "pub"));
-        assert!(items.iter().any(|i| i["name"] == "Beta" && i["visibility"] == "private"));
+        assert!(
+            items
+                .iter()
+                .any(|i| i["name"] == "Alpha" && i["visibility"] == "pub")
+        );
+        assert!(
+            items
+                .iter()
+                .any(|i| i["name"] == "Beta" && i["visibility"] == "private")
+        );
     }
 
     #[tokio::test]
@@ -1015,7 +1020,10 @@ mod tests {
         assert_eq!(v["merged_into_existing"], true);
         let updated = read_file(dir.path(), "src.rs");
         // Original Debug preserved; new ones appended in order; deduped.
-        assert!(updated.contains("#[derive(Debug, Clone, Copy)]"), "got: {updated}");
+        assert!(
+            updated.contains("#[derive(Debug, Clone, Copy)]"),
+            "got: {updated}"
+        );
     }
 
     #[tokio::test]

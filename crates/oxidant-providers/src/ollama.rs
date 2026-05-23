@@ -102,7 +102,11 @@ impl OllamaProvider {
             name: config.name,
             capabilities: config.capabilities,
         });
-        Self { inner, name, capabilities }
+        Self {
+            inner,
+            name,
+            capabilities,
+        }
     }
 }
 

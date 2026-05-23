@@ -78,7 +78,10 @@ async fn main() -> anyhow::Result<()> {
         None => first_loaded_model(&config).await?,
     };
 
-    println!("[provider: {} | endpoint: {} | model: {}]", config.name, config.base_url, model);
+    println!(
+        "[provider: {} | endpoint: {} | model: {}]",
+        config.name, config.base_url, model
+    );
 
     let provider = OllamaProvider::new(config);
     let req = ChatRequest {

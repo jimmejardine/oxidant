@@ -42,9 +42,11 @@ impl FileTabPanel {
 
         match std::fs::read_to_string(&absolute) {
             Ok(content) => {
-                egui::ScrollArea::both().auto_shrink([false; 2]).show(ui, |ui| {
-                    ui.code(content);
-                });
+                egui::ScrollArea::both()
+                    .auto_shrink([false; 2])
+                    .show(ui, |ui| {
+                        ui.code(content);
+                    });
             }
             Err(e) => {
                 ui.label(

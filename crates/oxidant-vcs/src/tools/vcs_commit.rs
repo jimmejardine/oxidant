@@ -63,7 +63,12 @@ impl Tool for VcsCommit {
             Ok(o) => o,
             Err(e) => return ToolResult::Err(e.to_string()),
         };
-        let branch = git.current_branch().await.ok().flatten().unwrap_or_default();
+        let branch = git
+            .current_branch()
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
         ToolResult::Ok(json!({
             "sha":             outcome.sha,
             "branch":          branch,

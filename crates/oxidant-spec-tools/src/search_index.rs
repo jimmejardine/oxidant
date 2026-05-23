@@ -18,7 +18,6 @@ use tantivy::schema::{Field, INDEXED, STORED, STRING, Schema, TEXT, Value};
 use tantivy::snippet::SnippetGenerator;
 use tantivy::{Index, IndexReader, TantivyDocument, doc};
 
-use crate::frontmatter;
 use crate::walker::walk_specs;
 
 static SEARCH_INDEXES: OnceLock<StdMutex<HashMap<PathBuf, Arc<SearchIndex>>>> = OnceLock::new();
@@ -66,6 +65,7 @@ struct Fields {
 }
 
 pub struct SearchIndex {
+    #[allow(dead_code)] // retained for future incremental-rebuild use
     workspace: PathBuf,
     index: Index,
     reader: IndexReader,
@@ -98,8 +98,7 @@ impl SearchIndex {
         if index_dir.exists() {
             let _ = std::fs::remove_dir_all(&index_dir);
         }
-        std::fs::create_dir_all(&index_dir)
-            .map_err(|e| format!("create search-index dir: {e}"))?;
+        std::fs::create_dir_all(&index_dir).map_err(|e| format!("create search-index dir: {e}"))?;
 
         let mut schema_builder = Schema::builder();
         let path = schema_builder.add_text_field("path", TEXT | STORED);

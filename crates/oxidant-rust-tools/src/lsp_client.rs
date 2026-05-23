@@ -106,8 +106,7 @@ impl LspClient {
             Arc::new(StdMutex::new(HashMap::new()));
         let diagnostics: Arc<StdMutex<HashMap<PathBuf, Vec<Value>>>> =
             Arc::new(StdMutex::new(HashMap::new()));
-        let opened_files: Arc<StdMutex<HashSet<PathBuf>>> =
-            Arc::new(StdMutex::new(HashSet::new()));
+        let opened_files: Arc<StdMutex<HashSet<PathBuf>>> = Arc::new(StdMutex::new(HashSet::new()));
         let (status_tx, status_rx) = watch::channel::<Option<ServerStatus>>(None);
 
         // writer task
@@ -156,7 +155,9 @@ impl LspClient {
             self.request("initialize", init_params),
         )
         .await
-        .map_err(|_| format!("rust-analyzer initialize timed out after {INITIALIZE_TIMEOUT_SECS}s"))?
+        .map_err(|_| {
+            format!("rust-analyzer initialize timed out after {INITIALIZE_TIMEOUT_SECS}s")
+        })?
         .map_err(|e| format!("initialize failed: {e}"))?;
         tracing::debug!(?init_resp, "rust-analyzer initialized");
 
@@ -220,9 +221,8 @@ impl LspClient {
 
         let content = std::fs::read_to_string(&canonical)
             .map_err(|e| format!("read {} failed: {e}", canonical.display()))?;
-        let uri = path_to_uri(&canonical).ok_or_else(|| {
-            format!("path → uri failed for {}", canonical.display())
-        })?;
+        let uri = path_to_uri(&canonical)
+            .ok_or_else(|| format!("path → uri failed for {}", canonical.display()))?;
         let language_id = if canonical.extension().and_then(|s| s.to_str()) == Some("rs") {
             "rust"
         } else {
@@ -239,10 +239,7 @@ impl LspClient {
                 }
             }),
         )?;
-        self.opened_files
-            .lock()
-            .unwrap()
-            .insert(canonical.clone());
+        self.opened_files.lock().unwrap().insert(canonical.clone());
         Ok(canonical)
     }
 
@@ -327,14 +324,12 @@ async fn locate_rust_analyzer() -> Result<PathBuf, String> {
         .args(["which", "rust-analyzer"])
         .output()
         .await
-    {
-        if output.status.success() {
+        && output.status.success() {
             let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !line.is_empty() && Path::new(&line).exists() {
                 return Ok(PathBuf::from(line));
             }
         }
-    }
     // Fall back to PATH lookup — try invoking with --version to verify it's there.
     if Command::new("rust-analyzer")
         .arg("--version")
@@ -485,7 +480,9 @@ async fn read_message(
         .read_exact(&mut buf)
         .await
         .map_err(|e| format!("read body of {len} bytes: {e}"))?;
-    String::from_utf8(buf).map(Some).map_err(|e| format!("body not utf-8: {e}"))
+    String::from_utf8(buf)
+        .map(Some)
+        .map_err(|e| format!("body not utf-8: {e}"))
 }
 
 fn handle_notification(
@@ -500,7 +497,9 @@ fn handle_notification(
                 Some(p) => p,
                 None => return,
             };
-            let Some(uri) = params.get("uri").and_then(|v| v.as_str()) else { return };
+            let Some(uri) = params.get("uri").and_then(|v| v.as_str()) else {
+                return;
+            };
             let Some(path) = uri_to_path(uri) else { return };
             let diags: Vec<Value> = params
                 .get("diagnostics")
@@ -510,14 +509,19 @@ fn handle_notification(
             diagnostics.lock().unwrap().insert(path, diags);
         }
         "experimental/serverStatus" => {
-            let Some(params) = msg.get("params") else { return };
+            let Some(params) = msg.get("params") else {
+                return;
+            };
             let status = ServerStatus {
                 health: params
                     .get("health")
                     .and_then(|v| v.as_str())
                     .unwrap_or("ok")
                     .to_string(),
-                quiescent: params.get("quiescent").and_then(|v| v.as_bool()).unwrap_or(false),
+                quiescent: params
+                    .get("quiescent")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false),
                 message: params
                     .get("message")
                     .and_then(|v| v.as_str())
@@ -559,23 +563,21 @@ fn extract_hover_signature(hover: &Value) -> (Option<String>, Option<String>) {
         None => return (None, None),
     };
     // contents can be a MarkupContent { kind, value } OR an array of MarkedString.
-    if let Some(obj) = contents.as_object() {
-        if let Some(value) = obj.get("value").and_then(|v| v.as_str()) {
+    if let Some(obj) = contents.as_object()
+        && let Some(value) = obj.get("value").and_then(|v| v.as_str()) {
             return split_signature_from_markdown(value);
         }
-    }
     if let Some(arr) = contents.as_array() {
         let mut joined = String::new();
         for item in arr {
             if let Some(s) = item.as_str() {
                 joined.push_str(s);
                 joined.push('\n');
-            } else if let Some(obj) = item.as_object() {
-                if let Some(v) = obj.get("value").and_then(|v| v.as_str()) {
+            } else if let Some(obj) = item.as_object()
+                && let Some(v) = obj.get("value").and_then(|v| v.as_str()) {
                     joined.push_str(v);
                     joined.push('\n');
                 }
-            }
         }
         return split_signature_from_markdown(joined.trim());
     }
@@ -609,7 +611,11 @@ fn split_signature_from_markdown(text: &str) -> (Option<String>, Option<String>)
                 in_fence = false;
             } else {
                 in_fence = true;
-                fence_lang = trimmed[3..].trim().to_string();
+                fence_lang = trimmed
+                    .strip_prefix("```")
+                    .unwrap_or(trimmed)
+                    .trim()
+                    .to_string();
             }
             continue;
         }
@@ -627,10 +633,7 @@ fn split_signature_from_markdown(text: &str) -> (Option<String>, Option<String>)
     } else {
         Some(signature_parts.join("\n\n"))
     };
-    let doc = doc_lines
-        .iter()
-        .copied()
-        .collect::<Vec<_>>()
+    let doc = doc_lines.to_vec()
         .join("\n")
         .trim()
         .to_string();
@@ -790,9 +793,7 @@ fn locations_from_response(resp: &Value, ctx: &ToolContext) -> Vec<Value> {
         vec![resp.clone()]
     };
     for item in raw {
-        let (uri, range) = if let Some(target_uri) = item
-            .get("targetUri")
-            .and_then(|v| v.as_str())
+        let (uri, range) = if let Some(target_uri) = item.get("targetUri").and_then(|v| v.as_str())
         {
             // LocationLink
             (
@@ -813,9 +814,9 @@ fn locations_from_response(resp: &Value, ctx: &ToolContext) -> Vec<Value> {
         let file = uri_to_path(&uri)
             .and_then(|p| {
                 let workspace = ctx.workspace_root.as_std_path();
-                p.strip_prefix(workspace).ok().map(|rel| {
-                    rel.to_string_lossy().replace('\\', "/")
-                })
+                p.strip_prefix(workspace)
+                    .ok()
+                    .map(|rel| rel.to_string_lossy().replace('\\', "/"))
             })
             .unwrap_or_else(|| uri.clone());
         out.push(json!({ "file": file, "range": range }));
@@ -896,7 +897,10 @@ fn extract_symbol(s: Value, ctx: &ToolContext) -> Option<Value> {
     let kind = lsp_symbol_kind_name(kind_num);
     let (uri, range) = if let Some(location) = s.get("location") {
         (
-            location.get("uri").and_then(|v| v.as_str()).map(String::from)?,
+            location
+                .get("uri")
+                .and_then(|v| v.as_str())
+                .map(String::from)?,
             location.get("range").cloned().unwrap_or(Value::Null),
         )
     } else {
@@ -1017,11 +1021,10 @@ impl Tool for RustDiagnostics {
             for d in diags {
                 let sev = d.get("severity").and_then(|v| v.as_u64()).unwrap_or(0);
                 let sev_name = lsp_severity_name(sev);
-                if let Some(filter) = severity_filter {
-                    if sev_name != filter {
+                if let Some(filter) = severity_filter
+                    && sev_name != filter {
                         continue;
                     }
-                }
                 out.push(json!({
                     "file":     file,
                     "range":    d.get("range").cloned().unwrap_or(Value::Null),
@@ -1224,7 +1227,11 @@ impl Tool for RustRename {
         let edit_json = workspace_edit_to_json(&resp, workspace_root);
         let edits_total: usize = edit_json["changes"]
             .as_object()
-            .map(|o| o.values().map(|v| v.as_array().map(|a| a.len()).unwrap_or(0)).sum())
+            .map(|o| {
+                o.values()
+                    .map(|v| v.as_array().map(|a| a.len()).unwrap_or(0))
+                    .sum()
+            })
             .unwrap_or(0);
         let files_touched = edit_json["changes"]
             .as_object()
@@ -1329,7 +1336,7 @@ fn relativise_uri(uri: &str, workspace_root: &Path) -> String {
 /// LSP WorkspaceEdit response → oxidant_tools::WorkspaceEdit ready for the
 /// substrate. Returns Err if any URI doesn't resolve to a workspace path.
 fn lsp_to_oxidant_workspace_edit(resp: &Value) -> Result<oxidant_tools::WorkspaceEdit, String> {
-    use oxidant_tools::{Range, TextEdit, WorkspaceEdit};
+    use oxidant_tools::{Range, TextEdit};
     let mut out: HashMap<PathBuf, Vec<TextEdit>> = HashMap::new();
     let mut record = |uri: &str, edits: &[Value]| -> Result<(), String> {
         let path = uri_to_path(uri).ok_or_else(|| format!("could not decode uri: {uri}"))?;

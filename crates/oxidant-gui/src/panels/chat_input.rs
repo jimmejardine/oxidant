@@ -4,7 +4,7 @@
 // path spawns a tokio task running agent_loop::run, forwarding
 // ChatEvents back to the GUI via the App's mpsc channel.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
 use egui::{Color32, RichText, TextEdit};
@@ -13,8 +13,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
 use oxidant_core::{
-    AgentLoopConfig, AgentLoopOutcome, Conversation, ToolContext, ToolRegistry,
-    run,
+    AgentLoopConfig, AgentLoopOutcome, Conversation, ToolContext, ToolRegistry, run,
 };
 use oxidant_providers::{ChatEvent, Provider};
 
@@ -22,6 +21,12 @@ use crate::app::{AgentEvent, SharedState, TurnOutcome};
 
 pub struct ChatInputPanel {
     draft: String,
+}
+
+impl Default for ChatInputPanel {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ChatInputPanel {
@@ -38,7 +43,7 @@ impl ChatInputPanel {
         state: &Arc<StdMutex<SharedState>>,
         event_tx: &UnboundedSender<AgentEvent>,
         tokio_handle: &Handle,
-        workspace_root: &PathBuf,
+        workspace_root: &Path,
         provider: &Arc<dyn Provider>,
         model: &str,
         system_prompt: Option<&str>,
@@ -48,7 +53,11 @@ impl ChatInputPanel {
 
         // Header row: model + send/cancel buttons.
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("model: {model}")).color(Color32::DARK_GRAY).small());
+            ui.label(
+                RichText::new(format!("model: {model}"))
+                    .color(Color32::DARK_GRAY)
+                    .small(),
+            );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if streaming {
                     if ui.button("Cancel (Esc)").clicked()
@@ -63,8 +72,7 @@ impl ChatInputPanel {
                     let send = ui.button("Send ⏎ (Ctrl+Enter)");
                     let pressed_send = send.clicked()
                         || ui.input(|i| {
-                            i.modifiers.command_only()
-                                && i.key_pressed(egui::Key::Enter)
+                            i.modifiers.command_only() && i.key_pressed(egui::Key::Enter)
                         });
                     if pressed_send && !self.draft.trim().is_empty() {
                         let prompt = std::mem::take(&mut self.draft);
@@ -73,7 +81,7 @@ impl ChatInputPanel {
                             state.clone(),
                             event_tx.clone(),
                             tokio_handle,
-                            workspace_root.clone(),
+                            workspace_root.to_path_buf(),
                             provider.clone(),
                             model.to_string(),
                             system_prompt.map(String::from),

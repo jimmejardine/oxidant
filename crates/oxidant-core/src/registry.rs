@@ -95,7 +95,10 @@ impl ToolRegistry {
         // spec/components/core/tool-registry.md land alongside the first
         // concrete Tool impls and the permission types.
 
-        match AssertUnwindSafe(tool.invoke(args, ctx)).catch_unwind().await {
+        match AssertUnwindSafe(tool.invoke(args, ctx))
+            .catch_unwind()
+            .await
+        {
             Ok(result) => result,
             Err(_) => ToolResult::Err(format!("tool '{name}' panicked")),
         }

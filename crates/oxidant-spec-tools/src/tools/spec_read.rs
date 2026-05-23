@@ -71,7 +71,9 @@ impl Tool for SpecRead {
             }
         };
         let Some(record) = records.iter().find(|r| r.canonical_id == canonical) else {
-            return ToolResult::Err(format!("internal: resolved id {canonical} not found in walk"));
+            return ToolResult::Err(format!(
+                "internal: resolved id {canonical} not found in walk"
+            ));
         };
 
         ToolResult::Ok(json!({

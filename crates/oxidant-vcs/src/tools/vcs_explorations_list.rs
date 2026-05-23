@@ -93,11 +93,10 @@ fn dir_size_mb(dir: &Path) -> u64 {
     let mut total: u64 = 0;
     for entry in walkdir::WalkDir::new(dir).follow_links(false) {
         let Ok(e) = entry else { continue };
-        if e.file_type().is_file() {
-            if let Ok(md) = e.metadata() {
+        if e.file_type().is_file()
+            && let Ok(md) = e.metadata() {
                 total += md.len();
             }
-        }
     }
     total / 1_048_576
 }

@@ -53,6 +53,7 @@ pub fn walk_specs(repo: &Path) -> Vec<SpecRecord> {
     out
 }
 
+#[allow(clippy::result_unit_err)] // internal helper; () error is sufficient and stable
 pub fn canonical_id(spec_root: &Path, path: &Path) -> Result<String, ()> {
     let rel = path.strip_prefix(spec_root).map_err(|_| ())?;
     let stem = rel.with_extension("");

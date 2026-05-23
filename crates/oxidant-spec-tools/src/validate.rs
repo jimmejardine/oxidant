@@ -48,7 +48,9 @@ pub fn validate(repo: &Path) -> Vec<Warning> {
         if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("md") {
             continue;
         }
-        let Ok(canonical_id) = canonical_id(&spec_root, path) else { continue };
+        let Ok(canonical_id) = canonical_id(&spec_root, path) else {
+            continue;
+        };
         let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
             Err(e) => {
@@ -104,8 +106,12 @@ fn canonical_id(spec_root: &Path, path: &Path) -> Result<String, ()> {
 
 fn parse_error_warning(canonical_id: String, path: &Path, e: ParseError) -> Warning {
     let kind = match &e {
-        ParseError::MissingFrontmatter | ParseError::UnterminatedFrontmatter => WarningKind::FrontmatterMissingRequired,
-        ParseError::InvalidYaml(_) | ParseError::InvalidKind(_) | ParseError::InvalidStatus(_) => WarningKind::FrontmatterInvalidValue,
+        ParseError::MissingFrontmatter | ParseError::UnterminatedFrontmatter => {
+            WarningKind::FrontmatterMissingRequired
+        }
+        ParseError::InvalidYaml(_) | ParseError::InvalidKind(_) | ParseError::InvalidStatus(_) => {
+            WarningKind::FrontmatterInvalidValue
+        }
     };
     Warning {
         spec_id: Some(canonical_id),
@@ -147,8 +153,12 @@ fn check_per_file(
     // Most kinds carry a `responsibility:` summary. Overview/glossary don't.
     let needs_responsibility = matches!(
         fm.kind,
-        SpecKind::Component | SpecKind::Contract | SpecKind::Tool
-            | SpecKind::Flow | SpecKind::Invariant | SpecKind::Decision
+        SpecKind::Component
+            | SpecKind::Contract
+            | SpecKind::Tool
+            | SpecKind::Flow
+            | SpecKind::Invariant
+            | SpecKind::Decision
     );
     if needs_responsibility && fm.responsibility.as_deref().unwrap_or("").trim().is_empty() {
         warnings.push(Warning {
@@ -241,7 +251,15 @@ fn check_ref_resolution(inputs: &[GraphInput], all_ids: &[String], warnings: &mu
             check_one_ref(input, &raw, label, line, col, all_ids, warnings);
         }
         for mention in &input.file.refs_in_body {
-            check_one_ref(input, &mention.raw, "body", mention.line, mention.column, all_ids, warnings);
+            check_one_ref(
+                input,
+                &mention.raw,
+                "body",
+                mention.line,
+                mention.column,
+                all_ids,
+                warnings,
+            );
         }
     }
 }
@@ -320,9 +338,7 @@ fn check_reachability(graph: &SpecGraph, all_ids: &[String], warnings: &mut Vec<
             warnings.push(Warning {
                 spec_id: Some(node.id.clone()),
                 kind: WarningKind::Reachability,
-                message: format!(
-                    "not reachable from `{ROOT_ID}` within {MAX_REACH_HOPS} hops"
-                ),
+                message: format!("not reachable from `{ROOT_ID}` within {MAX_REACH_HOPS} hops"),
                 location: Some((node.path.clone(), 1, 1)),
             });
         }

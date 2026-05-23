@@ -106,7 +106,9 @@ pub async fn run_cargo(
 
     tracing::debug!(subcommand, args = ?args, "cargo run");
 
-    let mut child = cmd.spawn().map_err(|e| format!("spawn cargo {subcommand} failed: {e}"))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("spawn cargo {subcommand} failed: {e}"))?;
     let stdout = child
         .stdout
         .take()
@@ -282,7 +284,10 @@ pub fn parse_libtest_text(lines: &[String]) -> TestSummary {
 
     for line in lines {
         if let Some((name, stream)) = current_capture.as_ref() {
-            if line.starts_with("----") || line.starts_with("test result:") || line.starts_with("failures:") {
+            if line.starts_with("----")
+                || line.starts_with("test result:")
+                || line.starts_with("failures:")
+            {
                 current_capture = None;
                 // fall through to evaluate the line below
             } else {
@@ -318,7 +323,11 @@ pub fn parse_libtest_text(lines: &[String]) -> TestSummary {
         }
         if let Some(caps) = FAILURE_BLOCK_RE.captures(line) {
             let name = caps["name"].to_string();
-            let stream: &'static str = if &caps["stream"] == "stdout" { "stdout" } else { "stderr" };
+            let stream: &'static str = if &caps["stream"] == "stdout" {
+                "stdout"
+            } else {
+                "stderr"
+            };
             current_capture = Some((name, stream));
             continue;
         }
@@ -326,7 +335,11 @@ pub fn parse_libtest_text(lines: &[String]) -> TestSummary {
 
     for name in failure_names_in_order {
         let (stdout, stderr) = failure_outputs.remove(&name).unwrap_or_default();
-        summary.failures.push(TestFailure { test: name, stdout, stderr });
+        summary.failures.push(TestFailure {
+            test: name,
+            stdout,
+            stderr,
+        });
     }
     summary
 }
@@ -354,12 +367,11 @@ fn check_args_to_cli(args: &CheckArgs) -> Vec<String> {
     if args.all_targets.unwrap_or(false) {
         cli.push("--all-targets".into());
     }
-    if let Some(features) = &args.features {
-        if !features.is_empty() {
+    if let Some(features) = &args.features
+        && !features.is_empty() {
             cli.push("--features".into());
             cli.push(features.join(","));
         }
-    }
     if args.no_default_features.unwrap_or(false) {
         cli.push("--no-default-features".into());
     }
@@ -531,12 +543,11 @@ impl Tool for CargoTest {
             cli.push("-p".into());
             cli.push(p.clone());
         }
-        if let Some(features) = &args.features {
-            if !features.is_empty() {
+        if let Some(features) = &args.features
+            && !features.is_empty() {
                 cli.push("--features".into());
                 cli.push(features.join(","));
             }
-        }
         if args.release.unwrap_or(false) {
             cli.push("--release".into());
         }

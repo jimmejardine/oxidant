@@ -78,9 +78,7 @@ pub enum ApplyError {
         b_start: usize,
         b_end: usize,
     },
-    #[error(
-        "expected_text mismatch in {file}: expected {expected:?}, found {actual:?}"
-    )]
+    #[error("expected_text mismatch in {file}: expected {expected:?}, found {actual:?}")]
     ExpectedTextMismatch {
         file: PathBuf,
         expected: String,
@@ -234,12 +232,13 @@ fn prepare_file(
 
     // Apply in descending order so each earlier edit's byte range stays valid.
     let mut byte_edits_desc = byte_edits.clone();
-    byte_edits_desc.sort_by(|a, b| b.start.cmp(&a.start));
+    byte_edits_desc.sort_by_key(|e| std::cmp::Reverse(e.start));
     let mut buf = original.into_bytes();
     for edit in &byte_edits_desc {
         buf.splice(edit.start..edit.end, edit.new_text.bytes());
     }
-    let new_content = String::from_utf8(buf).map_err(|_| ApplyError::FileNotUtf8(relative_path.clone()))?;
+    let new_content =
+        String::from_utf8(buf).map_err(|_| ApplyError::FileNotUtf8(relative_path.clone()))?;
 
     // Compute post-edit byte ranges in original order by re-tracing positions.
     // For an edit at original byte range [s, e) with new_text n, its post-edit
@@ -247,14 +246,13 @@ fn prepare_file(
     let post_edit_byte_ranges = compute_post_edit_ranges(&byte_edits);
 
     // .rs files must parse with syn after the edit, or we refuse the change.
-    if absolute.extension().and_then(|s| s.to_str()) == Some("rs") {
-        if let Err(e) = syn::parse_file(&new_content) {
+    if absolute.extension().and_then(|s| s.to_str()) == Some("rs")
+        && let Err(e) = syn::parse_file(&new_content) {
             return Err(ApplyError::SynParseFailed {
                 file: relative_path,
                 message: e.to_string(),
             });
         }
-    }
 
     // Write the prospective new content to a sibling temp file.
     let temp_path = sibling_temp(&absolute);
@@ -316,7 +314,13 @@ fn compute_post_edit_ranges(edits: &[ByteEdit]) -> Vec<ByteRange> {
     for edit in &asc {
         let new_start = (edit.start as isize + cumulative_shift) as usize;
         let new_end = new_start + edit.new_text.len();
-        ranges_in_source_order.push((edit.original_index, ByteRange { start: new_start, end: new_end }));
+        ranges_in_source_order.push((
+            edit.original_index,
+            ByteRange {
+                start: new_start,
+                end: new_end,
+            },
+        ));
         cumulative_shift += edit.new_text.len() as isize - (edit.end - edit.start) as isize;
     }
     ranges_in_source_order.sort_by_key(|(idx, _)| *idx);
@@ -332,16 +336,17 @@ fn resolve_in_workspace(workspace_root: &Path, relative: &Path) -> Result<PathBu
         file: relative.to_path_buf(),
         source: e,
     })?;
-    let canonical_parent = dunce::canonicalize(parent_for_canonicalize).map_err(|e| ApplyError::Io {
-        file: relative.to_path_buf(),
-        source: e,
-    })?;
+    let canonical_parent =
+        dunce::canonicalize(parent_for_canonicalize).map_err(|e| ApplyError::Io {
+            file: relative.to_path_buf(),
+            source: e,
+        })?;
     if !canonical_parent.starts_with(&canonical_root) {
         return Err(ApplyError::PathEscapesWorkspace(relative.to_path_buf()));
     }
-    let filename = joined.file_name().ok_or_else(|| {
-        ApplyError::PathEscapesWorkspace(relative.to_path_buf())
-    })?;
+    let filename = joined
+        .file_name()
+        .ok_or_else(|| ApplyError::PathEscapesWorkspace(relative.to_path_buf()))?;
     Ok(canonical_parent.join(filename))
 }
 
@@ -408,7 +413,10 @@ mod tests {
     use tempfile::TempDir;
 
     fn pos(line: u32, ch: u32) -> Position {
-        Position { line, character: ch }
+        Position {
+            line,
+            character: ch,
+        }
     }
 
     fn rng(s: Position, e: Position) -> Range {

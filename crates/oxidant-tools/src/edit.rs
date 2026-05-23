@@ -326,7 +326,10 @@ mod tests {
             ToolResult::Err(e) => panic!("err: {e}"),
         };
         assert_eq!(v["replacements"], 1);
-        assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "hello Rust");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "hello Rust"
+        );
     }
 
     #[tokio::test]
@@ -341,7 +344,10 @@ mod tests {
             .await;
         assert!(matches!(result, ToolResult::Err(_)));
         // file untouched
-        assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "foo foo foo");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "foo foo foo"
+        );
     }
 
     #[tokio::test]
@@ -359,7 +365,10 @@ mod tests {
             ToolResult::Err(e) => panic!("err: {e}"),
         };
         assert_eq!(v["replacements"], 3);
-        assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "bar bar bar");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "bar bar bar"
+        );
     }
 
     #[tokio::test]
@@ -406,7 +415,10 @@ mod tests {
             ToolResult::Err(e) => panic!("err: {e}"),
         };
         assert_eq!(v["total_edits"], 1);
-        assert_eq!(std::fs::read_to_string(dir.path().join("a.txt")).unwrap(), "hello Rust");
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "hello Rust"
+        );
     }
 
     #[tokio::test]

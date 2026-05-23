@@ -26,7 +26,10 @@ impl Conversation {
     }
 
     pub fn with_id(id: Uuid) -> Self {
-        Self { id, messages: Vec::new() }
+        Self {
+            id,
+            messages: Vec::new(),
+        }
     }
 
     pub fn push_user_text(&mut self, text: impl Into<String>) {

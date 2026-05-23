@@ -74,12 +74,13 @@ impl Tool for SpecChanges {
             let records = walk_specs(&workspace);
             let matched = records.iter().find(|rec| rec.canonical_id == *r);
             match matched {
-                Some(rec) => vec![rec
-                    .path
-                    .strip_prefix(&workspace)
-                    .unwrap_or(&rec.path)
-                    .to_string_lossy()
-                    .replace('\\', "/")],
+                Some(rec) => vec![
+                    rec.path
+                        .strip_prefix(&workspace)
+                        .unwrap_or(&rec.path)
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                ],
                 None => return ToolResult::Err(format!("no spec found for ref {r:?}")),
             }
         } else if args.kind.is_some() || args.status.is_some() {

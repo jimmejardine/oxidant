@@ -99,7 +99,10 @@ async fn find_references_returns_call_and_definition() {
         ToolResult::Err(e) => panic!("rust_find_references failed: {e}"),
     };
     let count = v["count"].as_u64().unwrap();
-    assert!(count >= 2, "expected at least 2 references (def + call), got {count}");
+    assert!(
+        count >= 2,
+        "expected at least 2 references (def + call), got {count}"
+    );
 }
 
 #[tokio::test]
@@ -125,7 +128,10 @@ async fn rename_preview_returns_workspace_edit() {
     };
     assert_eq!(v["applied"], false);
     let edits_total = v["edits_total"].as_u64().unwrap();
-    assert!(edits_total >= 2, "expected >=2 edits for definition + call site, got {edits_total}");
+    assert!(
+        edits_total >= 2,
+        "expected >=2 edits for definition + call site, got {edits_total}"
+    );
     // File was untouched (apply=false).
     let original = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
     assert!(original.contains("fn add"));
@@ -155,8 +161,14 @@ async fn rename_apply_routes_through_substrate() {
     };
     assert_eq!(v["applied"], true);
     let content = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
-    assert!(content.contains("pub fn sum"), "expected file to contain `pub fn sum`, got:\n{content}");
-    assert!(content.contains("sum(x, x)"), "expected call site renamed too:\n{content}");
+    assert!(
+        content.contains("pub fn sum"),
+        "expected file to contain `pub fn sum`, got:\n{content}"
+    );
+    assert!(
+        content.contains("sum(x, x)"),
+        "expected call site renamed too:\n{content}"
+    );
 }
 
 #[tokio::test]

@@ -35,7 +35,12 @@ async fn spec_read_canonical_ref() {
     assert_eq!(v["canonical_id"], "contracts/tool");
     assert_eq!(v["kind"], "contract");
     assert_eq!(v["id"], "tool");
-    assert!(v["path"].as_str().unwrap().ends_with("spec/contracts/tool.md"));
+    assert!(
+        v["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("spec/contracts/tool.md")
+    );
     assert!(v["body"].as_str().unwrap().contains("Tool"));
     // outbound_refs is sorted; for contracts/tool we expect components and other contracts.
     let outbound = v["outbound_refs"].as_array().unwrap();
@@ -75,7 +80,10 @@ async fn spec_for_file_finds_workspace_edit_substrate() {
         ToolResult::Err(e) => panic!("err: {e}"),
     };
     let count = v["count"].as_u64().unwrap();
-    assert!(count >= 2, "expected >= 2 specs claiming workspace_edit.rs, got {count}");
+    assert!(
+        count >= 2,
+        "expected >= 2 specs claiming workspace_edit.rs, got {count}"
+    );
     let refs: Vec<&str> = v["specs"]
         .as_array()
         .unwrap()
@@ -143,10 +151,16 @@ async fn spec_tree_depends_on_root_at_a_substrate() {
         ToolResult::Ok(v) => v,
         ToolResult::Err(e) => panic!("err: {e}"),
     };
-    assert_eq!(v["root"]["ref"], "components/tools/workspace-edit-substrate");
+    assert_eq!(
+        v["root"]["ref"],
+        "components/tools/workspace-edit-substrate"
+    );
     // edit and apply-edits depend on the substrate — both should appear as children.
     let children = v["root"]["children"].as_array().expect("children");
-    let child_refs: Vec<&str> = children.iter().map(|c| c["ref"].as_str().unwrap()).collect();
+    let child_refs: Vec<&str> = children
+        .iter()
+        .map(|c| c["ref"].as_str().unwrap())
+        .collect();
     assert!(
         child_refs.contains(&"components/tools/edit"),
         "expected components/tools/edit as child; got {child_refs:?}"
@@ -182,9 +196,9 @@ async fn spec_resolve_links_for_tool_contract() {
 
     let outbound = v["outbound"].as_array().expect("outbound array");
     // Outbound at minimum contains the parent (`overview`).
-    let has_overview_parent = outbound.iter().any(|e| {
-        e["to"].as_str() == Some("overview") && e["edge"].as_str() == Some("parent")
-    });
+    let has_overview_parent = outbound
+        .iter()
+        .any(|e| e["to"].as_str() == Some("overview") && e["edge"].as_str() == Some("parent"));
     assert!(has_overview_parent, "expected parent edge to overview");
 }
 

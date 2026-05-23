@@ -70,7 +70,8 @@ pub fn init_session(worktree: &Path, id: &str, branch: &str) -> Result<SessionMe
         last_seen: now,
     };
     let meta_p = meta_path(worktree, id);
-    let meta_json = serde_json::to_string_pretty(&meta).map_err(|e| SessionError::Serialise(e.to_string()))?;
+    let meta_json =
+        serde_json::to_string_pretty(&meta).map_err(|e| SessionError::Serialise(e.to_string()))?;
     std::fs::write(&meta_p, meta_json).map_err(|e| SessionError::Io {
         path: meta_p,
         message: e.to_string(),
@@ -89,11 +90,7 @@ pub fn init_session(worktree: &Path, id: &str, branch: &str) -> Result<SessionMe
 /// caller is responsible for serialisation; we don't know the
 /// Message type here (it lives in oxidant-core and we don't depend on
 /// it from this component).
-pub fn append_message_line(
-    worktree: &Path,
-    id: &str,
-    json_line: &str,
-) -> Result<(), SessionError> {
+pub fn append_message_line(worktree: &Path, id: &str, json_line: &str) -> Result<(), SessionError> {
     let path = transcript_path(worktree, id);
     let mut file = OpenOptions::new()
         .create(true)
@@ -129,8 +126,8 @@ fn touch_last_seen(worktree: &Path, id: &str) -> Result<(), SessionError> {
     let mut meta: SessionMeta =
         serde_json::from_str(&body).map_err(|e| SessionError::Serialise(e.to_string()))?;
     meta.last_seen = Utc::now();
-    let new_body = serde_json::to_string_pretty(&meta)
-        .map_err(|e| SessionError::Serialise(e.to_string()))?;
+    let new_body =
+        serde_json::to_string_pretty(&meta).map_err(|e| SessionError::Serialise(e.to_string()))?;
     std::fs::write(&p, new_body).map_err(|e| SessionError::Io {
         path: p,
         message: e.to_string(),
@@ -174,7 +171,7 @@ pub fn list_sessions(worktree: &Path) -> Vec<SessionSummary> {
             transcript_path: path,
         });
     }
-    out.sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+    out.sort_by_key(|s| std::cmp::Reverse(s.last_seen));
     out
 }
 

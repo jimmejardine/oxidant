@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
 use petgraph::Direction;
-use petgraph::algo::{toposort, astar};
+use petgraph::algo::{astar, toposort};
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::frontmatter::{SpecFile, SpecKind, SpecStatus};
@@ -76,21 +76,40 @@ impl SpecGraph {
             let src_idx = id_to_idx[&input.canonical_id];
             let fm = &input.file.frontmatter;
 
-            if let Some(parent_raw) = &fm.parent {
-                if let Resolution::Resolved(parent_id) = resolve(parent_raw, &all_ids) {
-                    if let Some(&dst) = id_to_idx.get(&parent_id) {
+            if let Some(parent_raw) = &fm.parent
+                && let Resolution::Resolved(parent_id) = resolve(parent_raw, &all_ids)
+                    && let Some(&dst) = id_to_idx.get(&parent_id) {
                         inner.add_edge(src_idx, dst, EdgeKind::Parent);
                     }
-                }
-            }
             for raw in &fm.implements {
-                add_resolved_edge(&mut inner, &id_to_idx, src_idx, raw, EdgeKind::Implements, &all_ids);
+                add_resolved_edge(
+                    &mut inner,
+                    &id_to_idx,
+                    src_idx,
+                    raw,
+                    EdgeKind::Implements,
+                    &all_ids,
+                );
             }
             for raw in &fm.depends_on {
-                add_resolved_edge(&mut inner, &id_to_idx, src_idx, raw, EdgeKind::DependsOn, &all_ids);
+                add_resolved_edge(
+                    &mut inner,
+                    &id_to_idx,
+                    src_idx,
+                    raw,
+                    EdgeKind::DependsOn,
+                    &all_ids,
+                );
             }
             for mention in &input.file.refs_in_body {
-                add_resolved_edge(&mut inner, &id_to_idx, src_idx, &mention.raw, EdgeKind::BodyRef, &all_ids);
+                add_resolved_edge(
+                    &mut inner,
+                    &id_to_idx,
+                    src_idx,
+                    &mention.raw,
+                    EdgeKind::BodyRef,
+                    &all_ids,
+                );
             }
         }
 
@@ -128,7 +147,13 @@ impl SpecGraph {
     pub fn topo_sort_by_deps(&self) -> Vec<&Node> {
         let mut deps_only = self.inner.filter_map(
             |_, node| Some(node.clone()),
-            |_, edge| if *edge == EdgeKind::DependsOn { Some(*edge) } else { None },
+            |_, edge| {
+                if *edge == EdgeKind::DependsOn {
+                    Some(*edge)
+                } else {
+                    None
+                }
+            },
         );
         // Reverse so "depends on b" puts b before a in topo order.
         deps_only.reverse();
@@ -163,13 +188,7 @@ impl SpecGraph {
     pub fn shortest_path(&self, from: &str, to: &str) -> Option<Vec<&Node>> {
         let src = *self.id_to_idx.get(from)?;
         let dst = *self.id_to_idx.get(to)?;
-        let (_, path) = astar(
-            &self.inner,
-            src,
-            |n| n == dst,
-            |_| 1usize,
-            |_| 0usize,
-        )?;
+        let (_, path) = astar(&self.inner, src, |n| n == dst, |_| 1usize, |_| 0usize)?;
         Some(path.into_iter().map(|i| &self.inner[i]).collect())
     }
 
@@ -207,8 +226,8 @@ impl SpecGraph {
             return Vec::new();
         };
         let mut out = Vec::new();
-        let mut edges = self.inner.edges_directed(idx, dir);
-        while let Some(edge) = edges.next() {
+        let edges = self.inner.edges_directed(idx, dir);
+        for edge in edges {
             let other = match dir {
                 Direction::Outgoing => edge.target(),
                 Direction::Incoming => edge.source(),
@@ -227,11 +246,10 @@ fn add_resolved_edge(
     kind: EdgeKind,
     all_ids: &[String],
 ) {
-    if let Resolution::Resolved(id) = resolve(raw, all_ids) {
-        if let Some(&dst) = id_to_idx.get(&id) {
+    if let Resolution::Resolved(id) = resolve(raw, all_ids)
+        && let Some(&dst) = id_to_idx.get(&id) {
             graph.add_edge(src, dst, kind);
         }
-    }
 }
 
 /// Resolve a `[[ref]]` against the known set of canonical ids.
@@ -300,19 +318,30 @@ mod tests {
             refs_in_body: body_refs
                 .iter()
                 .enumerate()
-                .map(|(i, r)| RefMention { raw: r.to_string(), line: i + 1, column: 1 })
+                .map(|(i, r)| RefMention {
+                    raw: r.to_string(),
+                    line: i + 1,
+                    column: 1,
+                })
                 .collect(),
         }
     }
 
     fn input(id: &str, file: SpecFile) -> GraphInput {
-        GraphInput { canonical_id: id.to_string(), file, path: PathBuf::from(id) }
+        GraphInput {
+            canonical_id: id.to_string(),
+            file,
+            path: PathBuf::from(id),
+        }
     }
 
     #[test]
     fn resolves_full_form_and_short_form() {
         let ids = vec!["components/a".to_string(), "tools/b".to_string()];
-        assert_eq!(resolve("components/a", &ids), Resolution::Resolved("components/a".into()));
+        assert_eq!(
+            resolve("components/a", &ids),
+            Resolution::Resolved("components/a".into())
+        );
         assert_eq!(resolve("b", &ids), Resolution::Resolved("tools/b".into()));
         assert_eq!(resolve("nope", &ids), Resolution::Unresolved);
     }
@@ -329,12 +358,37 @@ mod tests {
     #[test]
     fn builds_edges_for_parent_and_depends_on() {
         let inputs = vec![
-            input("overview", make_file("overview", SpecKind::Overview, None, &[], &[])),
-            input("components/x", make_file("components/x", SpecKind::Component, Some("overview"), &["components/y"], &[])),
-            input("components/y", make_file("components/y", SpecKind::Component, Some("overview"), &[], &[])),
+            input(
+                "overview",
+                make_file("overview", SpecKind::Overview, None, &[], &[]),
+            ),
+            input(
+                "components/x",
+                make_file(
+                    "components/x",
+                    SpecKind::Component,
+                    Some("overview"),
+                    &["components/y"],
+                    &[],
+                ),
+            ),
+            input(
+                "components/y",
+                make_file(
+                    "components/y",
+                    SpecKind::Component,
+                    Some("overview"),
+                    &[],
+                    &[],
+                ),
+            ),
         ];
         let g = SpecGraph::build(&inputs);
-        let out: Vec<_> = g.outbound("components/x").into_iter().map(|(n, k)| (n.id.clone(), k)).collect();
+        let out: Vec<_> = g
+            .outbound("components/x")
+            .into_iter()
+            .map(|(n, k)| (n.id.clone(), k))
+            .collect();
         assert!(out.contains(&("overview".to_string(), EdgeKind::Parent)));
         assert!(out.contains(&("components/y".to_string(), EdgeKind::DependsOn)));
     }
@@ -342,12 +396,25 @@ mod tests {
     #[test]
     fn unreachable_from_overview_is_reported() {
         let inputs = vec![
-            input("overview", make_file("overview", SpecKind::Overview, None, &[], &["components/x"])),
-            input("components/x", make_file("components/x", SpecKind::Component, None, &[], &[])),
-            input("components/orphan", make_file("components/orphan", SpecKind::Component, None, &[], &[])),
+            input(
+                "overview",
+                make_file("overview", SpecKind::Overview, None, &[], &["components/x"]),
+            ),
+            input(
+                "components/x",
+                make_file("components/x", SpecKind::Component, None, &[], &[]),
+            ),
+            input(
+                "components/orphan",
+                make_file("components/orphan", SpecKind::Component, None, &[], &[]),
+            ),
         ];
         let g = SpecGraph::build(&inputs);
-        let unreachable: Vec<_> = g.unreachable_from("overview").into_iter().map(|n| n.id.clone()).collect();
+        let unreachable: Vec<_> = g
+            .unreachable_from("overview")
+            .into_iter()
+            .map(|n| n.id.clone())
+            .collect();
         assert_eq!(unreachable, vec!["components/orphan".to_string()]);
     }
 
@@ -360,7 +427,11 @@ mod tests {
             input("d", make_file("d", SpecKind::Component, None, &[], &[])),
         ];
         let g = SpecGraph::build(&inputs);
-        let within2: HashSet<String> = g.reachable_within("a", 2).into_iter().map(|n| n.id.clone()).collect();
+        let within2: HashSet<String> = g
+            .reachable_within("a", 2)
+            .into_iter()
+            .map(|n| n.id.clone())
+            .collect();
         assert!(within2.contains("a"));
         assert!(within2.contains("b"));
         assert!(within2.contains("c"));

@@ -5,14 +5,14 @@
 // oxidant-vcs side; the buttons hook up here once multi-viewport
 // lands. For now the row is informational.
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use egui::{Color32, RichText};
 
 pub struct ExplorationListPanel;
 
 impl ExplorationListPanel {
-    pub fn render(&self, ui: &mut egui::Ui, workspace_root: &PathBuf) {
+    pub fn render(&self, ui: &mut egui::Ui, workspace_root: &Path) {
         ui.label(RichText::new("explorations").strong());
         ui.separator();
         let label = workspace_root

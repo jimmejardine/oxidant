@@ -80,10 +80,21 @@ pub struct ThinkingConfig {
 pub enum ChatEvent {
     TextDelta(String),
     ThinkingDelta(String),
-    ToolUseStart { id: String, name: String },
-    ToolUseInputDelta { id: String, json_delta: String },
-    ToolUseEnd { id: String },
-    Finish { stop_reason: StopReason, usage: Usage },
+    ToolUseStart {
+        id: String,
+        name: String,
+    },
+    ToolUseInputDelta {
+        id: String,
+        json_delta: String,
+    },
+    ToolUseEnd {
+        id: String,
+    },
+    Finish {
+        stop_reason: StopReason,
+        usage: Usage,
+    },
     Error(String),
 }
 
