@@ -189,7 +189,14 @@ async fn drive_agent(
 
     let mut config = AgentLoopConfig::new(model);
     config.system_prompt = system_prompt;
-    config.max_tokens = 4096;
+    // 2048 fits comfortably under textgen-webui's default truncation
+    // budget (8192 - 2048 = 6144 tokens for prompt+history) while still
+    // leaving plenty of headroom for a typical assistant turn. Bump on
+    // commercial providers with bigger context via settings once the
+    // settings panel lands; the local-server failure mode of running
+    // up against an undersized truncation_length is harder to debug
+    // than a too-low max_tokens cap.
+    config.max_tokens = 2048;
     config.max_iterations = 12;
     config.post_edit_check_tool = Some("spec_diff".to_string());
 
