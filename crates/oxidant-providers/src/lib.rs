@@ -8,10 +8,12 @@
 //   spec/decisions/0001-multi-provider-llm.md
 //   spec/decisions/0007-roll-own-llm-provider-layer.md
 
+pub mod anthropic;
 pub mod ollama;
 pub mod openai;
 pub mod provider;
 
+pub use anthropic::{AnthropicConfig, AnthropicProvider};
 pub use ollama::{OllamaConfig, OllamaProvider};
 pub use openai::{OpenAIConfig, OpenAIProvider};
 pub use provider::{
