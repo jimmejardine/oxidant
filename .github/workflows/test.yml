@@ -10,9 +10,10 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  RUSTC_WRAPPER: sccache
-  SCCACHE_GHA_ENABLED: "true"
+# No sccache here: Swatinem/rust-cache covers cross-run caching, and
+# SCCACHE_GHA_ENABLED ties build success to GHA Cache uptime, which has
+# periodic outages. ADR 0005's sccache requirement is for the oxidant
+# binary's runtime cargo subprocesses, not CI.
 
 jobs:
   test:
@@ -26,9 +27,6 @@ jobs:
           components: rust-analyzer
 
       - uses: Swatinem/rust-cache@v2
-
-      - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
