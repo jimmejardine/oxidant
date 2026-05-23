@@ -13,10 +13,12 @@ use std::sync::Arc;
 
 use oxidant_core::{Tool, ToolRegistry};
 
+pub mod bash;
 pub mod edit;
 pub mod fs;
 pub mod workspace_edit;
 
+pub use bash::Bash;
 pub use edit::{ApplyEdits, EditString};
 pub use fs::{FsRead, FsWrite, Glob, Grep};
 pub use workspace_edit::{
@@ -24,9 +26,8 @@ pub use workspace_edit::{
     apply,
 };
 
-/// Register the read-only and mutating model-facing tools provided by this
-/// crate: `fs_read`, `fs_write`, `glob`, `grep`, `edit_string`, `apply_edits`.
-/// The `bash` tool lands separately once its spec is realised.
+/// Register every model-facing tool provided by this crate:
+/// `fs_read`, `fs_write`, `glob`, `grep`, `edit_string`, `apply_edits`, `bash`.
 pub fn register_standard_tools(registry: &mut ToolRegistry) {
     let tools: Vec<Arc<dyn Tool>> = vec![
         Arc::new(FsRead),
@@ -35,6 +36,7 @@ pub fn register_standard_tools(registry: &mut ToolRegistry) {
         Arc::new(Grep),
         Arc::new(EditString),
         Arc::new(ApplyEdits),
+        Arc::new(Bash),
     ];
     for t in tools {
         registry.register(t);
