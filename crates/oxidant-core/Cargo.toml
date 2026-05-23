@@ -19,6 +19,8 @@ thiserror.workspace = true
 tracing.workspace = true
 camino.workspace = true
 uuid.workspace = true
+ulid.workspace = true
+chrono.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
