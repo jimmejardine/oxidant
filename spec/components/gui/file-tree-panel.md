@@ -41,7 +41,10 @@ Within each directory:
   - `source = FileSource::Spec` for `*.md` under `spec/`.
   - `source = FileSource::Code` for everything else.
 - Double-click on a directory toggles it open/closed (free from `CollapsingHeader`).
-- Right-click: deferred (Reveal in OS file manager, copy path, etc.).
+- **Right-click on a directory header**: context menu with **New file** and **New directory**. Each opens the same modal dialog the spec tree uses ([[components/gui/spec-tree-panel]] documents the behaviour: name validation, error-inline render, Enter to create). **New file** pushes the created path onto `SharedState::pending_centre_tabs` so the editor opens immediately, sourced via the same `source_for` rule as double-click (spec markdown vs. code).
+- Right-click on a leaf: deferred (Reveal in OS file manager, copy path, rename, delete).
+
+New-item creation runs directly through `std::fs::create_dir` / `std::fs::File::create` on the GUI thread, bypassing the permission engine — these are explicit user actions, not agent-initiated tool calls. After a successful creation the panel invalidates its cached tree.
 
 ## File-type marker
 

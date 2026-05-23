@@ -16,6 +16,7 @@ use ignore::WalkBuilder;
 
 use crate::app::SharedState;
 use crate::dock::{DockTab, FileSource};
+use crate::panels::new_item_dialog::{NewItemDialog, NewKind};
 use crate::theme;
 
 /// Files larger than this are skipped from the tree — the editor isn't
@@ -30,6 +31,7 @@ const ALWAYS_SKIP_DIRS: &[&str] = &["target", ".git", "node_modules", "dist", "b
 pub struct FileTreePanel {
     workspace_root: PathBuf,
     tree: Option<DirNode>,
+    new_item: NewItemDialog,
 }
 
 #[derive(Debug, Default)]
@@ -50,6 +52,7 @@ impl FileTreePanel {
         Self {
             workspace_root,
             tree: None,
+            new_item: NewItemDialog::new(),
         }
     }
 
@@ -80,11 +83,21 @@ impl FileTreePanel {
                         tree,
                         &workspace_label(&workspace_root),
                         &workspace_root,
+                        &workspace_root,
                         true,
                         state,
+                        &mut self.new_item,
                     );
                 }
             });
+
+        let outcome = self.new_item.render(ui.ctx());
+        if let Some(created) = outcome.created_file {
+            self.tree = None;
+            push_open(state, &created, &workspace_root);
+        } else if outcome.created_directory {
+            self.tree = None;
+        }
     }
 
     fn build_tree(&self) -> DirNode {
@@ -189,24 +202,46 @@ fn looks_binary(path: &Path) -> bool {
     buf[..n].contains(&0)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_node(
     ui: &mut egui::Ui,
     node: &DirNode,
     label: &str,
+    node_dir: &Path,
     workspace_root: &Path,
     default_open: bool,
     state: &Arc<StdMutex<SharedState>>,
+    new_item: &mut NewItemDialog,
 ) {
-    egui::CollapsingHeader::new(RichText::new(label).strong())
+    let header = egui::CollapsingHeader::new(RichText::new(label).strong())
         .default_open(default_open)
         .show(ui, |ui| {
             for (name, child) in &node.dirs {
-                render_node(ui, child, name, workspace_root, false, state);
+                render_node(
+                    ui,
+                    child,
+                    name,
+                    &node_dir.join(name),
+                    workspace_root,
+                    false,
+                    state,
+                    new_item,
+                );
             }
             for file in &node.files {
                 render_leaf(ui, file, workspace_root, state);
             }
         });
+    header.header_response.context_menu(|ui| {
+        if ui.button("New file").clicked() {
+            new_item.open(node_dir.to_path_buf(), NewKind::File);
+            ui.close_menu();
+        }
+        if ui.button("New directory").clicked() {
+            new_item.open(node_dir.to_path_buf(), NewKind::Directory);
+            ui.close_menu();
+        }
+    });
 }
 
 fn render_leaf(
@@ -232,7 +267,7 @@ fn render_leaf(
                 .unwrap_or_else(|_| file.path.to_string_lossy().to_string())
         ));
     if resp.double_clicked() {
-        request_open(state, &file.path, workspace_root);
+        push_open(state, &file.path, workspace_root);
     }
 }
 
@@ -251,7 +286,7 @@ fn tag_for(name: &str) -> (Option<&'static str>, Color32) {
     }
 }
 
-fn request_open(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, workspace_root: &Path) {
+fn push_open(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, workspace_root: &Path) {
     let path = abs_path
         .strip_prefix(workspace_root)
         .map(|p| p.to_path_buf())

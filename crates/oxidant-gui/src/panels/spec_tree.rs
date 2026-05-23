@@ -15,11 +15,13 @@ use oxidant_spec_tools::{SpecRecord, walk_specs};
 
 use crate::app::SharedState;
 use crate::dock::{DockTab, FileSource};
+use crate::panels::new_item_dialog::{NewItemDialog, NewKind};
 use crate::theme;
 
 pub struct SpecTreePanel {
     workspace_root: PathBuf,
     tree: Option<DirNode>,
+    new_item: NewItemDialog,
 }
 
 #[derive(Debug, Default)]
@@ -33,6 +35,7 @@ impl SpecTreePanel {
         Self {
             workspace_root,
             tree: None,
+            new_item: NewItemDialog::new(),
         }
     }
 
@@ -54,13 +57,32 @@ impl SpecTreePanel {
         ui.separator();
 
         let workspace_root = self.workspace_root.clone();
+        let spec_root = workspace_root.join("spec");
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
             .show(ui, |ui| {
                 if let Some(tree) = &self.tree {
-                    render_node(ui, tree, "spec", &workspace_root, state);
+                    render_node(
+                        ui,
+                        tree,
+                        "spec",
+                        &spec_root,
+                        &workspace_root,
+                        state,
+                        &mut self.new_item,
+                    );
                 }
             });
+
+        // Modal dialog above everything; render every frame, no-op when
+        // closed.
+        let outcome = self.new_item.render(ui.ctx());
+        if let Some(created) = outcome.created_file {
+            self.tree = None;
+            push_open(state, &created, &workspace_root);
+        } else if outcome.created_directory {
+            self.tree = None;
+        }
     }
 
     fn build_tree(&self) -> DirNode {
@@ -100,23 +122,45 @@ fn sort_dir(node: &mut DirNode) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_node(
     ui: &mut egui::Ui,
     node: &DirNode,
     label: &str,
+    node_dir: &Path,
     workspace_root: &Path,
     state: &Arc<StdMutex<SharedState>>,
+    new_item: &mut NewItemDialog,
 ) {
-    egui::CollapsingHeader::new(RichText::new(label).strong())
-        .default_open(label == "spec")
-        .show(ui, |ui| {
-            for (name, child) in &node.dirs {
-                render_node(ui, child, name, workspace_root, state);
-            }
-            for rec in &node.files {
-                render_leaf(ui, rec, workspace_root, state);
-            }
-        });
+    let header =
+        egui::CollapsingHeader::new(RichText::new(label).strong())
+            .default_open(label == "spec")
+            .show(ui, |ui| {
+                for (name, child) in &node.dirs {
+                    render_node(
+                        ui,
+                        child,
+                        name,
+                        &node_dir.join(name),
+                        workspace_root,
+                        state,
+                        new_item,
+                    );
+                }
+                for rec in &node.files {
+                    render_leaf(ui, rec, workspace_root, state);
+                }
+            });
+    header.header_response.context_menu(|ui| {
+        if ui.button("New spec").clicked() {
+            new_item.open(node_dir.to_path_buf(), NewKind::File);
+            ui.close_menu();
+        }
+        if ui.button("New folder").clicked() {
+            new_item.open(node_dir.to_path_buf(), NewKind::Directory);
+            ui.close_menu();
+        }
+    });
 }
 
 fn render_leaf(
@@ -158,7 +202,7 @@ fn render_leaf(
         .inner
         .on_hover_text(format!("{} — double-click to edit", rec.canonical_id));
     if resp.double_clicked() {
-        request_open(state, &rec.path, workspace_root);
+        push_open(state, &rec.path, workspace_root);
     }
 }
 
@@ -166,7 +210,7 @@ fn render_leaf(
 /// `pending_centre_tabs` queue. The App drains the queue after
 /// `DockArea::show` and inserts the tab into the dock — we can't
 /// touch the dock from here because we're inside the dock's render.
-fn request_open(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, workspace_root: &Path) {
+fn push_open(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, workspace_root: &Path) {
     let path = abs_path
         .strip_prefix(workspace_root)
         .map(|p| p.to_path_buf())

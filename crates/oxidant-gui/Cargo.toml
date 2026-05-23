@@ -33,3 +33,6 @@ ignore.workspace = true
 camino.workspace = true
 dunce.workspace = true
 chrono.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

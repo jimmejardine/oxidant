@@ -49,8 +49,11 @@ Tooltip on hover gives last-modified timestamp + commit subject.
 
 - Single-click: select the leaf (visual highlight; no tab opens). MVP renders this as no-op — selection state lands when the right-click context menu does.
 - **Double-click**: open the spec as an **editable** centre tab via [[components/gui/file-tabs]]. The tab dock-key is the spec's path, so double-clicking the same spec twice just focuses the already-open tab.
-- Right-click: context menu — Reveal in code (jumps to first `code:` path), Show inbound refs, Show outbound refs, Show drift.
+- **Right-click on a directory header**: context menu with **New spec** and **New folder**. Each opens a small modal dialog asking for the name; pressing Enter (or Create) makes the entry on disk under that directory. **New spec** additionally pushes the new path onto `SharedState::pending_centre_tabs` so the editor opens immediately. The dialog rejects empty names, names containing path separators, `.` / `..`, and names that already exist; the error renders inline above the input. New specs are created as empty files — the user adds the frontmatter — so they will show up as a validate warning until they grow a frontmatter block, which is the right default.
+- Right-click on a leaf: deferred (Reveal in code, Show inbound refs, Show outbound refs, Show drift).
 - Drag onto a chat input: inserts the canonical ref as a `[[ref]]`.
+
+New-item creation runs directly through `std::fs::create_dir` / `std::fs::File::create` on the GUI thread. The permission engine ([[components/config/permissions]]) doesn't gate it — these are explicit user actions, not agent-initiated tool calls. After a successful creation the panel invalidates its cached tree so the next frame's `walk_specs` picks up the new entry.
 
 The double-click handler MUST NOT mutate the dock directly — the spec-tree panel is rendered inside `egui_dock`'s `TabViewer::ui`, which doesn't see the `DockState`. Instead it pushes a `DockTab::File { ..., source: Spec }` onto `SharedState::pending_centre_tabs`; the host viewport drains that queue after `DockArea::show` and inserts the tab via [[components/gui/dock-layout]]'s `open_in_centre` helper.
 
