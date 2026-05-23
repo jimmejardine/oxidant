@@ -12,7 +12,9 @@ use tokio_util::sync::CancellationToken;
 use oxidant_core::{Exploration, ToolRegistry};
 use oxidant_providers::{ChatEvent, Provider, StopReason, Usage};
 
-use crate::dock::{DockTab, default_layout};
+use crate::dock::{
+    DockTab, default_layout, is_tab_open, open_tab, reset_layout_preserving_files, singleton_tabs,
+};
 use crate::panels::{
     chat_input::ChatInputPanel, diagnostic::DiagnosticPanel,
     exploration_list::ExplorationListPanel, file_tab::FileTabPanel, spec_tree::SpecTreePanel,
@@ -92,6 +94,34 @@ pub enum AgentEvent {
 }
 
 impl App {
+    /// Build the "Window" menu — one entry per singleton dock tab, plus
+    /// a Reset layout action. See spec/components/gui/dock-layout.md.
+    fn render_window_menu(&mut self, ui: &mut egui::Ui) {
+        ui.menu_button("Window", |ui| {
+            for tab in singleton_tabs() {
+                let open = is_tab_open(&self.dock, &tab);
+                let label = tab.title();
+                let resp = ui.add_enabled(
+                    !open,
+                    egui::Button::new(if open {
+                        format!("✔ {label}")
+                    } else {
+                        format!("    {label}")
+                    }),
+                );
+                if resp.clicked() {
+                    open_tab(&mut self.dock, tab);
+                    ui.close_menu();
+                }
+            }
+            ui.separator();
+            if ui.button("Reset layout").clicked() {
+                self.dock = reset_layout_preserving_files(&self.dock);
+                ui.close_menu();
+            }
+        });
+    }
+
     pub fn new(config: ViewportConfig) -> Self {
         let mut registry = ToolRegistry::new();
         oxidant_tools::register_standard_tools(&mut registry);
@@ -141,10 +171,12 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
 
-        // Top menu bar (minimal: just the title).
+        // Top menu bar: title + Window menu + status + model.
         egui::TopBottomPanel::top("oxidant-menu").show(ctx, |ui| {
-            ui.horizontal(|ui| {
+            egui::menu::bar(ui, |ui| {
                 ui.label(egui::RichText::new("oxidant").strong());
+                ui.separator();
+                self.render_window_menu(ui);
                 ui.separator();
                 let state = self.state.lock().unwrap();
                 let n = state.exploration.conversation.len();

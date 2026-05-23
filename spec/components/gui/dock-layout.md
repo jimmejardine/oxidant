@@ -43,6 +43,15 @@ pub enum DockTab {
 - Loaded on viewport open; written on close and on every dock change (debounced 500ms).
 - Schema version field; mismatched versions reset to default.
 
+## Window menu
+
+The viewport's top menu bar carries a **Window** menu so a user can recover from closing a panel they later want back. Contents:
+
+- One entry per **singleton** tab — `Transcript`, `Specs`, `Explorations`, `Diagnostics`, `Chat`. Each shows a checkmark when the tab is already open and is disabled in that state; clicking an unchecked entry re-inserts the tab into the focused leaf (or the first leaf if nothing is focused).
+- **Reset layout** at the bottom of the menu rebuilds the default layout (see below). File tabs that are currently open are preserved as centre tabs — closing a file is still done via the `×` on the tab itself.
+
+File tabs (`DockTab::File { … }`) are not listed in the Window menu — they are opened from the spec tree or by following a navigation result. A recent-files history is out of scope for the MVP.
+
 ## Reset layout
 
 A menu command rebuilds the default layout and clears `dock-layout.json`. Opened files are preserved as centre tabs.
