@@ -18,7 +18,7 @@ impl TranscriptPanel {
             .auto_shrink([false; 2])
             .stick_to_bottom(true)
             .show(ui, |ui| {
-                for msg in &state.conv.messages {
+                for msg in &state.exploration.conversation.messages {
                     render_message(ui, msg);
                     ui.add_space(8.0);
                 }
@@ -39,7 +39,7 @@ impl TranscriptPanel {
                     };
                     ui.label(summary);
                 }
-                if state.conv.is_empty() && state.live_turn.is_none() {
+                if state.exploration.conversation.is_empty() && state.live_turn.is_none() {
                     ui.add_space(80.0);
                     ui.vertical_centered(|ui| {
                         ui.label(

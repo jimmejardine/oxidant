@@ -9,7 +9,7 @@ use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 
-use oxidant_core::{Conversation, ToolRegistry};
+use oxidant_core::{Exploration, ToolRegistry};
 use oxidant_providers::{ChatEvent, Provider, StopReason, Usage};
 
 use crate::dock::{DockTab, default_layout};
@@ -34,10 +34,15 @@ pub struct App {
 /// Locks are held briefly; long async work happens on cloned data and
 /// streams results back via the AgentEvent channel.
 pub struct SharedState {
-    pub conv: Conversation,
+    /// The Main exploration this window is bound to. Conversation, branch,
+    /// worktree, and (lazily) the LSP handle live here. Sub-exploration
+    /// windows will each own their own `Exploration`.
+    pub exploration: Exploration,
     pub registry: Arc<ToolRegistry>,
     pub live_turn: Option<LiveTurn>,
     pub last_outcome: Option<TurnOutcome>,
+    /// Per-turn cancellation token (Esc / Cancel button). Distinct from
+    /// `exploration.cancellation`, which tears down the whole window.
     pub cancellation: Option<CancellationToken>,
     pub diagnostics: Vec<DiagnosticEntry>,
 }
@@ -94,8 +99,9 @@ impl App {
         oxidant_spec_tools::register_standard_tools(&mut registry);
         oxidant_vcs::register_standard_tools(&mut registry);
 
+        let exploration = Exploration::new_main(config.workspace_root.clone(), "main");
         let state = Arc::new(StdMutex::new(SharedState {
-            conv: Conversation::new(),
+            exploration,
             registry: Arc::new(registry),
             live_turn: None,
             last_outcome: None,
@@ -141,7 +147,7 @@ impl eframe::App for App {
                 ui.label(egui::RichText::new("oxidant").strong());
                 ui.separator();
                 let state = self.state.lock().unwrap();
-                let n = state.conv.len();
+                let n = state.exploration.conversation.len();
                 let live = if state.live_turn.is_some() {
                     " · streaming"
                 } else {

@@ -124,13 +124,17 @@ fn spawn_agent(
     // Append the user message, snapshot the conversation, set up
     // cancellation, then move into the tokio task.
     let cancellation = CancellationToken::new();
-    let (snapshot, registry) = {
+    let (snapshot, registry, exploration_id) = {
         let mut s = state.lock().unwrap();
-        s.conv.push_user_text(prompt);
+        s.exploration.conversation.push_user_text(prompt);
         s.live_turn = Some(crate::app::LiveTurn::default());
         s.last_outcome = None;
         s.cancellation = Some(cancellation.clone());
-        (s.conv.clone(), s.registry.clone())
+        (
+            s.exploration.conversation.clone(),
+            s.registry.clone(),
+            s.exploration.id.to_string(),
+        )
     };
 
     tokio_handle.spawn(async move {
@@ -142,6 +146,7 @@ fn spawn_agent(
             model,
             system_prompt,
             cancellation,
+            exploration_id,
             event_tx.clone(),
             egui_ctx,
             state.clone(),
@@ -160,6 +165,7 @@ async fn drive_agent(
     model: String,
     system_prompt: Option<String>,
     cancellation: CancellationToken,
+    exploration_id: String,
     event_tx: UnboundedSender<AgentEvent>,
     egui_ctx: egui::Context,
     state: Arc<StdMutex<SharedState>>,
@@ -180,7 +186,7 @@ async fn drive_agent(
     };
     let ctx = ToolContext {
         workspace_root: workspace_camino,
-        exploration_id: "main".to_string(),
+        exploration_id,
         cancellation: cancellation.clone(),
     };
 
@@ -211,7 +217,7 @@ async fn drive_agent(
     // and the next user turn builds from the right history.
     {
         let mut s = state.lock().unwrap();
-        s.conv = conv;
+        s.exploration.conversation = conv;
     }
     egui_ctx.request_repaint();
 
