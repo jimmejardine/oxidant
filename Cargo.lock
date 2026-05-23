@@ -2710,6 +2710,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "eframe",
  "oxidant-config",
  "oxidant-core",
  "oxidant-gui",
@@ -2718,6 +2719,8 @@ dependencies = [
  "oxidant-spec-tools",
  "oxidant-tools",
  "oxidant-vcs",
+ "reqwest",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -2767,21 +2770,30 @@ name = "oxidant-gui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "camino",
+ "chrono",
+ "dunce",
  "eframe",
  "egui",
  "egui_commonmark",
  "egui_dock",
+ "futures",
  "oxidant-config",
  "oxidant-core",
+ "oxidant-providers",
+ "oxidant-rust-tools",
  "oxidant-spec-tools",
+ "oxidant-tools",
  "oxidant-vcs",
  "serde",
  "serde_json",
  "syntect",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

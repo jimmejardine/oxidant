@@ -8,18 +8,27 @@ publish.workspace = true
 [dependencies]
 oxidant-core.workspace = true
 oxidant-config.workspace = true
+oxidant-providers.workspace = true
+oxidant-tools.workspace = true
+oxidant-rust-tools.workspace = true
 oxidant-spec-tools.workspace = true
 oxidant-vcs.workspace = true
 
 tokio.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+async-trait.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
 eframe.workspace = true
 egui.workspace = true
 egui_dock.workspace = true
 egui_commonmark.workspace = true
 syntect.workspace = true
 camino.workspace = true
+dunce.workspace = true
+chrono.workspace = true
