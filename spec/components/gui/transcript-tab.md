@@ -42,6 +42,19 @@ Each card has:
 - "Open in editor" — opens the tool's primary file (e.g. for `fs_read`) as a new centre tab via [[components/gui/file-tabs]]
 - "Re-run" — re-issues the same tool call (with confirmation if `Mutating`)
 
+## Collapsible line items
+
+Every text-bearing "line item" in the transcript — user message text blocks, assistant message text blocks, tool-result bodies, thinking blocks — is rendered inside a collapsible container so the conversation stays scannable when individual messages run long.
+
+Behaviour:
+- **Summary line**: the collapsed view shows the first sentence (or the first ~120 characters, whichever ends sooner) of the block, with a trailing `…` when content was truncated. Sentence boundary = first `.`, `!`, `?`, or newline followed by whitespace or end-of-string.
+- **Default state**: any block whose full text exceeds a single line collapses by default. Blocks that already fit (short user messages, single-line tool results) render as-is with no collapse affordance — there is nothing to hide.
+- **Expanded state**: clicking the header swaps the summary for the full content (markdown for user/assistant, code for tool-result JSON). The expansion persists for the lifetime of the panel.
+- **Streaming**: the assistant's live turn never collapses while a token stream is in flight. It snaps to "expanded" until the turn finishes; the next render decides whether the now-final block should collapse.
+- **Tool-use cards** keep their existing `CollapsingHeader` (collapsed by default) — the rule above applies to their *body* once expanded.
+
+Why a sentence rather than a fixed-line count: a wrapped paragraph's line count depends on the panel's width, so collapsed height would jitter as the user resizes the dock. A sentence-based summary stays stable.
+
 ## Selection and copy
 
 Standard egui text selection within text blocks. Multi-message selection deferred to v2.

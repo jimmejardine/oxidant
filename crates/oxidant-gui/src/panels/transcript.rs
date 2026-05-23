@@ -4,12 +4,17 @@
 // assistant turn (text, thinking, tool calls) in place. Markdown
 // rendering via egui_commonmark; rich tool-call cards.
 
-use egui::{Color32, RichText, ScrollArea};
+use egui::{Color32, Id, RichText, ScrollArea};
 
 use oxidant_core::{ContentBlock, Message, ToolResultContent};
 
 use crate::app::{LiveTurn, SharedState};
 use crate::theme;
+
+/// Anything longer than this collapses by default. Sized to roughly the
+/// width of a typical chat input — short user prompts and one-liner
+/// tool results stay expanded, paragraphs collapse.
+const SUMMARY_LIMIT: usize = 120;
 
 pub struct TranscriptPanel;
 
@@ -19,8 +24,8 @@ impl TranscriptPanel {
             .auto_shrink([false; 2])
             .stick_to_bottom(true)
             .show(ui, |ui| {
-                for msg in &state.exploration.conversation.messages {
-                    render_message(ui, msg);
+                for (msg_idx, msg) in state.exploration.conversation.messages.iter().enumerate() {
+                    render_message(ui, msg_idx, msg);
                     ui.add_space(8.0);
                 }
                 if let Some(turn) = &state.live_turn {
@@ -57,12 +62,12 @@ impl TranscriptPanel {
     }
 }
 
-fn render_message(ui: &mut egui::Ui, msg: &Message) {
+fn render_message(ui: &mut egui::Ui, msg_idx: usize, msg: &Message) {
     match msg {
         Message::User { content } => {
             ui.label(RichText::new("user").color(Color32::LIGHT_BLUE).strong());
-            for block in content {
-                render_block(ui, block);
+            for (b_idx, block) in content.iter().enumerate() {
+                render_block(ui, msg_idx, b_idx, block);
             }
         }
         Message::Assistant {
@@ -78,8 +83,7 @@ fn render_message(ui: &mut egui::Ui, msg: &Message) {
                 );
                 if let Some(sr) = stop_reason {
                     ui.label(
-                        RichText::new(format!("[{sr:?}]"))
-                            .color(theme::muted_text()),
+                        RichText::new(format!("[{sr:?}]")).color(theme::muted_text()),
                     );
                 }
                 if let Some(u) = usage {
@@ -89,8 +93,8 @@ fn render_message(ui: &mut egui::Ui, msg: &Message) {
                     );
                 }
             });
-            for block in content {
-                render_block(ui, block);
+            for (b_idx, block) in content.iter().enumerate() {
+                render_block(ui, msg_idx, b_idx, block);
             }
         }
         Message::ToolResult {
@@ -112,32 +116,30 @@ fn render_message(ui: &mut egui::Ui, msg: &Message) {
                     serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string())
                 }
             };
-            tool_result_block(ui, &body);
+            let id = Id::new(("tool_result", msg_idx));
+            collapsible_code(ui, id, &body);
         }
     }
 }
 
-fn render_block(ui: &mut egui::Ui, block: &ContentBlock) {
+fn render_block(ui: &mut egui::Ui, msg_idx: usize, block_idx: usize, block: &ContentBlock) {
+    let id = Id::new(("block", msg_idx, block_idx));
     match block {
         ContentBlock::Text(s) => {
-            ui.label(s);
+            collapsible_text(ui, id, s);
         }
         ContentBlock::Thinking(s) => {
-            ui.collapsing(
-                RichText::new("thinking").color(theme::muted_text()),
-                |ui| {
-                    ui.label(s);
-                },
-            );
+            collapsible_thinking(ui, id, s);
         }
-        ContentBlock::ToolUse { id, name, input } => {
+        ContentBlock::ToolUse { id: tool_id, name, input } => {
             let pretty = serde_json::to_string_pretty(input).unwrap_or_else(|_| input.to_string());
-            ui.collapsing(
-                RichText::new(format!("tool_use · {name} ({id})")).color(Color32::YELLOW),
-                |ui| {
-                    ui.code(&pretty);
-                },
-            );
+            egui::CollapsingHeader::new(
+                RichText::new(format!("tool_use · {name} ({tool_id})")).color(Color32::YELLOW),
+            )
+            .id_salt(id)
+            .show(ui, |ui| {
+                ui.code(&pretty);
+            });
         }
         ContentBlock::Image { .. } => {
             ui.label(RichText::new("[image — not rendered in MVP]").color(theme::muted_text()));
@@ -146,6 +148,9 @@ fn render_block(ui: &mut egui::Ui, block: &ContentBlock) {
 }
 
 fn render_live_turn(ui: &mut egui::Ui, turn: &LiveTurn) {
+    // Per spec: the live turn never collapses while a token stream is in
+    // flight — collapsing a paragraph mid-stream would make the viewport
+    // dance. Render everything expanded.
     ui.horizontal(|ui| {
         ui.label(
             RichText::new("assistant")
@@ -156,7 +161,7 @@ fn render_live_turn(ui: &mut egui::Ui, turn: &LiveTurn) {
     });
     if !turn.thinking.is_empty() {
         ui.collapsing(
-            RichText::new("thinking").color(theme::muted_text()).small(),
+            RichText::new("thinking").color(theme::muted_text()),
             |ui| {
                 ui.label(&turn.thinking);
             },
@@ -177,12 +182,162 @@ fn render_live_turn(ui: &mut egui::Ui, turn: &LiveTurn) {
     }
 }
 
-fn tool_result_block(ui: &mut egui::Ui, body: &str) {
-    ScrollArea::vertical()
-        .max_height(180.0)
-        .auto_shrink([false; 2])
-        .id_salt(body.len())
+// ---------------------------------------------------------------- helpers
+
+/// Render `full` as either a plain label (when it already fits on one
+/// line) or a collapsible block whose header is the single-sentence
+/// summary. See "Collapsible line items" in
+/// spec/components/gui/transcript-tab.md.
+fn collapsible_text(ui: &mut egui::Ui, id: Id, full: &str) {
+    match summarize(full) {
+        None => {
+            ui.label(full);
+        }
+        Some(summary) => {
+            egui::CollapsingHeader::new(summary)
+                .id_salt(id)
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.label(full);
+                });
+        }
+    }
+}
+
+/// Thinking blocks always collapse, but use the summary line as the
+/// header instead of a literal "thinking" so the user sees what the
+/// model was reasoning about without expanding.
+fn collapsible_thinking(ui: &mut egui::Ui, id: Id, full: &str) {
+    let header = summarize(full).unwrap_or_else(|| {
+        // Falls back to the literal label when the thinking block is
+        // empty or already short.
+        if full.trim().is_empty() {
+            "thinking".to_string()
+        } else {
+            full.to_string()
+        }
+    });
+    egui::CollapsingHeader::new(RichText::new(header).color(theme::muted_text()))
+        .id_salt(id)
+        .default_open(false)
         .show(ui, |ui| {
-            ui.code(body);
+            ui.label(full);
         });
+}
+
+/// Tool-result bodies: render the first line as the header summary,
+/// scroll the full body in a code area when expanded.
+fn collapsible_code(ui: &mut egui::Ui, id: Id, body: &str) {
+    match summarize(body) {
+        None => {
+            ui.code(body);
+        }
+        Some(summary) => {
+            egui::CollapsingHeader::new(RichText::new(summary).color(theme::muted_text()))
+                .id_salt(id)
+                .default_open(false)
+                .show(ui, |ui| {
+                    ScrollArea::vertical()
+                        .max_height(360.0)
+                        .auto_shrink([false; 2])
+                        .id_salt(id.with("scroll"))
+                        .show(ui, |ui| {
+                            ui.code(body);
+                        });
+                });
+        }
+    }
+}
+
+/// Returns `Some(first_sentence_or_120_chars + "…")` when the block
+/// is long enough to be worth collapsing; `None` when it already fits.
+fn summarize(text: &str) -> Option<String> {
+    if text.len() <= SUMMARY_LIMIT && !text.contains('\n') {
+        return None;
+    }
+    Some(summarise_to_one_line(text))
+}
+
+fn summarise_to_one_line(text: &str) -> String {
+    // First newline cuts the summary regardless of length.
+    let nl = text.find('\n').unwrap_or(text.len());
+    let head = &text[..nl];
+
+    // First sentence terminator within the (truncated to NL) head.
+    let terminator = head
+        .char_indices()
+        .find(|(_, c)| matches!(c, '.' | '!' | '?'))
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(head.len());
+
+    // Whichever ends sooner: terminator, SUMMARY_LIMIT, or end-of-head.
+    let cut = terminator.min(head.len()).min(SUMMARY_LIMIT);
+    let head_summary = head[..cut].trim_end();
+
+    let truncated = cut < text.len();
+    if truncated {
+        format!("{head_summary}…")
+    } else {
+        head_summary.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summarize_returns_none_for_short_single_line() {
+        assert!(summarize("hello world").is_none());
+        assert!(summarize("a".repeat(SUMMARY_LIMIT).as_str()).is_none());
+    }
+
+    #[test]
+    fn summarize_collapses_when_over_limit() {
+        let s = "a".repeat(SUMMARY_LIMIT + 1);
+        let summary = summarize(&s).unwrap();
+        assert!(summary.ends_with('…'));
+        assert!(summary.len() <= SUMMARY_LIMIT + "…".len());
+    }
+
+    #[test]
+    fn summarize_collapses_when_multiline_even_if_short() {
+        let s = "line one\nline two";
+        let summary = summarize(s).unwrap();
+        assert_eq!(summary, "line one…");
+    }
+
+    #[test]
+    fn summarize_stops_at_sentence_terminator() {
+        // Has to be long enough to trigger collapse in the first place
+        // (> SUMMARY_LIMIT). The first sentence is short, so the
+        // summary should stop at its period.
+        let s = "First sentence here. ".to_string() + &"more more ".repeat(20);
+        let summary = summarize(&s).unwrap();
+        assert_eq!(summary, "First sentence here.…");
+    }
+
+    #[test]
+    fn summarize_handles_question_and_exclamation() {
+        let s = "Is it broken? Maybe, maybe not. ".repeat(5);
+        let summary = summarize(&s).unwrap();
+        assert!(summary.starts_with("Is it broken?"));
+    }
+
+    #[test]
+    fn summarize_truncates_at_120_when_no_sentence_break() {
+        let s: String = "abc def ghi ".repeat(20);
+        let summary = summarize(&s).unwrap();
+        // 120 chars + trailing "…" (after trimming whitespace at the cut).
+        let body = summary.trim_end_matches('…');
+        assert!(body.len() <= SUMMARY_LIMIT);
+        assert!(summary.ends_with('…'));
+    }
+
+    #[test]
+    fn summarize_first_line_of_multiline_is_kept_in_full_when_short() {
+        let s = "Short first line.\nThen a much longer second line with lots of words.";
+        let summary = summarize(s).unwrap();
+        assert_eq!(summary, "Short first line.…");
+    }
 }
