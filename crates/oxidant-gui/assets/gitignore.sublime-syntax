@@ -1,0 +1,33 @@
+%YAML 1.2
+---
+# Minimal .gitignore / .dockerignore / .npmignore highlighter.
+# Hand-written — syntect's default bundle doesn't ship one.
+#
+# Scope coverage:
+#   - line comments (#)
+#   - negation patterns (leading !)
+#   - glob metacharacters (*, **, ?, [class])
+#   - directory marker (trailing /)
+name: Git Ignore
+file_extensions:
+  - gitignore
+  - dockerignore
+  - npmignore
+scope: source.gitignore
+
+contexts:
+  main:
+    - match: '^\s*#.*$'
+      scope: comment.line.number-sign.gitignore
+    - match: '^!'
+      scope: keyword.operator.negation.gitignore
+    - match: '\*\*'
+      scope: keyword.operator.glob.gitignore
+    - match: '\*'
+      scope: keyword.operator.glob.gitignore
+    - match: '\?'
+      scope: keyword.operator.glob.gitignore
+    - match: '\[[^\]\n]+\]'
+      scope: keyword.operator.glob.gitignore
+    - match: '/\s*$'
+      scope: punctuation.definition.directory.gitignore

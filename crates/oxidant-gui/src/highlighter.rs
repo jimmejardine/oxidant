@@ -14,15 +14,42 @@ use egui::text::LayoutJob;
 use egui::{Color32, FontId, TextFormat};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{FontStyle, Style, Theme, ThemeSet};
-use syntect::parsing::{SyntaxReference, SyntaxSet};
+use syntect::parsing::{SyntaxDefinition, SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 
 use crate::theme::{self, Theme as OxidantTheme};
 
-// Built-in syntect data. Loaded once and shared.
+// Hand-written grammars bundled at compile time for formats syntect's
+// default 75-grammar bundle doesn't ship: TOML, .gitignore (also used
+// by .dockerignore / .npmignore), and .gitattributes. Each is loaded
+// once and merged into the default SyntaxSet on first use.
+//
+// JSON and YAML are already in syntect's default bundle — no asset
+// needed for those.
+const BUNDLED_SYNTAXES: &[(&str, &str)] = &[
+    ("toml", include_str!("../assets/toml.sublime-syntax")),
+    ("gitignore", include_str!("../assets/gitignore.sublime-syntax")),
+    ("gitattributes", include_str!("../assets/gitattributes.sublime-syntax")),
+];
+
 fn syntax_set() -> &'static SyntaxSet {
     static SET: OnceLock<SyntaxSet> = OnceLock::new();
-    SET.get_or_init(SyntaxSet::load_defaults_newlines)
+    SET.get_or_init(|| {
+        let defaults = SyntaxSet::load_defaults_newlines();
+        let mut builder = defaults.into_builder();
+        for (slug, body) in BUNDLED_SYNTAXES {
+            match SyntaxDefinition::load_from_str(body, true, Some(slug)) {
+                Ok(def) => builder.add(def),
+                Err(e) => {
+                    // A malformed asset must not blow up the GUI —
+                    // worst case is that format renders as plain text,
+                    // which is what users got before bundling.
+                    tracing::error!("failed to load bundled {slug} syntax: {e}");
+                }
+            }
+        }
+        builder.build()
+    })
 }
 
 fn theme_set() -> &'static ThemeSet {
@@ -31,22 +58,33 @@ fn theme_set() -> &'static ThemeSet {
 }
 
 /// Pick the syntect syntax for a given filename. Falls back to plain
-/// text when nothing matches the extension.
+/// text when nothing matches. Handles three lookup paths:
+///   1. `.rs`, `.md`, `.toml` etc. → `find_syntax_by_extension(ext)`.
+///   2. Dot-files like `.gitignore` (no extension as `Path` sees it) →
+///      strip the leading dot and look the name up as an extension,
+///      because our bundled grammars declare `gitignore` as their
+///      extension.
+///   3. As a final attempt, match the bare filename as a token
+///      (`Cargo.toml`, `Makefile`).
 fn syntax_for(path: &Path) -> &'static SyntaxReference {
     let ss = syntax_set();
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    ss.find_syntax_by_extension(ext)
-        .or_else(|| {
-            // Path-less fallback: also match by exact filename so things
-            // like Cargo.toml work even if .toml isn't recognised.
-            path.file_name()
-                .and_then(|n| n.to_str())
-                .and_then(|n| ss.find_syntax_by_token(n))
-        })
-        .unwrap_or_else(|| ss.find_syntax_plain_text())
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if let Some(s) = ss.find_syntax_by_extension(ext) {
+            return s;
+        }
+    }
+    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+        let dot_stripped = name.trim_start_matches('.');
+        if !dot_stripped.is_empty() {
+            if let Some(s) = ss.find_syntax_by_extension(dot_stripped) {
+                return s;
+            }
+        }
+        if let Some(s) = ss.find_syntax_by_token(name) {
+            return s;
+        }
+    }
+    ss.find_syntax_plain_text()
 }
 
 /// Pick a syntect highlighting theme that matches the active oxidant
@@ -123,6 +161,58 @@ mod tests {
     fn unknown_extension_falls_back_to_plain_text() {
         let s = syntax_for(Path::new("notes.xyzzy"));
         assert_eq!(s.name, "Plain Text");
+    }
+
+    #[test]
+    fn json_extension_picks_json_syntax() {
+        let s = syntax_for(Path::new("settings.json"));
+        assert_eq!(s.name, "JSON");
+    }
+
+    #[test]
+    fn yaml_extension_picks_yaml_syntax() {
+        let s = syntax_for(Path::new("ci.yml"));
+        assert!(s.name.to_lowercase().contains("yaml"));
+    }
+
+    #[test]
+    fn gitignore_dotfile_picks_bundled_gitignore_syntax() {
+        let s = syntax_for(Path::new(".gitignore"));
+        assert_eq!(s.name, "Git Ignore");
+    }
+
+    #[test]
+    fn gitattributes_dotfile_picks_bundled_gitattributes_syntax() {
+        let s = syntax_for(Path::new(".gitattributes"));
+        assert_eq!(s.name, "Git Attributes");
+    }
+
+    #[test]
+    fn toml_extension_picks_bundled_toml_syntax() {
+        // syntect's default bundle doesn't include TOML — the highlighter
+        // module bundles its own .sublime-syntax to fill the gap. This
+        // test guards against the asset going missing or failing to load.
+        let s = syntax_for(Path::new("Cargo.toml"));
+        assert_eq!(s.name, "TOML");
+    }
+
+    #[test]
+    fn highlight_toml_produces_distinct_colours_for_keys_and_strings() {
+        let job = highlight(
+            Path::new("Cargo.toml"),
+            "[package]\nname = \"oxidant\"\nversion = \"0.1.0\"\n",
+            FontId::monospace(13.0),
+            f32::INFINITY,
+        );
+        // At least one section colour must differ from the body colour —
+        // otherwise the highlighter is silently rendering plain text.
+        let colours: std::collections::HashSet<_> =
+            job.sections.iter().map(|s| s.format.color).collect();
+        assert!(
+            colours.len() >= 2,
+            "TOML highlighting produced only {} distinct colour(s)",
+            colours.len()
+        );
     }
 
     #[test]

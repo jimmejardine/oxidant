@@ -1,0 +1,38 @@
+%YAML 1.2
+---
+# Minimal .gitattributes highlighter. Hand-written — syntect's
+# default bundle doesn't ship one.
+#
+# Scope coverage:
+#   - line comments (#)
+#   - pathspec (first token on a line)
+#   - common attributes (text, binary, eol, diff, merge, …)
+#   - = assignment and ! negation
+name: Git Attributes
+file_extensions:
+  - gitattributes
+scope: source.gitattributes
+
+contexts:
+  main:
+    - match: '^\s*#.*$'
+      scope: comment.line.number-sign.gitattributes
+    - match: '^\s*(\S+)'
+      captures:
+        1: variable.parameter.path.gitattributes
+      push: attributes
+
+  attributes:
+    - match: '\n'
+      pop: true
+    - match: '#.*$'
+      scope: comment.line.number-sign.gitattributes
+      pop: true
+    - match: '\b(text|binary|eol|diff|merge|crlf|lf|whitespace|export-ignore|export-subst|ident|filter|working-tree-encoding|delta)\b'
+      scope: support.type.git-attribute.gitattributes
+    - match: '!'
+      scope: keyword.operator.negation.gitattributes
+    - match: '='
+      scope: keyword.operator.assignment.gitattributes
+    - match: '"[^"\n]*"'
+      scope: string.quoted.double.gitattributes

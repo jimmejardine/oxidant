@@ -1,0 +1,97 @@
+%YAML 1.2
+---
+# Minimal TOML syntax for syntect. Hand-written — syntect's default
+# bundle has 75 grammars but no TOML, and we ship enough Cargo.toml
+# editing for the file-tabs editor to need it.
+#
+# Scope coverage:
+#   - line comments  (#)
+#   - table headers [a.b] and array-of-tables [[a.b]]
+#   - bare and quoted keys before =
+#   - strings: "...", '...', and the triple-quoted multiline forms
+#   - numbers: integer, float, hex/oct/bin, ISO 8601 dates
+#   - booleans
+#
+# Doesn't bother with: inline-table syntax beyond what falls out of
+# the above, dotted-key precedence inside inline tables, or the
+# distinction between local-date / local-time. The colouring is good
+# enough for editor-grade visual differentiation, which is all
+# anyone wants on a Cargo.toml.
+name: TOML
+file_extensions:
+  - toml
+scope: source.toml
+
+contexts:
+  main:
+    - match: '#.*$'
+      scope: comment.line.number-sign.toml
+
+    # [[array.of.tables]] before [single] so the longer match wins.
+    - match: '\[\[[^\]\n]+\]\]'
+      scope: entity.name.section.table.array.toml
+    - match: '\[[^\]\n]+\]'
+      scope: entity.name.section.table.toml
+
+    # Key = at the start of an assignment line. Captures the key name
+    # whether it's bare, double-quoted, or single-quoted.
+    - match: '^\s*(([A-Za-z0-9_-]+)|("[^"\n]*")|(''[^''\n]*''))\s*='
+      captures:
+        2: variable.other.key.toml
+        3: variable.other.key.toml string.quoted.double.toml
+        4: variable.other.key.toml string.quoted.single.toml
+
+    - match: '\b(true|false)\b'
+      scope: constant.language.boolean.toml
+
+    # ISO 8601 datetime / date / time.
+    - match: '\b\d{4}-\d{2}-\d{2}([Tt ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?)?\b'
+      scope: constant.other.datetime.toml
+    - match: '\b\d{2}:\d{2}:\d{2}(\.\d+)?\b'
+      scope: constant.other.datetime.toml
+
+    - match: '\b0x[0-9a-fA-F_]+\b'
+      scope: constant.numeric.integer.hexadecimal.toml
+    - match: '\b0o[0-7_]+\b'
+      scope: constant.numeric.integer.octal.toml
+    - match: '\b0b[01_]+\b'
+      scope: constant.numeric.integer.binary.toml
+    - match: '[-+]?(?:\d[\d_]*)(?:\.\d[\d_]*)?(?:[eE][-+]?\d+)?'
+      scope: constant.numeric.toml
+
+    - match: '"""'
+      push: triple_double
+    - match: "'''"
+      push: triple_single
+    - match: '"'
+      push: string_double
+    - match: "'"
+      push: string_single
+
+  triple_double:
+    - meta_scope: string.quoted.triple.double.toml
+    - match: '"""'
+      pop: true
+    - match: '\\(["\\bfnrt]|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})'
+      scope: constant.character.escape.toml
+
+  triple_single:
+    - meta_scope: string.quoted.triple.single.toml
+    - match: "'''"
+      pop: true
+
+  string_double:
+    - meta_scope: string.quoted.double.toml
+    - match: '\\(["\\bfnrt]|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})'
+      scope: constant.character.escape.toml
+    - match: '"'
+      pop: true
+    - match: '$'
+      pop: true
+
+  string_single:
+    - meta_scope: string.quoted.single.toml
+    - match: "'"
+      pop: true
+    - match: '$'
+      pop: true

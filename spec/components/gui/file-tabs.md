@@ -35,7 +35,13 @@ The buffer survives a tab close+reopen — the user can dock-close a spec tab wi
 
 Both Code and Spec render through the same multi-line `egui::TextEdit` with a `layouter` callback that paints **syntect-driven syntax highlighting** in place. The highlighter lives in `crates/oxidant-gui/src/highlighter.rs` and:
 
-- Picks the syntect `SyntaxReference` by file extension (`.rs` → Rust, `.md` → Markdown, `.toml` → TOML, falling back to plain text on unknown extensions).
+- Picks the syntect `SyntaxReference` by file extension (`.rs` → Rust, `.md` → Markdown, `.toml` → TOML, `.json` → JSON, `.yml` / `.yaml` → YAML, falling back to plain text on unknown extensions).
+- Dot-files (`.gitignore`, `.gitattributes`, `.dockerignore`, `.npmignore`) are routed by stripping the leading `.` and re-looking-up as an extension, so the bundled grammars match cleanly.
+- **Hand-written grammars bundled** under `crates/oxidant-gui/assets/` and merged into the syntect default set at first use:
+  - `toml.sublime-syntax` — comments, table headers (`[a.b]` / `[[a.b]]`), bare and quoted keys, all four string forms, hex/oct/bin/float numbers, ISO 8601 dates, booleans.
+  - `gitignore.sublime-syntax` — `#` comments, leading `!` negation, glob metacharacters, trailing `/` directory marker. Also handles `.dockerignore` / `.npmignore`.
+  - `gitattributes.sublime-syntax` — `#` comments, pathspec on column 0, the well-known attribute names (`text`, `binary`, `eol`, `diff`, `merge`, …), `!` / `=` operators.
+  Each grammar is intentionally minimal — visual differentiation for editing, not a complete parser. JSON and YAML are already in syntect's default bundle and need no asset.
 - Caches `SyntaxSet` and `ThemeSet` in a `OnceLock` so subsequent edits don't repay parsing cost.
 - Maps the active oxidant theme ([[components/gui/theme]]) onto a syntect highlighting theme:
   - Espresso, Monokai → `Monokai`
