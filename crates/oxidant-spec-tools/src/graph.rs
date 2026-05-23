@@ -78,9 +78,10 @@ impl SpecGraph {
 
             if let Some(parent_raw) = &fm.parent
                 && let Resolution::Resolved(parent_id) = resolve(parent_raw, &all_ids)
-                    && let Some(&dst) = id_to_idx.get(&parent_id) {
-                        inner.add_edge(src_idx, dst, EdgeKind::Parent);
-                    }
+                && let Some(&dst) = id_to_idx.get(&parent_id)
+            {
+                inner.add_edge(src_idx, dst, EdgeKind::Parent);
+            }
             for raw in &fm.implements {
                 add_resolved_edge(
                     &mut inner,
@@ -247,9 +248,10 @@ fn add_resolved_edge(
     all_ids: &[String],
 ) {
     if let Resolution::Resolved(id) = resolve(raw, all_ids)
-        && let Some(&dst) = id_to_idx.get(&id) {
-            graph.add_edge(src, dst, kind);
-        }
+        && let Some(&dst) = id_to_idx.get(&id)
+    {
+        graph.add_edge(src, dst, kind);
+    }
 }
 
 /// Resolve a `[[ref]]` against the known set of canonical ids.

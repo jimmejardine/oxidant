@@ -2,6 +2,7 @@
 
 [![lint](https://github.com/jimmejardine/oxidant/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/jimmejardine/oxidant/actions/workflows/lint.yml)
 [![test](https://github.com/jimmejardine/oxidant/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/jimmejardine/oxidant/actions/workflows/test.yml)
+[![spec](https://github.com/jimmejardine/oxidant/actions/workflows/spec.yml/badge.svg?branch=main)](https://github.com/jimmejardine/oxidant/actions/workflows/spec.yml)
 
 A Rust-native desktop code agent for working on Rust projects. Three things distinguish it from general-purpose agents: **first-class Rust tooling** (rust-analyzer, cargo, syn, clippy exposed as structured tools — not text-scraped), **spec-driven design** (the `spec/` tree is the source of truth; code realises spec, not the other way round), and **multi-exploration via git worktrees** (each side conversation is its own branch + worktree + rust-analyzer + `target/`). See [`spec/overview.md`](spec/overview.md) for the full picture.
 
@@ -58,6 +59,17 @@ cargo test --doc                                     # doctests (nextest does no
 
 ## Spec-driven design
 
-`spec/` is canonical. For any change that crosses a contract, responsibility, or invariant, edit the relevant spec file first, then implement against it (see [`spec/decisions/0008-spec-is-canonical.md`](spec/decisions/0008-spec-is-canonical.md)). Drift is mechanically detectable via `spec_validate` and `spec_diff` — the same tools the agent uses on itself.
+`spec/` is canonical. For any change that crosses a contract, responsibility, or invariant, edit the relevant spec file first, then implement against it (see [`spec/decisions/0008-spec-is-canonical.md`](spec/decisions/0008-spec-is-canonical.md)). Drift is mechanically detectable — the `oxidant` binary surfaces the same tools the agent uses:
 
-We dogfood: oxidant is built using oxidant. Friction you hit while editing a `tools/*` spec is usually the next thing worth fixing in the tool.
+```
+oxidant spec validate            # lint the spec tree (frontmatter, links, orphans, code paths)
+oxidant spec diff                # detect spec ↔ code drift (contract trait drift, missing code paths)
+oxidant spec read <ref>          # fetch one spec by canonical or short ref
+oxidant spec tree                # hierarchical view of the spec graph
+oxidant spec for-file <path>     # which specs declare this code file?
+oxidant spec resolve-links <ref> # inbound + outbound edges for impact analysis
+```
+
+Add `--strict` to `validate` or `diff` to fail with exit 1 on any finding (this is what CI does), `--json` to any subcommand for the machine-readable envelope.
+
+We dogfood: the `spec` CI badge above is `oxidant spec validate --strict && oxidant spec diff --strict` running against this repo on every push. When it's red, oxidant just told us our own spec has drifted from our own code.

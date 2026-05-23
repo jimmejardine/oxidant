@@ -122,8 +122,7 @@ fn render_spec_editor(
         Some(b) => b,
         None => {
             ui.label(
-                RichText::new(format!("could not load {}", absolute.display()))
-                    .color(Color32::RED),
+                RichText::new(format!("could not load {}", absolute.display())).color(Color32::RED),
             );
             return;
         }
@@ -147,8 +146,7 @@ fn render_spec_editor(
         ui.label(RichText::new("(editable spec)").color(theme::muted_text()));
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let save_resp =
-                ui.add_enabled(buf.dirty, egui::Button::new("Save"));
+            let save_resp = ui.add_enabled(buf.dirty, egui::Button::new("Save"));
             if save_resp.clicked() {
                 do_save = true;
             }
@@ -177,9 +175,7 @@ fn render_spec_editor(
     }
 
     if let Some(err) = &buf.last_save_error {
-        ui.label(
-            RichText::new(format!("save failed: {err}")).color(ui.visuals().error_fg_color),
-        );
+        ui.label(RichText::new(format!("save failed: {err}")).color(ui.visuals().error_fg_color));
     }
 
     ui.separator();
@@ -211,8 +207,7 @@ fn render_spec_editor(
                 buf.last_save_error = None;
             }
             Err(e) => {
-                buf.last_save_error =
-                    Some(format!("could not reload {}: {e}", absolute.display()));
+                buf.last_save_error = Some(format!("could not reload {}: {e}", absolute.display()));
             }
         }
     } else if do_save {

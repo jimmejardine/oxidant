@@ -15,22 +15,12 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub provider: ProviderSettings,
     pub gui: GuiSettings,
     pub permissions: PermissionsSettings,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            provider: ProviderSettings::default(),
-            gui: GuiSettings::default(),
-            permissions: PermissionsSettings::default(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -145,10 +135,7 @@ impl Default for PermissionsSettings {
                 "bash:cargo check*".into(),
                 "bash:cargo test*".into(),
             ],
-            denylist: vec![
-                "bash:rm -rf*".into(),
-                "bash:rm -fr*".into(),
-            ],
+            denylist: vec!["bash:rm -rf*".into(), "bash:rm -fr*".into()],
         }
     }
 }
@@ -194,18 +181,18 @@ pub fn load(worktree: &Path) -> Result<Settings, SettingsError> {
         settings = parsed;
     }
 
-    if let Some(user) = user_config_path() {
-        if user.exists() {
-            let txt = std::fs::read_to_string(&user).map_err(|e| SettingsError::Io {
-                path: user.clone(),
-                message: e.to_string(),
-            })?;
-            let parsed: Settings = toml::from_str(&txt).map_err(|e| SettingsError::Parse {
-                path: user.clone(),
-                message: e.to_string(),
-            })?;
-            settings = parsed; // user wins over repo per the spec
-        }
+    if let Some(user) = user_config_path()
+        && user.exists()
+    {
+        let txt = std::fs::read_to_string(&user).map_err(|e| SettingsError::Io {
+            path: user.clone(),
+            message: e.to_string(),
+        })?;
+        let parsed: Settings = toml::from_str(&txt).map_err(|e| SettingsError::Parse {
+            path: user.clone(),
+            message: e.to_string(),
+        })?;
+        settings = parsed; // user wins over repo per the spec
     }
 
     apply_env_overrides(&mut settings);
@@ -288,11 +275,19 @@ mod tests {
         // We can't reliably scope environment variable changes in parallel tests, so
         // we just assert apply_env_overrides honours a present var.
         let mut s = Settings::default();
-        unsafe { std::env::set_var("OXIDANT_PROVIDER", "ollama"); }
-        unsafe { std::env::set_var("OXIDANT_MODEL", "llama3.1:8b"); }
+        unsafe {
+            std::env::set_var("OXIDANT_PROVIDER", "ollama");
+        }
+        unsafe {
+            std::env::set_var("OXIDANT_MODEL", "llama3.1:8b");
+        }
         apply_env_overrides(&mut s);
-        unsafe { std::env::remove_var("OXIDANT_PROVIDER"); }
-        unsafe { std::env::remove_var("OXIDANT_MODEL"); }
+        unsafe {
+            std::env::remove_var("OXIDANT_PROVIDER");
+        }
+        unsafe {
+            std::env::remove_var("OXIDANT_MODEL");
+        }
         assert_eq!(s.provider.default, "ollama");
         assert_eq!(s.provider.default_model.as_deref(), Some("llama3.1:8b"));
     }

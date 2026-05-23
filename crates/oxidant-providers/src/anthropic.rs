@@ -73,9 +73,10 @@ impl AnthropicConfig {
     /// matching how `from_env` is used at startup (callers can still set
     /// `api_key` from settings before constructing the provider).
     pub fn from_env() -> Self {
-        let mut cfg = Self::default();
-        cfg.api_key = std::env::var("ANTHROPIC_API_KEY").ok();
-        cfg
+        Self {
+            api_key: std::env::var("ANTHROPIC_API_KEY").ok(),
+            ..Self::default()
+        }
     }
 }
 
@@ -109,10 +110,7 @@ impl Provider for AnthropicProvider {
             .ok_or_else(|| anyhow!("anthropic: no API key — set ANTHROPIC_API_KEY"))?;
 
         let body = build_request_body(&req);
-        let url = format!(
-            "{}/messages",
-            self.config.base_url.trim_end_matches('/')
-        );
+        let url = format!("{}/messages", self.config.base_url.trim_end_matches('/'));
 
         let mut builder = self
             .http
@@ -132,9 +130,10 @@ impl Provider for AnthropicProvider {
             "POST /v1/messages"
         );
 
-        let response = builder.send().await.with_context(|| {
-            format!("HTTP request to {url} failed before response headers")
-        })?;
+        let response = builder
+            .send()
+            .await
+            .with_context(|| format!("HTTP request to {url} failed before response headers"))?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
@@ -161,11 +160,7 @@ impl Provider for AnthropicProvider {
 // ----------------------------------------------------------------- Request
 
 fn build_request_body(req: &ChatRequest) -> Value {
-    let messages: Vec<Value> = req
-        .messages
-        .iter()
-        .map(translate_message)
-        .collect();
+    let messages: Vec<Value> = req.messages.iter().map(translate_message).collect();
 
     let mut body = serde_json::json!({
         "model": req.model,
@@ -360,28 +355,51 @@ fn translate_event(
     match event_name {
         "message_start" => {
             // Seed input_tokens from the initial usage report.
-            if let Some(usage) = payload
-                .get("message")
-                .and_then(|m| m.get("usage"))
-            {
+            if let Some(usage) = payload.get("message").and_then(|m| m.get("usage")) {
                 merge_usage(pending_usage, usage);
             }
         }
         "content_block_start" => {
-            let Some(index) = payload.get("index").and_then(|v| v.as_u64()) else { return out };
+            let Some(index) = payload.get("index").and_then(|v| v.as_u64()) else {
+                return out;
+            };
             let index = index as u32;
-            let Some(block) = payload.get("content_block") else { return out };
+            let Some(block) = payload.get("content_block") else {
+                return out;
+            };
             let block_type = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
             match block_type {
                 "text" => {
-                    blocks.insert(index, BlockState { kind: BlockKind::Text, tool_id: None, tool_name: None });
+                    blocks.insert(
+                        index,
+                        BlockState {
+                            kind: BlockKind::Text,
+                            tool_id: None,
+                            tool_name: None,
+                        },
+                    );
                 }
                 "thinking" => {
-                    blocks.insert(index, BlockState { kind: BlockKind::Thinking, tool_id: None, tool_name: None });
+                    blocks.insert(
+                        index,
+                        BlockState {
+                            kind: BlockKind::Thinking,
+                            tool_id: None,
+                            tool_name: None,
+                        },
+                    );
                 }
                 "tool_use" => {
-                    let id = block.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                    let name = block.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let id = block
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let name = block
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     blocks.insert(
                         index,
                         BlockState {
@@ -398,56 +416,60 @@ fn translate_event(
             }
         }
         "content_block_delta" => {
-            let Some(index) = payload.get("index").and_then(|v| v.as_u64()) else { return out };
+            let Some(index) = payload.get("index").and_then(|v| v.as_u64()) else {
+                return out;
+            };
             let index = index as u32;
-            let Some(delta) = payload.get("delta") else { return out };
+            let Some(delta) = payload.get("delta") else {
+                return out;
+            };
             let delta_type = delta.get("type").and_then(|v| v.as_str()).unwrap_or("");
             match delta_type {
                 "text_delta" => {
-                    if let Some(text) = delta.get("text").and_then(|v| v.as_str()) {
-                        if !text.is_empty() {
-                            out.push(ChatEvent::TextDelta(text.to_string()));
-                        }
+                    if let Some(text) = delta.get("text").and_then(|v| v.as_str())
+                        && !text.is_empty()
+                    {
+                        out.push(ChatEvent::TextDelta(text.to_string()));
                     }
                 }
                 "thinking_delta" => {
-                    if let Some(text) = delta.get("thinking").and_then(|v| v.as_str()) {
-                        if !text.is_empty() {
-                            out.push(ChatEvent::ThinkingDelta(text.to_string()));
-                        }
+                    if let Some(text) = delta.get("thinking").and_then(|v| v.as_str())
+                        && !text.is_empty()
+                    {
+                        out.push(ChatEvent::ThinkingDelta(text.to_string()));
                     }
                 }
                 "input_json_delta" => {
-                    if let Some(partial) = delta.get("partial_json").and_then(|v| v.as_str()) {
-                        if !partial.is_empty() {
-                            if let Some(state) = blocks.get(&index) {
-                                if let Some(id) = &state.tool_id {
-                                    out.push(ChatEvent::ToolUseInputDelta {
-                                        id: id.clone(),
-                                        json_delta: partial.to_string(),
-                                    });
-                                }
-                            }
-                        }
+                    if let Some(partial) = delta.get("partial_json").and_then(|v| v.as_str())
+                        && !partial.is_empty()
+                        && let Some(state) = blocks.get(&index)
+                        && let Some(id) = &state.tool_id
+                    {
+                        out.push(ChatEvent::ToolUseInputDelta {
+                            id: id.clone(),
+                            json_delta: partial.to_string(),
+                        });
                     }
                 }
                 _ => {}
             }
         }
         "content_block_stop" => {
-            let Some(index) = payload.get("index").and_then(|v| v.as_u64()) else { return out };
+            let Some(index) = payload.get("index").and_then(|v| v.as_u64()) else {
+                return out;
+            };
             let index = index as u32;
-            if let Some(state) = blocks.remove(&index) {
-                if let (BlockKind::ToolUse, Some(id)) = (state.kind, state.tool_id) {
-                    out.push(ChatEvent::ToolUseEnd { id });
-                }
+            if let Some(state) = blocks.remove(&index)
+                && let (BlockKind::ToolUse, Some(id)) = (state.kind, state.tool_id)
+            {
+                out.push(ChatEvent::ToolUseEnd { id });
             }
         }
         "message_delta" => {
-            if let Some(delta) = payload.get("delta") {
-                if let Some(reason) = delta.get("stop_reason").and_then(|v| v.as_str()) {
-                    *pending_stop = Some(parse_stop_reason(reason));
-                }
+            if let Some(delta) = payload.get("delta")
+                && let Some(reason) = delta.get("stop_reason").and_then(|v| v.as_str())
+            {
+                *pending_stop = Some(parse_stop_reason(reason));
             }
             if let Some(usage) = payload.get("usage") {
                 merge_usage(pending_usage, usage);
@@ -476,8 +498,7 @@ fn merge_usage(usage: &mut Usage, source: &Value) {
         .get("cache_read_input_tokens")
         .and_then(|v| v.as_u64())
     {
-        usage.cache_read_input_tokens =
-            usage.cache_read_input_tokens.saturating_add(v as u32);
+        usage.cache_read_input_tokens = usage.cache_read_input_tokens.saturating_add(v as u32);
     }
 }
 
@@ -721,8 +742,10 @@ mod tests {
             &mut stop,
             &mut usage,
         );
-        assert!(matches!(evs.first(), Some(ChatEvent::ToolUseStart { id, name })
-            if id == "toolu_x" && name == "get_weather"));
+        assert!(
+            matches!(evs.first(), Some(ChatEvent::ToolUseStart { id, name })
+            if id == "toolu_x" && name == "get_weather")
+        );
 
         // Input delta
         let evs = translate_event(
@@ -735,8 +758,10 @@ mod tests {
             &mut stop,
             &mut usage,
         );
-        assert!(matches!(evs.first(), Some(ChatEvent::ToolUseInputDelta { id, json_delta })
-            if id == "toolu_x" && json_delta == "{\"loc"));
+        assert!(
+            matches!(evs.first(), Some(ChatEvent::ToolUseInputDelta { id, json_delta })
+            if id == "toolu_x" && json_delta == "{\"loc")
+        );
 
         // Stop
         let evs = translate_event(

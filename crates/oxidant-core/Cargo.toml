@@ -23,16 +23,7 @@ ulid.workspace = true
 chrono.workspace = true
 
 [dev-dependencies]
-anyhow.workspace = true
 tokio = { workspace = true }
-clap.workspace = true
-tracing-subscriber.workspace = true
 futures.workspace = true
 async-trait.workspace = true
-reqwest.workspace = true
 serde_json.workspace = true
-chrono.workspace = true
-dunce.workspace = true
-oxidant-tools.workspace = true
-oxidant-rust-tools.workspace = true
-oxidant-spec-tools.workspace = true

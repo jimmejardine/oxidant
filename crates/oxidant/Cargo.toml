@@ -20,8 +20,11 @@ oxidant-gui.workspace = true
 oxidant-config.workspace = true
 
 anyhow.workspace = true
+camino.workspace = true
 clap.workspace = true
+dunce.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 reqwest.workspace = true

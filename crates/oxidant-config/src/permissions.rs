@@ -99,9 +99,7 @@ impl PermissionEngine {
 }
 
 fn matches_any(patterns: &[CompiledPattern], tool_name: &str, bash_command: Option<&str>) -> bool {
-    patterns
-        .iter()
-        .any(|p| p.matches(tool_name, bash_command))
+    patterns.iter().any(|p| p.matches(tool_name, bash_command))
 }
 
 #[derive(Debug)]
@@ -124,17 +122,19 @@ impl CompiledPattern {
         if let Some(rest) = raw.strip_prefix("bash:") {
             // Regex if wrapped in /.../
             if let Some(inner) = rest.strip_prefix('/').and_then(|t| t.strip_suffix('/')) {
-                let re = Regex::new(inner)
-                    .map_err(|e| format!("invalid regex {inner:?}: {e}"))?;
+                let re = Regex::new(inner).map_err(|e| format!("invalid regex {inner:?}: {e}"))?;
                 return Ok(CompiledPattern::Bash(BashMatcher::Regex(re)));
             }
             // Glob if it contains a metacharacter; substring otherwise.
             if rest.contains(['*', '?', '[']) {
-                let glob = Glob::new(rest)
-                    .map_err(|e| format!("invalid glob {rest:?}: {e}"))?;
-                return Ok(CompiledPattern::Bash(BashMatcher::Glob(glob.compile_matcher())));
+                let glob = Glob::new(rest).map_err(|e| format!("invalid glob {rest:?}: {e}"))?;
+                return Ok(CompiledPattern::Bash(BashMatcher::Glob(
+                    glob.compile_matcher(),
+                )));
             }
-            return Ok(CompiledPattern::Bash(BashMatcher::Substring(rest.to_string())));
+            return Ok(CompiledPattern::Bash(BashMatcher::Substring(
+                rest.to_string(),
+            )));
         }
         // No `bash:` prefix → exact tool name match.
         if raw.trim().is_empty() {
@@ -169,9 +169,11 @@ mod tests {
     use super::*;
 
     fn engine(allow: Vec<&str>, deny: Vec<&str>) -> PermissionEngine {
-        let mut settings = PermissionsSettings::default();
-        settings.allowlist = allow.into_iter().map(String::from).collect();
-        settings.denylist = deny.into_iter().map(String::from).collect();
+        let settings = PermissionsSettings {
+            allowlist: allow.into_iter().map(String::from).collect(),
+            denylist: deny.into_iter().map(String::from).collect(),
+            ..PermissionsSettings::default()
+        };
         PermissionEngine::new(settings)
     }
 
@@ -285,10 +287,11 @@ mod tests {
 
     #[test]
     fn auto_approve_readonly_off_prompts() {
-        let mut settings = PermissionsSettings::default();
-        settings.auto_approve_readonly = false;
-        settings.allowlist.clear();
-        settings.denylist.clear();
+        let settings = PermissionsSettings {
+            auto_approve_readonly: false,
+            allowlist: Vec::new(),
+            denylist: Vec::new(),
+        };
         let e = PermissionEngine::new(settings);
         assert_eq!(
             e.decide(&st(), "fs_read", ToolCategory::ReadOnly, None),

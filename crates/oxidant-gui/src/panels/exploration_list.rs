@@ -25,9 +25,7 @@ impl ExplorationListPanel {
             ui.label(RichText::new("[main]").color(Color32::LIGHT_GREEN).strong());
             ui.label(label);
         });
-        ui.label(
-            RichText::new(workspace_root.to_string_lossy()).color(theme::muted_text()),
-        );
+        ui.label(RichText::new(workspace_root.to_string_lossy()).color(theme::muted_text()));
         ui.add_space(8.0);
         ui.label(
             RichText::new(

@@ -63,14 +63,14 @@ impl DiagnosticPanel {
         });
         ui.separator();
 
-        if let Ok(err) = self.last_error.lock() {
-            if let Some(msg) = err.as_ref() {
-                ui.label(
-                    RichText::new(format!("cargo check failed: {msg}"))
-                        .color(ui.visuals().error_fg_color),
-                );
-                ui.add_space(4.0);
-            }
+        if let Ok(err) = self.last_error.lock()
+            && let Some(msg) = err.as_ref()
+        {
+            ui.label(
+                RichText::new(format!("cargo check failed: {msg}"))
+                    .color(ui.visuals().error_fg_color),
+            );
+            ui.add_space(4.0);
         }
 
         let state = state.lock().unwrap();
@@ -178,15 +178,16 @@ fn extract_diagnostics(value: &serde_json::Value) -> Vec<DiagnosticEntry> {
             .unwrap_or("")
             .to_string();
         // Prefer the primary span, else the first.
-        let span = m
-            .get("spans")
-            .and_then(|s| s.as_array())
-            .and_then(|spans| {
-                spans
-                    .iter()
-                    .find(|s| s.get("is_primary").and_then(|p| p.as_bool()).unwrap_or(false))
-                    .or_else(|| spans.first())
-            });
+        let span = m.get("spans").and_then(|s| s.as_array()).and_then(|spans| {
+            spans
+                .iter()
+                .find(|s| {
+                    s.get("is_primary")
+                        .and_then(|p| p.as_bool())
+                        .unwrap_or(false)
+                })
+                .or_else(|| spans.first())
+        });
         let (file, line, character) = match span {
             Some(s) => {
                 let file = s

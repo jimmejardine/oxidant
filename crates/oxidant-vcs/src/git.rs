@@ -601,16 +601,18 @@ fn attach_hunks_to_files(files: &mut [DiffFile], unified: &str) {
             // Path is "a/<path> b/<path>"; take part after "b/".
             if let Some(b_part) = rest.split(" b/").nth(1) {
                 if let Some(hunk) = current_hunk.take()
-                    && let Some(p) = &current_path {
-                        file_map.entry(p.clone()).or_default().push(hunk);
-                    }
+                    && let Some(p) = &current_path
+                {
+                    file_map.entry(p.clone()).or_default().push(hunk);
+                }
                 current_path = Some(b_part.to_string());
             }
         } else if let Some(caps) = HUNK_HEADER.captures(line) {
             if let Some(hunk) = current_hunk.take()
-                && let Some(p) = &current_path {
-                    file_map.entry(p.clone()).or_default().push(hunk);
-                }
+                && let Some(p) = &current_path
+            {
+                file_map.entry(p.clone()).or_default().push(hunk);
+            }
             let old_start = caps
                 .get(1)
                 .and_then(|m| m.as_str().parse().ok())
@@ -638,9 +640,10 @@ fn attach_hunks_to_files(files: &mut [DiffFile], unified: &str) {
         }
     }
     if let Some(hunk) = current_hunk.take()
-        && let Some(p) = current_path {
-            file_map.entry(p).or_default().push(hunk);
-        }
+        && let Some(p) = current_path
+    {
+        file_map.entry(p).or_default().push(hunk);
+    }
 
     for file in files.iter_mut() {
         if let Some(hunks) = file_map.remove(&file.path) {

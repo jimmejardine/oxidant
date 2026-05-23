@@ -180,9 +180,10 @@ impl Tool for FsWrite {
         if let Some(parent) = relative.parent() {
             let abs_parent = workspace.join(parent);
             if !parent.as_os_str().is_empty()
-                && let Err(e) = std::fs::create_dir_all(&abs_parent) {
-                    return ToolResult::Err(format!("mkdir failed: {e}"));
-                }
+                && let Err(e) = std::fs::create_dir_all(&abs_parent)
+            {
+                return ToolResult::Err(format!("mkdir failed: {e}"));
+            }
         }
 
         let absolute = match resolve_in_workspace(&workspace, relative) {
@@ -192,9 +193,10 @@ impl Tool for FsWrite {
         let created = !absolute.exists();
 
         if absolute.extension().and_then(|s| s.to_str()) == Some("rs")
-            && let Err(e) = syn::parse_file(&args.content) {
-                return ToolResult::Err(format!("syn parse failed; refused to write: {e}"));
-            }
+            && let Err(e) = syn::parse_file(&args.content)
+        {
+            return ToolResult::Err(format!("syn parse failed; refused to write: {e}"));
+        }
 
         let temp = sibling_temp_path(&absolute);
         if let Err(e) = std::fs::write(&temp, args.content.as_bytes()) {
@@ -426,9 +428,10 @@ impl Tool for Grep {
             };
             let rel_str = path_with_forward_slashes(rel);
             if let Some(m) = &path_matcher
-                && !m.is_match(&rel_str) {
-                    continue;
-                }
+                && !m.is_match(&rel_str)
+            {
+                continue;
+            }
 
             let path = entry.path().to_path_buf();
             let result = searcher.search_path(

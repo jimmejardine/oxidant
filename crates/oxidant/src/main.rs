@@ -1,14 +1,19 @@
 // Application entry point. Launches the GUI by default on the current
-// working directory; `oxidant spec` subcommands and `oxidant chat`
-// are CLI affordances that don't open a window.
+// working directory; `oxidant spec` subcommands are CLI affordances that
+// don't open a window — see spec_cli.rs.
+
+mod spec_cli;
 
 use std::path::PathBuf;
+use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::{Parser, Subcommand};
 
 use oxidant_gui::launch_gui;
 use oxidant_providers::{OllamaConfig, OllamaProvider, Provider};
+
+use crate::spec_cli::SpecCommand;
 
 #[derive(Parser)]
 #[command(
@@ -40,11 +45,12 @@ struct Cli {
 enum Command {
     /// Launch the desktop GUI (default behaviour when no subcommand is given).
     Gui,
-    /// Spec graph operations — placeholder until the CLI surface is built out.
-    Spec,
+    /// Spec graph operations — wraps the same tools the agent uses.
+    #[command(subcommand)]
+    Spec(SpecCommand),
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<ExitCode> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -59,8 +65,8 @@ fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| std::env::current_dir().expect("no current_dir"));
 
     match cli.command {
-        Some(Command::Spec) => anyhow::bail!("`oxidant spec` subcommands not yet implemented"),
-        None | Some(Command::Gui) => run_gui(&cli, workspace),
+        Some(Command::Spec(cmd)) => spec_cli::run(workspace, cmd),
+        None | Some(Command::Gui) => run_gui(&cli, workspace).map(|_| ExitCode::SUCCESS),
     }
 }
 

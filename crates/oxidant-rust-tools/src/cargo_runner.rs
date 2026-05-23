@@ -368,10 +368,11 @@ fn check_args_to_cli(args: &CheckArgs) -> Vec<String> {
         cli.push("--all-targets".into());
     }
     if let Some(features) = &args.features
-        && !features.is_empty() {
-            cli.push("--features".into());
-            cli.push(features.join(","));
-        }
+        && !features.is_empty()
+    {
+        cli.push("--features".into());
+        cli.push(features.join(","));
+    }
     if args.no_default_features.unwrap_or(false) {
         cli.push("--no-default-features".into());
     }
@@ -544,10 +545,11 @@ impl Tool for CargoTest {
             cli.push(p.clone());
         }
         if let Some(features) = &args.features
-            && !features.is_empty() {
-                cli.push("--features".into());
-                cli.push(features.join(","));
-            }
+            && !features.is_empty()
+        {
+            cli.push("--features".into());
+            cli.push(features.join(","));
+        }
         if args.release.unwrap_or(false) {
             cli.push("--release".into());
         }

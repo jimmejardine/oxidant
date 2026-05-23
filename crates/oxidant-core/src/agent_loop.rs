@@ -169,9 +169,7 @@ where
         }
 
         // Post-edit hook — see spec/components/core/agent-loop.md.
-        if any_mutating
-            && let Some(check_tool) = &config.post_edit_check_tool
-        {
+        if any_mutating && let Some(check_tool) = &config.post_edit_check_tool {
             if registry.iter().any(|t| t.name() == check_tool.as_str()) {
                 tracing::debug!(tool = %check_tool, "post-edit check");
                 let result = registry

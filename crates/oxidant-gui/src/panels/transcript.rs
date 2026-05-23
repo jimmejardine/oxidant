@@ -82,9 +82,7 @@ fn render_message(ui: &mut egui::Ui, msg_idx: usize, msg: &Message) {
                         .strong(),
                 );
                 if let Some(sr) = stop_reason {
-                    ui.label(
-                        RichText::new(format!("[{sr:?}]")).color(theme::muted_text()),
-                    );
+                    ui.label(RichText::new(format!("[{sr:?}]")).color(theme::muted_text()));
                 }
                 if let Some(u) = usage {
                     ui.label(
@@ -107,9 +105,7 @@ fn render_message(ui: &mut egui::Ui, msg_idx: usize, msg: &Message) {
             } else {
                 Color32::YELLOW
             };
-            ui.label(
-                RichText::new(format!("tool_result ({call_id})")).color(header_color),
-            );
+            ui.label(RichText::new(format!("tool_result ({call_id})")).color(header_color));
             let body = match content {
                 ToolResultContent::Text(s) => s.clone(),
                 ToolResultContent::Json(v) => {
@@ -131,7 +127,11 @@ fn render_block(ui: &mut egui::Ui, msg_idx: usize, block_idx: usize, block: &Con
         ContentBlock::Thinking(s) => {
             collapsible_thinking(ui, id, s);
         }
-        ContentBlock::ToolUse { id: tool_id, name, input } => {
+        ContentBlock::ToolUse {
+            id: tool_id,
+            name,
+            input,
+        } => {
             let pretty = serde_json::to_string_pretty(input).unwrap_or_else(|_| input.to_string());
             egui::CollapsingHeader::new(
                 RichText::new(format!("tool_use · {name} ({tool_id})")).color(Color32::YELLOW),
@@ -160,12 +160,9 @@ fn render_live_turn(ui: &mut egui::Ui, turn: &LiveTurn) {
         ui.spinner();
     });
     if !turn.thinking.is_empty() {
-        ui.collapsing(
-            RichText::new("thinking").color(theme::muted_text()),
-            |ui| {
-                ui.label(&turn.thinking);
-            },
-        );
+        ui.collapsing(RichText::new("thinking").color(theme::muted_text()), |ui| {
+            ui.label(&turn.thinking);
+        });
     }
     if !turn.text.is_empty() {
         ui.label(&turn.text);

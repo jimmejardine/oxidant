@@ -42,10 +42,6 @@ impl ExplorationId {
     pub fn nil() -> Self {
         Self(Ulid::nil())
     }
-
-    pub fn to_string(&self) -> String {
-        self.0.to_string()
-    }
 }
 
 impl Default for ExplorationId {

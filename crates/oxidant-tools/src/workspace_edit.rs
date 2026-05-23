@@ -247,12 +247,13 @@ fn prepare_file(
 
     // .rs files must parse with syn after the edit, or we refuse the change.
     if absolute.extension().and_then(|s| s.to_str()) == Some("rs")
-        && let Err(e) = syn::parse_file(&new_content) {
-            return Err(ApplyError::SynParseFailed {
-                file: relative_path,
-                message: e.to_string(),
-            });
-        }
+        && let Err(e) = syn::parse_file(&new_content)
+    {
+        return Err(ApplyError::SynParseFailed {
+            file: relative_path,
+            message: e.to_string(),
+        });
+    }
 
     // Write the prospective new content to a sibling temp file.
     let temp_path = sibling_temp(&absolute);

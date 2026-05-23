@@ -25,8 +25,9 @@ use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------- Theme enum
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Theme {
+    #[default]
     Espresso,
     Monokai,
     Dracula,
@@ -35,12 +36,6 @@ pub enum Theme {
     /// repo's working name) — near-black ground, white text, cyan
     /// accent. Highest contrast of the bunch.
     ClassicDark,
-}
-
-impl Default for Theme {
-    fn default() -> Self {
-        Self::Espresso
-    }
 }
 
 impl Theme {
@@ -156,10 +151,7 @@ pub fn current() -> Theme {
 /// Secondary text colour for the active theme. Replaces hard-coded
 /// `Color32::DARK_GRAY` uses across the panels.
 pub fn muted_text() -> Color32 {
-    CURRENT_COLOURS
-        .lock()
-        .map(|g| g.0)
-        .unwrap_or(Color32::GRAY)
+    CURRENT_COLOURS.lock().map(|g| g.0).unwrap_or(Color32::GRAY)
 }
 
 /// Tertiary text colour for the active theme — softer than `muted_text`,
@@ -173,6 +165,7 @@ pub fn faint_text() -> Color32 {
 
 // ---------------------------------------------------------------- Builder
 
+#[allow(clippy::too_many_arguments)] // palette-builder takes one Color32 per band by design
 fn build_visuals(
     bg_deep: Color32,
     bg_window: Color32,

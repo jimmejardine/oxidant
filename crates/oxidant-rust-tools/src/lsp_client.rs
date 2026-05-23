@@ -346,12 +346,13 @@ async fn locate_rust_analyzer() -> Result<PathBuf, String> {
         .args(["which", "rust-analyzer"])
         .output()
         .await
-        && output.status.success() {
-            let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !line.is_empty() && Path::new(&line).exists() {
-                return Ok(PathBuf::from(line));
-            }
+        && output.status.success()
+    {
+        let line = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !line.is_empty() && Path::new(&line).exists() {
+            return Ok(PathBuf::from(line));
         }
+    }
     // Fall back to PATH lookup — try invoking with --version to verify it's there.
     if Command::new("rust-analyzer")
         .arg("--version")
@@ -586,9 +587,10 @@ fn extract_hover_signature(hover: &Value) -> (Option<String>, Option<String>) {
     };
     // contents can be a MarkupContent { kind, value } OR an array of MarkedString.
     if let Some(obj) = contents.as_object()
-        && let Some(value) = obj.get("value").and_then(|v| v.as_str()) {
-            return split_signature_from_markdown(value);
-        }
+        && let Some(value) = obj.get("value").and_then(|v| v.as_str())
+    {
+        return split_signature_from_markdown(value);
+    }
     if let Some(arr) = contents.as_array() {
         let mut joined = String::new();
         for item in arr {
@@ -596,10 +598,11 @@ fn extract_hover_signature(hover: &Value) -> (Option<String>, Option<String>) {
                 joined.push_str(s);
                 joined.push('\n');
             } else if let Some(obj) = item.as_object()
-                && let Some(v) = obj.get("value").and_then(|v| v.as_str()) {
-                    joined.push_str(v);
-                    joined.push('\n');
-                }
+                && let Some(v) = obj.get("value").and_then(|v| v.as_str())
+            {
+                joined.push_str(v);
+                joined.push('\n');
+            }
         }
         return split_signature_from_markdown(joined.trim());
     }
@@ -655,10 +658,7 @@ fn split_signature_from_markdown(text: &str) -> (Option<String>, Option<String>)
     } else {
         Some(signature_parts.join("\n\n"))
     };
-    let doc = doc_lines.to_vec()
-        .join("\n")
-        .trim()
-        .to_string();
+    let doc = doc_lines.to_vec().join("\n").trim().to_string();
     let doc = if doc.is_empty() { None } else { Some(doc) };
     (signature, doc)
 }
@@ -1044,9 +1044,10 @@ impl Tool for RustDiagnostics {
                 let sev = d.get("severity").and_then(|v| v.as_u64()).unwrap_or(0);
                 let sev_name = lsp_severity_name(sev);
                 if let Some(filter) = severity_filter
-                    && sev_name != filter {
-                        continue;
-                    }
+                    && sev_name != filter
+                {
+                    continue;
+                }
                 out.push(json!({
                     "file":     file,
                     "range":    d.get("range").cloned().unwrap_or(Value::Null),
