@@ -42,7 +42,11 @@ Within each directory:
   - `source = FileSource::Code` for everything else.
 - Double-click on a directory toggles it open/closed (free from `CollapsingHeader`).
 - **Right-click on a directory header**: context menu with **New file** and **New directory**. Each opens the same modal dialog the spec tree uses ([[components/gui/spec-tree-panel]] documents the behaviour: name validation, error-inline render, Enter to create). **New file** pushes the created path onto `SharedState::pending_centre_tabs` so the editor opens immediately, sourced via the same `source_for` rule as double-click (spec markdown vs. code).
-- **Right-click on a leaf**: context menu with **View history** — opens [[components/gui/diff-history-panel]] for the file. Same mechanism the spec tree uses; the only difference is the queued tab's `source` is `FileSource::Code` (unless the path happens to be a `*.md` under `spec/`, in which case `source_for` picks `FileSource::Spec`). See [[flows/view-spec-history]]. Further leaf actions (Reveal in OS file manager, copy path, rename, delete) are deferred.
+- **Right-click on a leaf**: context menu with:
+  - **View history** — opens [[components/gui/diff-history-panel]] for the file. Same mechanism the spec tree uses; the only difference is the queued tab's `source` is `FileSource::Code` (unless the path happens to be a `*.md` under `spec/`, in which case `source_for` picks `FileSource::Spec`). See [[flows/view-spec-history]].
+  - **Open in spec graph** — seeds [[components/gui/spec-graph-panel]] with the file's CodeFile node and opens the graph tab. The seed id is `"code:{rel_path}"` (forward-slashes, workspace-relative). If no spec's `code:` frontmatter claims this file, the universe has no matching node and the seed is a silent no-op — the graph keeps whatever was already there.
+  
+  Further leaf actions (Reveal in OS file manager, copy path, rename, delete) are deferred.
 
 New-item creation runs directly through `std::fs::create_dir` / `std::fs::File::create` on the GUI thread, bypassing the permission engine — these are explicit user actions, not agent-initiated tool calls. After a successful creation the panel invalidates its cached tree.
 

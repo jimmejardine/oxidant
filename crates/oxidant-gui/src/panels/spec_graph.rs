@@ -229,6 +229,9 @@ impl EdgeFilters {
 
 pub struct SpecGraphPanel {
     workspace_root: PathBuf,
+    /// The id this tab was seeded with. Held seed-protected in the
+    /// VisibleGraph so collapse actions never remove it.
+    seed_id: NodeId,
     universe: Option<Universe>,
     visible: VisibleGraph,
     camera: Camera,
@@ -242,9 +245,14 @@ pub struct SpecGraphPanel {
 }
 
 impl SpecGraphPanel {
-    pub fn new(workspace_root: PathBuf) -> Self {
+    /// Create a graph panel seeded with `seed_id` — a canonical spec id
+    /// (e.g. `components/gui/file-tabs`) or a code-file id
+    /// (`code:{rel_path}`). The universe is built lazily on first render
+    /// so panel construction stays cheap.
+    pub fn new(workspace_root: PathBuf, seed_id: impl Into<String>) -> Self {
         Self {
             workspace_root,
+            seed_id: seed_id.into(),
             universe: None,
             visible: VisibleGraph::default(),
             camera: Camera::default(),
@@ -263,12 +271,41 @@ impl SpecGraphPanel {
             self.rebuild_universe();
         }
 
+        // Empty-state when the seed isn't a node in the universe (e.g.
+        // file-tree right-click on a file no spec claims via `code:`).
+        if self
+            .universe
+            .as_ref()
+            .map(|u| !u.nodes.contains_key(&self.seed_id))
+            .unwrap_or(false)
+        {
+            let seed_id = self.seed_id.clone();
+            ui.label(RichText::new(format!("spec graph · {}", short_label(&seed_id))).strong());
+            ui.separator();
+            ui.add_space(40.0);
+            ui.vertical_centered(|ui| {
+                ui.label(
+                    RichText::new(format!("no node `{seed_id}` in the spec graph"))
+                        .color(theme::muted_text()),
+                );
+                ui.label(
+                    RichText::new(
+                        "close this tab and pick a file that some spec claims via `code:`",
+                    )
+                    .color(theme::faint_text()),
+                );
+            });
+            return;
+        }
+
         // Header row.
         let mut refresh = false;
         let mut collapse_all = false;
         let mut fit_view = false;
         ui.horizontal(|ui| {
-            ui.label(RichText::new("spec graph").strong());
+            ui.label(
+                RichText::new(format!("spec graph · {}", short_label(&self.seed_id))).strong(),
+            );
             if ui
                 .small_button("⟳")
                 .on_hover_text("rebuild from disk")
@@ -304,7 +341,7 @@ impl SpecGraphPanel {
         if refresh {
             self.rebuild_universe();
             self.visible = VisibleGraph::default();
-            self.seed_overview();
+            self.install_seed();
         }
         if collapse_all {
             self.collapse_all_to_seeds();
@@ -596,32 +633,25 @@ impl SpecGraphPanel {
             neighbours,
         });
 
-        // Seed with overview if not already.
+        // Install the configured seed if the visible graph is empty.
         if self.visible.nodes.is_empty() {
-            self.seed_overview();
+            self.install_seed();
         }
     }
 
-    fn seed_overview(&mut self) {
-        let candidate = "overview".to_string();
-        let id = self
+    fn install_seed(&mut self) {
+        let id = self.seed_id.clone();
+        let exists = self
             .universe
             .as_ref()
-            .filter(|u| u.nodes.contains_key(&candidate))
-            .map(|_| candidate)
-            .or_else(|| {
-                // Fallback: any node with kind Overview.
-                self.universe.as_ref().and_then(|u| {
-                    u.nodes
-                        .iter()
-                        .find(|(_, m)| matches!(m.kind, NodeKindUi::SpecOverview))
-                        .map(|(id, _)| id.clone())
-                })
-            });
-        if let Some(id) = id {
-            self.add_node(&id, Pos2::ZERO);
-            self.visible.seeds.insert(id);
+            .map(|u| u.nodes.contains_key(&id))
+            .unwrap_or(false);
+        if !exists {
+            // The empty-state branch in render() will tell the user.
+            return;
         }
+        self.add_node(&id, Pos2::ZERO);
+        self.visible.seeds.insert(id);
     }
 
     fn add_node(&mut self, id: &NodeId, near: Pos2) {

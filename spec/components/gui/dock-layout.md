@@ -30,15 +30,17 @@ pub enum DockTab {
     Transcript,
     SpecTree,
     FileTree,
-    SpecGraph,                                           // force-directed relationship viewer
     ExplorationList,
     ValidateWarnings,
     DiagnosticPreview,
     ChatInput,
     File { path: PathBuf, source: FileSource },          // opened code or spec file
     DiffHistory { path: PathBuf, source: FileSource },   // read-only history viewer
+    SpecGraph { seed: String },                          // one tab per right-click seed
 }
 ```
+
+`SpecGraph` is *not* a singleton — each `seed` value (a spec `canonical_id` or `"code:{path}"`) is its own tab, just like each `File { path }` is. Re-opening the same seed focuses the existing tab via `open_in_centre`'s find-and-focus path.
 
 `DiffHistory` is *not* a singleton (multiple files can have history tabs open at once) and *not* part of `default_layout` (only opens on the user's "View history" action). Both forms key on the `path`, so re-triggering "View history" for an already-open file focuses the existing tab instead of duplicating — same `open_in_centre` semantics as `File`.
 
@@ -71,12 +73,12 @@ Each `DockTab` variant's render is delegated to its panel component:
 - `Transcript` → [[components/gui/transcript-tab]]
 - `SpecTree` → [[components/gui/spec-tree-panel]]
 - `FileTree` → [[components/gui/file-tree-panel]]
-- `SpecGraph` → [[components/gui/spec-graph-panel]]
 - `ExplorationList` → [[components/gui/exploration-list]]
 - `ValidateWarnings` → handled inline (small surface)
 - `DiagnosticPreview` → [[components/gui/diagnostic-panel]]
 - `ChatInput` → [[components/gui/chat-input-panel]]
 - `File` → [[components/gui/file-tabs]]
 - `DiffHistory` → [[components/gui/diff-history-panel]]
+- `SpecGraph` → [[components/gui/spec-graph-panel]]
 
-`SpecGraph` is a singleton (one instance per viewport) but is **not** present in `default_layout` — users open it from the Window menu when they want it. The left panel is already crowded.
+`SpecGraph` carries a `seed` (canonical_id or `"code:{path}"`) and is opened only via right-click → **Open in spec graph** in the spec or file tree. It is intentionally absent from the Window menu and from `default_layout` — there is no meaningful "blank" graph, so launching one always begins with the seed the user just chose.

@@ -223,9 +223,14 @@ fn render_leaf(
     let abs_path = rec.path.clone();
     let workspace_root_owned = workspace_root.to_path_buf();
     let state_for_menu = state.clone();
+    let canonical_id = rec.canonical_id.clone();
     resp.context_menu(move |ui| {
         if ui.button("View history").clicked() {
             push_open_history(&state_for_menu, &abs_path, &workspace_root_owned);
+            ui.close_menu();
+        }
+        if ui.button("Open in spec graph").clicked() {
+            push_open_graph(&state_for_menu, canonical_id.clone());
             ui.close_menu();
         }
     });
@@ -262,6 +267,18 @@ fn push_open_history(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, worksp
         path,
         source: FileSource::Spec,
     };
+    if let Ok(mut s) = state.lock()
+        && !s.pending_centre_tabs.contains(&tab)
+    {
+        s.pending_centre_tabs.push(tab);
+    }
+}
+
+/// Queue a `DockTab::SpecGraph { seed }` for this canonical id. Re-
+/// clicking the same spec focuses the existing tab (DockTab equality
+/// + open_in_centre's find-and-focus). See the spec-graph-panel spec.
+fn push_open_graph(state: &Arc<StdMutex<SharedState>>, canonical_id: String) {
+    let tab = DockTab::SpecGraph { seed: canonical_id };
     if let Ok(mut s) = state.lock()
         && !s.pending_centre_tabs.contains(&tab)
     {

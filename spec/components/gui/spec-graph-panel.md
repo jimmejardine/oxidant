@@ -13,7 +13,7 @@ code:
   - crates/oxidant-gui/src/graph_layout.rs
 status: active
 responsibility: |
-  Interactive force-directed graph of specs, the code files that realise them, and the tests that prove them. Lives as a `DockTab::SpecGraph` centre/left tab. Populates progressively — starts with a single seed and grows when the user clicks per-node expand icons. Complements (does not replace) the spec-tree and file-tree panels.
+  Interactive force-directed graph of specs, the code files that realise them, and the tests that prove them. Each graph is a centre-area `DockTab::SpecGraph { seed }` tab keyed by its starting node — multiple graphs can coexist, each seeded from a different right-click. Populates progressively — starts with the seed and grows when the user clicks per-node expand icons. Complements (does not replace) the spec-tree and file-tree panels.
 ---
 
 ## Data sources
@@ -28,6 +28,16 @@ A static lookup table containing every node and every edge that *could* appear:
 - **CodeFile nodes + `RealisedBy` edges** — for each spec, every entry in `frontmatter.code` becomes a node (deduped on absolute path) and a spec→code edge.
 - **Test nodes + `Tests` edges** — for each spec, every entry in `frontmatter.tests` becomes a node and a spec→test edge. `TestRef::Function { path, name }` is rendered as `{path}::{name}`; `TestRef::WholeFile { path }` as `{path}::*` (per decision 0011-specs-claim-their-tests).
 - **NeighbourBuckets** per node, splitting the 1-hop neighbours into three categories: `specs` (the union of inbound + outbound across the four spec→spec edge kinds), `source` (outgoing `RealisedBy`), `tests` (outgoing `Tests`). This is what makes the expand-action O(1).
+
+### External seeding from the trees — one tab per seed
+
+There is no central Window-menu entry for the spec graph; every graph is launched from a right-click in one of the trees. Each click opens a **new** `DockTab::SpecGraph { seed }` tab — clicking the same seed twice focuses the existing tab (de-dup falls out of `DockTab`'s `PartialEq` on the seed), but two different seeds give two different tabs side by side.
+
+The spec-tree's right-click context menu carries an **Open in spec graph** item. Clicking it pushes `DockTab::SpecGraph { seed: <canonical_id> }` onto `pending_centre_tabs`; the host viewport drains and `open_in_centre`'s it.
+
+The file-tree's right-click on a code file does the same with `seed = "code:{rel_path}"` (matching the CodeFile node format the universe builder uses). Files that no spec claims via `code:` produce no matching universe node — the graph renders an empty canvas with "no spec claims this file" as a hint. The menu item shows regardless.
+
+`SpecGraphPanel::new(workspace_root, seed)` builds the universe and inserts the seed as the only visible node. The seed is marked seed-protected so the user can't accidentally collapse it to nothing.
 
 ### Visible subgraph (mutated by user expand/collapse)
 
@@ -44,7 +54,7 @@ pub struct VisibleGraph {
 
 ## Progressive disclosure
 
-- **Initial seed**: the panel auto-adds `overview` (refcount 1, manually seeded so it can't be collapsed to nothing). If `overview` is absent in the workspace, the panel renders an empty canvas with the search box highlighted.
+- **Initial seed**: whatever id the `DockTab::SpecGraph { seed }` carries. The seed is marked seed-protected: `refcount[seed]` is held at ≥1 so collapse actions never remove it.
 - **Expand "+S" / "+C" / "+T" on node X** — look up `X`'s `NeighbourBuckets.{specs|source|tests}`. For each neighbour `Y`: bump `refcounts[Y]` (insert at 1 if new); add all edges between `Y` and the currently-visible set. Flip `expanded[X]` flag. New nodes spawn at `X.pos` with a tiny random offset so the simulation animates them outward.
 - **Collapse "−S" / "−C" / "−T" on node X** — for each neighbour `Y` in the matching bucket: decrement `refcounts[Y]`; if 0 *and* `Y` is not seed-protected, drop `Y` and any edges to/from it. Flip `expanded[X]` flag back.
 

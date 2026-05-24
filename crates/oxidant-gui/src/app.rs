@@ -37,7 +37,11 @@ pub struct App {
     chat_panel: ChatInputPanel,
     spec_panel: SpecTreePanel,
     file_tree_panel: FileTreePanel,
-    spec_graph_panel: SpecGraphPanel,
+    /// One SpecGraphPanel per seed value the user has opened. Lazily
+    /// inserted when the tab first paints; kept alive across tab
+    /// close so re-opening the same seed preserves expansion state —
+    /// same shape as `diff_history_panels`.
+    spec_graph_panels: HashMap<String, SpecGraphPanel>,
     diag_panel: DiagnosticPanel,
     settings_panel: SettingsPanel,
     /// One DiffHistory panel per open path. Lazily inserted when the tab
@@ -184,14 +188,13 @@ impl App {
 
         let spec_panel = SpecTreePanel::new(config.workspace_root.clone());
         let file_tree_panel = FileTreePanel::new(config.workspace_root.clone());
-        let spec_graph_panel = SpecGraphPanel::new(config.workspace_root.clone());
         let active_theme = config.theme;
         let settings_panel = SettingsPanel::new(&config.settings);
         Self {
             chat_panel: ChatInputPanel::new(),
             spec_panel,
             file_tree_panel,
-            spec_graph_panel,
+            spec_graph_panels: HashMap::new(),
             diag_panel: DiagnosticPanel::new(),
             settings_panel,
             diff_history_panels: HashMap::new(),
@@ -254,7 +257,7 @@ impl eframe::App for App {
             chat_panel: &mut self.chat_panel,
             spec_panel: &mut self.spec_panel,
             file_tree_panel: &mut self.file_tree_panel,
-            spec_graph_panel: &mut self.spec_graph_panel,
+            spec_graph_panels: &mut self.spec_graph_panels,
             diag_panel: &mut self.diag_panel,
             settings_panel: &mut self.settings_panel,
             diff_history_panels: &mut self.diff_history_panels,
@@ -336,7 +339,7 @@ pub(crate) struct TabViewer<'a> {
     pub chat_panel: &'a mut ChatInputPanel,
     pub spec_panel: &'a mut SpecTreePanel,
     pub file_tree_panel: &'a mut FileTreePanel,
-    pub spec_graph_panel: &'a mut SpecGraphPanel,
+    pub spec_graph_panels: &'a mut HashMap<String, SpecGraphPanel>,
     pub diag_panel: &'a mut DiagnosticPanel,
     pub settings_panel: &'a mut SettingsPanel,
     pub diff_history_panels: &'a mut HashMap<PathBuf, DiffHistoryPanel>,
@@ -370,8 +373,14 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
             DockTab::FileTree => {
                 self.file_tree_panel.render(ui, &self.state);
             }
-            DockTab::SpecGraph => {
-                self.spec_graph_panel.render(ui, &self.state);
+            DockTab::SpecGraph { seed } => {
+                let workspace = self.workspace_root.clone();
+                let seed_owned = seed.clone();
+                let panel = self
+                    .spec_graph_panels
+                    .entry(seed_owned.clone())
+                    .or_insert_with(|| SpecGraphPanel::new(workspace, seed_owned));
+                panel.render(ui, &self.state);
             }
             DockTab::ExplorationList => {
                 ExplorationListPanel.render(ui, &self.workspace_root);

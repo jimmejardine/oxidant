@@ -294,6 +294,10 @@ fn render_leaf(
             push_open_history(&state_for_menu, &abs_path, &workspace_root_owned);
             ui.close_menu();
         }
+        if ui.button("Open in spec graph").clicked() {
+            push_open_graph(&state_for_menu, &abs_path, &workspace_root_owned);
+            ui.close_menu();
+        }
     });
 }
 
@@ -337,6 +341,26 @@ fn push_open_history(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, worksp
         .unwrap_or_else(|_| abs_path.to_path_buf());
     let source = source_for(abs_path, workspace_root);
     let tab = DockTab::DiffHistory { path, source };
+    if let Ok(mut s) = state.lock()
+        && !s.pending_centre_tabs.contains(&tab)
+    {
+        s.pending_centre_tabs.push(tab);
+    }
+}
+
+/// Queue a `DockTab::SpecGraph { seed }` for this file. The seed id
+/// uses the `code:{rel_path}` format the spec-graph universe builder
+/// emits for code-file nodes. If no spec claims this file via `code:`,
+/// the graph panel renders an empty-state message — we don't try to
+/// hide the menu item from here (we'd have to walk every spec's
+/// frontmatter, defeating the lazy-build of the universe).
+fn push_open_graph(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, workspace_root: &Path) {
+    let rel = abs_path
+        .strip_prefix(workspace_root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| abs_path.to_string_lossy().to_string());
+    let seed = format!("code:{rel}");
+    let tab = DockTab::SpecGraph { seed };
     if let Ok(mut s) = state.lock()
         && !s.pending_centre_tabs.contains(&tab)
     {
