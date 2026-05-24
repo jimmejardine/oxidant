@@ -49,9 +49,10 @@ Every text-bearing "line item" in the transcript — user message text blocks, a
 Behaviour:
 - **Summary line**: the collapsed view shows the first sentence (or the first ~120 characters, whichever ends sooner) of the block, with a trailing `…` when content was truncated. Sentence boundary = first `.`, `!`, `?`, or newline followed by whitespace or end-of-string.
 - **Default state**: any block whose full text exceeds a single line collapses by default. Blocks that already fit (short user messages, single-line tool results) render as-is with no collapse affordance — there is nothing to hide.
-- **Expanded state**: clicking the header swaps the summary for the full content (markdown for user/assistant, code for tool-result JSON). The expansion persists for the lifetime of the panel.
+- **Collapsed view**: a single line with a `▸` prefix and the summary text. Clicking anywhere on the line expands.
+- **Expanded view**: a `▾` toggle on its own line, then the full body. **The summary header is NOT repeated** when expanded — its content is already the first sentence of the body, and duplicating it both wastes vertical space and looks confused. Clicking the `▾` collapses again.
 - **Streaming**: the assistant's live turn never collapses while a token stream is in flight. It snaps to "expanded" until the turn finishes; the next render decides whether the now-final block should collapse.
-- **Tool-use cards** keep their existing `CollapsingHeader` (collapsed by default) — the rule above applies to their *body* once expanded.
+- **Tool-use cards** keep their existing `CollapsingHeader` because their header carries metadata (`tool_use · name (id)`) that is *not* in the body — there is nothing to duplicate. The rule above only applies to blocks where the header text would echo the body's opening.
 
 Why a sentence rather than a fixed-line count: a wrapped paragraph's line count depends on the panel's width, so collapsed height would jitter as the user resizes the dock. A sentence-based summary stays stable.
 

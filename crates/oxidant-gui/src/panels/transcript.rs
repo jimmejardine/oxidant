@@ -181,67 +181,109 @@ fn render_live_turn(ui: &mut egui::Ui, turn: &LiveTurn) {
 
 // ---------------------------------------------------------------- helpers
 
+/// Core collapsible primitive used by every body-bearing block in the
+/// transcript. Collapsed view shows `▸ {summary_text}` on a single
+/// clickable line. Expanded view shows a `▾` toggle on its own line
+/// (no header) followed by `body_fn`'s output. See "Collapsible line
+/// items" in spec/components/gui/transcript-tab.md — the no-header-
+/// when-expanded rule is the whole point of this helper over egui's
+/// stock `CollapsingHeader`.
+fn collapsible_block(
+    ui: &mut egui::Ui,
+    id: Id,
+    summary_text: RichText,
+    body_fn: impl FnOnce(&mut egui::Ui),
+) {
+    let mut open: bool = ui
+        .data_mut(|d| d.get_temp::<bool>(id))
+        .unwrap_or(false);
+    if !open {
+        let resp = ui
+            .horizontal(|ui| {
+                ui.add(
+                    egui::Label::new(RichText::new("▸").color(theme::muted_text()))
+                        .sense(egui::Sense::click()),
+                );
+                ui.add(egui::Label::new(summary_text).sense(egui::Sense::click()))
+            })
+            .response;
+        if resp.clicked() {
+            open = true;
+        }
+    } else {
+        let resp = ui.add(
+            egui::Label::new(RichText::new("▾").color(theme::muted_text()))
+                .sense(egui::Sense::click()),
+        );
+        if resp.clicked() {
+            open = false;
+        }
+        body_fn(ui);
+    }
+    ui.data_mut(|d| d.insert_temp(id, open));
+}
+
 /// Render `full` as either a plain label (when it already fits on one
-/// line) or a collapsible block whose header is the single-sentence
-/// summary. See "Collapsible line items" in
-/// spec/components/gui/transcript-tab.md.
+/// line) or a collapsible block. When collapsed, only the summary
+/// shows; when expanded, only the body — no duplicated first sentence.
 fn collapsible_text(ui: &mut egui::Ui, id: Id, full: &str) {
     match summarize(full) {
         None => {
             ui.label(full);
         }
         Some(summary) => {
-            egui::CollapsingHeader::new(summary)
-                .id_salt(id)
-                .default_open(false)
-                .show(ui, |ui| {
-                    ui.label(full);
-                });
+            let body = full.to_string();
+            collapsible_block(ui, id, RichText::new(summary), move |ui| {
+                ui.label(&body);
+            });
         }
     }
 }
 
-/// Thinking blocks always collapse, but use the summary line as the
-/// header instead of a literal "thinking" so the user sees what the
-/// model was reasoning about without expanding.
+/// Thinking blocks always collapse. Summary uses the muted band so it
+/// reads as secondary; body inherits default text colour.
 fn collapsible_thinking(ui: &mut egui::Ui, id: Id, full: &str) {
-    let header = summarize(full).unwrap_or_else(|| {
-        // Falls back to the literal label when the thinking block is
-        // empty or already short.
+    let summary = summarize(full).unwrap_or_else(|| {
         if full.trim().is_empty() {
             "thinking".to_string()
         } else {
             full.to_string()
         }
     });
-    egui::CollapsingHeader::new(RichText::new(header).color(theme::muted_text()))
-        .id_salt(id)
-        .default_open(false)
-        .show(ui, |ui| {
-            ui.label(full);
-        });
+    let body = full.to_string();
+    collapsible_block(
+        ui,
+        id,
+        RichText::new(summary).color(theme::muted_text()),
+        move |ui| {
+            ui.label(&body);
+        },
+    );
 }
 
-/// Tool-result bodies: render the first line as the header summary,
-/// scroll the full body in a code area when expanded.
+/// Tool-result bodies: collapse to a one-line summary, scroll the full
+/// body in a code area when expanded.
 fn collapsible_code(ui: &mut egui::Ui, id: Id, body: &str) {
     match summarize(body) {
         None => {
             ui.code(body);
         }
         Some(summary) => {
-            egui::CollapsingHeader::new(RichText::new(summary).color(theme::muted_text()))
-                .id_salt(id)
-                .default_open(false)
-                .show(ui, |ui| {
+            let body_owned = body.to_string();
+            collapsible_block(
+                ui,
+                id,
+                RichText::new(summary).color(theme::muted_text()),
+                move |ui| {
                     ScrollArea::vertical()
                         .max_height(360.0)
                         .auto_shrink([false; 2])
                         .id_salt(id.with("scroll"))
                         .show(ui, |ui| {
-                            ui.code(body);
+                            ui.code(&body_owned);
                         });
-                });
+                },
+            );
         }
     }
 }
