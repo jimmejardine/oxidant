@@ -14,7 +14,13 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+
+      - name: Install GUI system libs (egui/winit on Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev \
+            libxi-dev libxcursor-dev libxrandr-dev
 
       - name: Install Rust toolchain (from rust-toolchain.toml)
         uses: actions-rust-lang/setup-rust-toolchain@v1
