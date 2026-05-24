@@ -47,13 +47,24 @@ impl EdgeKindForce {
 
 #[derive(Debug, Clone, Copy)]
 pub struct LayoutParams {
-    /// Numerator of the repulsion law (F = k_rep / d²).
+    /// Base numerator of the repulsion law (F = k_pair / d²).
     pub k_rep: f32,
     /// Minimum distance for repulsion — clamps F to a finite value
     /// when two nodes overlap.
     pub d_min: f32,
-    /// Rest length of every spring.
+    /// Base rest length of every spring. Per-edge rest length scales
+    /// up with the combined degree of the endpoints; see
+    /// `degree_rest_alpha`.
     pub rest_length: f32,
+    /// Per-edge spring rest length grows by this fraction per unit of
+    /// combined endpoint degree. With α = 0.15, an edge between two
+    /// degree-5 hubs settles ~2.5× longer than a leaf-to-leaf edge.
+    /// Gives dense areas visible room to breathe.
+    pub degree_rest_alpha: f32,
+    /// Pairwise repulsion grows by this fraction per unit of combined
+    /// degree. Hubs push each other apart harder than leaves do —
+    /// reinforces the rest-length expansion above.
+    pub degree_repulsion_alpha: f32,
     /// Pull toward the centre of mass (keeps disconnected components
     /// from drifting off-canvas).
     pub gravity: f32,
@@ -70,6 +81,8 @@ impl Default for LayoutParams {
             k_rep: 4000.0,
             d_min: 12.0,
             rest_length: 90.0,
+            degree_rest_alpha: 0.15,
+            degree_repulsion_alpha: 0.20,
             gravity: 0.01,
             damping: 0.85,
             kinetic_threshold: 0.05,
@@ -115,6 +128,18 @@ pub fn step<Id: Eq + std::hash::Hash + Clone>(
     let n = nodes.len();
     let mut force = vec![Vec2::ZERO; n];
 
+    // Per-node degree — used by both the spring's rest-length scaling
+    // and the repulsion's k_pair scaling. Hubs deserve room.
+    let mut degree = vec![0_u32; n];
+    for e in edges {
+        if let (Some(&i), Some(&j)) = (idx.get(&e.from), idx.get(&e.to))
+            && i != j
+        {
+            degree[i] = degree[i].saturating_add(1);
+            degree[j] = degree[j].saturating_add(1);
+        }
+    }
+
     // Centre of mass (gravity anchor). egui's Vec2 doesn't impl Sum,
     // so fold manually.
     let centre = if n == 0 {
@@ -129,6 +154,7 @@ pub fn step<Id: Eq + std::hash::Hash + Clone>(
     // Pairwise repulsion. When two nodes are coincident, the raw
     // delta is zero — pick a deterministic-ish offset based on the
     // index pair so they push apart instead of staying stuck.
+    // k_pair scales with combined degree so dense clusters spread.
     for i in 0..n {
         for j in (i + 1)..n {
             let raw_delta = nodes[i].pos - nodes[j].pos;
@@ -140,13 +166,17 @@ pub fn step<Id: Eq + std::hash::Hash + Clone>(
             };
             let dist = delta.length().max(params.d_min);
             let unit = delta / dist;
-            let f = params.k_rep / (dist * dist);
+            let combined = (degree[i] + degree[j]) as f32;
+            let k_pair = params.k_rep * (1.0 + params.degree_repulsion_alpha * combined);
+            let f = k_pair / (dist * dist);
             force[i] += unit * f;
             force[j] -= unit * f;
         }
     }
 
-    // Spring attraction along edges.
+    // Spring attraction along edges. Per-edge rest length scales with
+    // the combined degree of the endpoints — hub-to-hub edges settle
+    // longer so neighbouring hubs don't overlap their satellite nodes.
     for e in edges {
         let (Some(&i), Some(&j)) = (idx.get(&e.from), idx.get(&e.to)) else {
             continue;
@@ -157,7 +187,9 @@ pub fn step<Id: Eq + std::hash::Hash + Clone>(
         let delta = nodes[j].pos - nodes[i].pos;
         let dist = delta.length().max(1.0);
         let unit = delta / dist;
-        let displacement = dist - params.rest_length;
+        let combined = (degree[i] + degree[j]) as f32;
+        let rest = params.rest_length * (1.0 + params.degree_rest_alpha * combined);
+        let displacement = dist - rest;
         let f = displacement * e.kind.spring_k();
         force[i] += unit * f;
         force[j] -= unit * f;

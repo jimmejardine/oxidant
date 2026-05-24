@@ -225,6 +225,10 @@ fn render_leaf(
     let state_for_menu = state.clone();
     let canonical_id = rec.canonical_id.clone();
     resp.context_menu(move |ui| {
+        if ui.button("Open").clicked() {
+            push_open(&state_for_menu, &abs_path, &workspace_root_owned);
+            ui.close_menu();
+        }
         if ui.button("View history").clicked() {
             push_open_history(&state_for_menu, &abs_path, &workspace_root_owned);
             ui.close_menu();

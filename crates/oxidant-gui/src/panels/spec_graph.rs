@@ -654,13 +654,14 @@ impl SpecGraphPanel {
         self.visible.seeds.insert(id);
     }
 
-    fn add_node(&mut self, id: &NodeId, near: Pos2) {
+    /// Add `id` at exactly `pos` if it's not already visible. Always
+    /// bumps the refcount.
+    fn add_node_at(&mut self, id: &NodeId, pos: Pos2) {
         if !self.visible.nodes.contains_key(id) {
-            let offset = self.tiny_offset();
             self.visible.nodes.insert(
                 id.clone(),
                 VisibleNode {
-                    pos: near + offset,
+                    pos,
                     vel: Vec2::ZERO,
                     pinned: false,
                 },
@@ -668,6 +669,14 @@ impl SpecGraphPanel {
         }
         *self.visible.refcounts.entry(id.clone()).or_insert(0) += 1;
         self.last_kinetic = f32::INFINITY;
+    }
+
+    /// Legacy single-node spawn helper for the seed install path.
+    /// `near` is the centre; the node gets a small random offset so
+    /// repeat installs of the same id don't coincide.
+    fn add_node(&mut self, id: &NodeId, near: Pos2) {
+        let offset = self.tiny_offset();
+        self.add_node_at(id, near + offset);
     }
 
     fn remove_node(&mut self, id: &NodeId) {
@@ -732,11 +741,46 @@ impl SpecGraphPanel {
                 ChipKind::Tests => buckets.tests.clone(),
             }
         };
-        for n in &neighbours {
-            self.add_node(n, near);
+
+        // Partition: NEW neighbours (not yet visible) vs EXISTING ones.
+        // Only the NEW ones get fresh positions on the spawn ring;
+        // EXISTING ones keep their current position and just get
+        // their refcount bumped.
+        let new_ids: Vec<NodeId> = neighbours
+            .iter()
+            .filter(|n| !self.visible.nodes.contains_key(*n))
+            .cloned()
+            .collect();
+        let existing_ids: Vec<NodeId> = neighbours
+            .iter()
+            .filter(|n| self.visible.nodes.contains_key(*n))
+            .cloned()
+            .collect();
+
+        // Spawn NEW nodes on a ring around the parent. Radius scales
+        // with N so the ring stays roughly evenly spaced regardless of
+        // how big the expansion is; minimum 80 px so a single new node
+        // still appears clear of the parent.
+        let n_new = new_ids.len().max(1) as f32;
+        let radius = ((50.0 * n_new) / std::f32::consts::TAU).max(80.0);
+        let phase = self.next_phase();
+        for (i, nid) in new_ids.iter().enumerate() {
+            let theta = phase + (i as f32) * std::f32::consts::TAU / n_new;
+            let pos = near + Vec2::angled(theta) * radius;
+            self.add_node_at(nid, pos);
         }
-        // Refresh edges for all newly-added (and the parent) so the new
-        // connections show up.
+        // Refcount-only bump for already-visible neighbours.
+        for nid in &existing_ids {
+            *self.visible.refcounts.entry(nid.clone()).or_insert(0) += 1;
+        }
+
+        // Refresh edges for every touched node so cross-edges to
+        // already-visible nodes light up immediately. Without this,
+        // a new neighbour B that has an edge to an existing visible
+        // node X (not the parent we expanded from) wouldn't get its
+        // B–X edge inserted until the user expanded the OTHER end —
+        // which earlier revisions did and which looked like missing
+        // edges.
         let mut to_refresh = neighbours.clone();
         to_refresh.push(id.clone());
         for nid in to_refresh {
@@ -748,6 +792,13 @@ impl SpecGraphPanel {
             ChipKind::Source => entry.source = true,
             ChipKind::Tests => entry.tests = true,
         }
+    }
+
+    fn next_phase(&mut self) -> f32 {
+        self.rng_seed ^= self.rng_seed << 13;
+        self.rng_seed ^= self.rng_seed >> 7;
+        self.rng_seed ^= self.rng_seed << 17;
+        (self.rng_seed as f32 * 0.000_01) % std::f32::consts::TAU
     }
 
     fn collapse(&mut self, id: &NodeId, chip: ChipKind) {
@@ -1152,5 +1203,149 @@ mod tests {
         let mut v: Vec<NodeId> = vec!["a".into(), "b".into(), "a".into(), "c".into(), "b".into()];
         dedup(&mut v);
         assert_eq!(v, vec!["a".to_string(), "b".into(), "c".into()]);
+    }
+
+    /// Build a tiny fake Universe for tests, bypassing walk_specs.
+    /// Edges are stored as a flat Vec; neighbour buckets get both
+    /// directions like the real builder does for the `specs` bucket.
+    fn fake_universe(
+        node_ids: &[&str],
+        spec_edges: &[(&str, &str, EdgeKindUi)],
+    ) -> Universe {
+        let mut nodes: HashMap<NodeId, UniverseNode> = HashMap::new();
+        for id in node_ids {
+            nodes.insert(
+                (*id).to_string(),
+                UniverseNode {
+                    kind: NodeKindUi::SpecComponent,
+                    label: short_label(id),
+                    open_path: None,
+                },
+            );
+        }
+        let mut edges: Vec<(NodeId, NodeId, EdgeKindUi)> = Vec::new();
+        let mut neighbours: HashMap<NodeId, NeighbourBuckets> = HashMap::new();
+        for id in node_ids {
+            neighbours.entry((*id).to_string()).or_default();
+        }
+        for (from, to, kind) in spec_edges {
+            edges.push(((*from).to_string(), (*to).to_string(), *kind));
+            neighbours
+                .entry((*from).to_string())
+                .or_default()
+                .specs
+                .push((*to).to_string());
+            neighbours
+                .entry((*to).to_string())
+                .or_default()
+                .specs
+                .push((*from).to_string());
+        }
+        for nb in neighbours.values_mut() {
+            dedup(&mut nb.specs);
+        }
+        Universe {
+            nodes,
+            edges,
+            neighbours,
+        }
+    }
+
+    fn has_edge(panel: &SpecGraphPanel, a: &str, b: &str) -> bool {
+        panel.visible.edges.iter().any(|(f, t, _)| {
+            (f.as_str() == a && t.as_str() == b) || (f.as_str() == b && t.as_str() == a)
+        })
+    }
+
+    #[test]
+    fn expand_inserts_cross_edges_between_new_neighbour_and_already_visible_node() {
+        // The regression case for the "edges to existing nodes don't
+        // populate when you expand a 2nd node" report. Topology:
+        //
+        //     A — B — C
+        //     │       │
+        //     └───────┘   (A and C are also directly connected)
+        //
+        // Start with just A visible. Expand +S on A → brings in B (and
+        // C via A's direct edge). Expand +S on B → both A and C are
+        // already visible, so B-A and B-C are the cross-edges that
+        // need to appear.
+        let mut panel = SpecGraphPanel::new(PathBuf::from("/tmp/fake"), "A".to_string());
+        panel.universe = Some(fake_universe(
+            &["A", "B", "C"],
+            &[
+                ("A", "B", EdgeKindUi::DependsOn),
+                ("B", "C", EdgeKindUi::DependsOn),
+                ("A", "C", EdgeKindUi::DependsOn),
+            ],
+        ));
+        panel.install_seed();
+        assert_eq!(panel.visible.nodes.len(), 1);
+
+        panel.expand(&"A".to_string(), ChipKind::Specs);
+        assert_eq!(panel.visible.nodes.len(), 3, "A should pull in B and C");
+        assert!(has_edge(&panel, "A", "B"));
+        assert!(has_edge(&panel, "A", "C"));
+        // B-C is the cross-edge between two of A's neighbours; the
+        // refresh after spawn must catch this in a single expand.
+        assert!(
+            has_edge(&panel, "B", "C"),
+            "B-C cross-edge missing after expanding A"
+        );
+
+        // Now expand B. A and C are both already visible — refcounts
+        // bump but no new nodes appear, and no new edges either
+        // (everything was already added by expand(A)).
+        let edges_before_second = panel.visible.edges.len();
+        panel.expand(&"B".to_string(), ChipKind::Specs);
+        assert_eq!(panel.visible.nodes.len(), 3);
+        assert_eq!(panel.visible.edges.len(), edges_before_second);
+        // Sanity: B-A and B-C are still there.
+        assert!(has_edge(&panel, "B", "A"));
+        assert!(has_edge(&panel, "B", "C"));
+    }
+
+    #[test]
+    fn second_expansion_brings_cross_edges_to_previously_visible_node() {
+        // The version of the bug where the cross-edge ONLY appears on
+        // the second expansion. Topology:
+        //
+        //     A — B
+        //         │
+        //         D       (D is B's other neighbour, not A's)
+        //     E ──┘       (E and D are connected to each other)
+        //
+        // Start with A visible. Expand A → visible {A, B}. Expand B →
+        // brings in D and E. The new edge D-E (between two freshly-
+        // added neighbours) must light up, AND any existing-to-new
+        // edges should too.
+        let mut panel = SpecGraphPanel::new(PathBuf::from("/tmp/fake"), "A".to_string());
+        panel.universe = Some(fake_universe(
+            &["A", "B", "D", "E"],
+            &[
+                ("A", "B", EdgeKindUi::DependsOn),
+                ("B", "D", EdgeKindUi::DependsOn),
+                ("B", "E", EdgeKindUi::DependsOn),
+                ("D", "E", EdgeKindUi::DependsOn),
+            ],
+        ));
+        panel.install_seed();
+        panel.expand(&"A".to_string(), ChipKind::Specs);
+        assert_eq!(panel.visible.nodes.len(), 2);
+        assert!(has_edge(&panel, "A", "B"));
+
+        panel.expand(&"B".to_string(), ChipKind::Specs);
+        // A came back in via B.specs (reverse direction) — refcount
+        // bumps but it was already visible.
+        assert_eq!(panel.visible.nodes.len(), 4, "B should pull in D and E");
+        assert!(has_edge(&panel, "B", "D"));
+        assert!(has_edge(&panel, "B", "E"));
+        // The interesting cross-edge: D and E are both new, both
+        // visible after this expand, and connected in the universe.
+        // The refresh must catch their edge.
+        assert!(
+            has_edge(&panel, "D", "E"),
+            "D-E cross-edge missing after expanding B"
+        );
     }
 }

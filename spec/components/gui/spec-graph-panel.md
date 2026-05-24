@@ -55,7 +55,7 @@ pub struct VisibleGraph {
 ## Progressive disclosure
 
 - **Initial seed**: whatever id the `DockTab::SpecGraph { seed }` carries. The seed is marked seed-protected: `refcount[seed]` is held at ≥1 so collapse actions never remove it.
-- **Expand "+S" / "+C" / "+T" on node X** — look up `X`'s `NeighbourBuckets.{specs|source|tests}`. For each neighbour `Y`: bump `refcounts[Y]` (insert at 1 if new); add all edges between `Y` and the currently-visible set. Flip `expanded[X]` flag. New nodes spawn at `X.pos` with a tiny random offset so the simulation animates them outward.
+- **Expand "+S" / "+C" / "+T" on node X** — look up `X`'s `NeighbourBuckets.{specs|source|tests}`. Partition the bucket into NEW (not yet visible) and EXISTING (already in the visible set). NEW nodes are placed on a ring around `X` (see "Spawn placement" below); EXISTING nodes keep their current position. Either way, `refcounts[Y]` is bumped. After all positions settle, every touched node — both the freshly-added NEW set and `X` itself — runs an edge-refresh that re-scans the universe edge list and inserts any edge whose endpoints are now both visible. That refresh is what makes cross-edges between a new neighbour and a previously-existing visible node appear immediately; without it, those edges would only render after the user expanded the OTHER endpoint, which earlier revisions did and which looked exactly like a "missing edges" bug. Flip `expanded[X]` flag.
 - **Collapse "−S" / "−C" / "−T" on node X** — for each neighbour `Y` in the matching bucket: decrement `refcounts[Y]`; if 0 *and* `Y` is not seed-protected, drop `Y` and any edges to/from it. Flip `expanded[X]` flag back.
 
 Refcounting is the whole point — if a node has been pulled in via two different expansion paths, collapsing one path keeps it alive for the other.
@@ -64,12 +64,21 @@ Refcounting is the whole point — if a node has been pulled in via two differen
 
 Force-directed physics in `crates/oxidant-gui/src/graph_layout.rs`. Per `step(dt)`:
 
-- **Repulsion** between every node pair: `F = k_rep / d²`, clamped at `d_min` to avoid blowup when nodes overlap.
-- **Spring attraction** along each edge: `F = (d - rest_length) * k_spring`. Per-edge-kind `k_spring`: Parent is the stiffest (it's the hierarchy), Implements / RealisedBy / Tests middle, DependsOn looser, BodyRef the slackest.
+- **Per-node degree** is computed once at the top of each step from the edge list. Used by both repulsion and spring forces below — hub nodes (high degree) need more room than leaves.
+- **Repulsion** between every node pair: `F = k_pair / d²`, clamped at `d_min`. `k_pair = k_rep * (1 + degree_repulsion_alpha * (deg_i + deg_j))` — two hubs push each other apart harder than two leaves do.
+- **Spring attraction** along each edge: `F = (d - rest_ij) * k_spring`. `rest_ij = rest_length * (1 + degree_rest_alpha * (deg_i + deg_j))` — edges between hubs settle longer, so dense areas of the graph get visible breathing room. Per-edge-kind `k_spring` unchanged: Parent stiffest, BodyRef slackest.
 - **Centre gravity**: `F = c * (pos - centre)` so disconnected components don't drift off-canvas.
 - **Damping**: `vel *= 0.85` each step.
 - **Pinned nodes** (dragged by user) skip force integration; pos comes from drag delta.
 - The panel calls `step(dt)` once per frame; once kinetic energy drops below a threshold, `step` is skipped and the panel stops requesting repaint.
+
+### Spawn placement
+
+When `expand` adds N new neighbours around a parent at position `near`, they spawn evenly around a circle of radius `max(80, 50 * N / 2π)` rather than piled at `near + tiny_offset`. This both:
+- Gives the simulation a head start — nodes already have plausible positions instead of converging from coincidence.
+- Makes the newly-rendered edges immediately visible — a tight pile-up at spawn would make new edges look like zero-length stubs until the physics separated the nodes, which is what made earlier revisions look like edges weren't being added at all on subsequent expansions.
+
+The spawn ring's start angle is jittered per expansion to avoid all-nodes-on-the-x-axis stripes when the same expansion runs twice.
 
 ## Interactions
 

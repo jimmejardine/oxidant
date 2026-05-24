@@ -290,6 +290,10 @@ fn render_leaf(
     let workspace_root_owned = workspace_root.to_path_buf();
     let state_for_menu = state.clone();
     resp.context_menu(move |ui| {
+        if ui.button("Open").clicked() {
+            push_open(&state_for_menu, &abs_path, &workspace_root_owned);
+            ui.close_menu();
+        }
         if ui.button("View history").clicked() {
             push_open_history(&state_for_menu, &abs_path, &workspace_root_owned);
             ui.close_menu();
