@@ -21,6 +21,7 @@ pub enum DockTab {
     ChatInput,
     Settings,
     File { path: PathBuf, source: FileSource },
+    DiffHistory { path: PathBuf, source: FileSource },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +44,13 @@ impl DockTab {
                 .file_name()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| path.to_string_lossy().to_string()),
+            DockTab::DiffHistory { path, .. } => {
+                let name = path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.to_string_lossy().to_string());
+                format!("⌖ {name}")
+            }
         }
     }
 }

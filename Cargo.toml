@@ -81,6 +81,7 @@ egui           = "0.29"
 egui_dock      = "0.14"
 egui_commonmark = "0.18"
 syntect        = "5"
+similar        = "2"
 
 # Misc
 clap           = { version = "4", features = ["derive"] }

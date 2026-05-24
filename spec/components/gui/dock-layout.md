@@ -34,9 +34,12 @@ pub enum DockTab {
     ValidateWarnings,
     DiagnosticPreview,
     ChatInput,
-    File { path: PathBuf, source: FileSource },   // opened code or spec file
+    File { path: PathBuf, source: FileSource },          // opened code or spec file
+    DiffHistory { path: PathBuf, source: FileSource },   // read-only history viewer
 }
 ```
+
+`DiffHistory` is *not* a singleton (multiple files can have history tabs open at once) and *not* part of `default_layout` (only opens on the user's "View history" action). Both forms key on the `path`, so re-triggering "View history" for an already-open file focuses the existing tab instead of duplicating — same `open_in_centre` semantics as `File`.
 
 ## Persistence
 
@@ -72,3 +75,4 @@ Each `DockTab` variant's render is delegated to its panel component:
 - `DiagnosticPreview` → [[components/gui/diagnostic-panel]]
 - `ChatInput` → [[components/gui/chat-input-panel]]
 - `File` → [[components/gui/file-tabs]]
+- `DiffHistory` → [[components/gui/diff-history-panel]]

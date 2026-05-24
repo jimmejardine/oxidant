@@ -194,9 +194,7 @@ fn collapsible_block(
     summary_text: RichText,
     body_fn: impl FnOnce(&mut egui::Ui),
 ) {
-    let mut open: bool = ui
-        .data_mut(|d| d.get_temp::<bool>(id))
-        .unwrap_or(false);
+    let mut open: bool = ui.data_mut(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     if !open {
         let resp = ui
             .horizontal(|ui| {

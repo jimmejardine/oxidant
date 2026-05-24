@@ -144,6 +144,30 @@ impl Git {
         Ok(parse_log_tabbed(&stdout))
     }
 
+    // ----- show -----
+
+    /// `git show <sha>:<repo-relative-path>` — return the file's contents at
+    /// the given revision. Returns `FileNotAtRevision` if the path doesn't
+    /// exist at that commit so callers can render the absence cleanly rather
+    /// than surfacing a generic command failure.
+    pub async fn show_file(&self, sha: &str, path: &Path) -> Result<String, GitError> {
+        validate_revspec(sha)?;
+        let path_str = path.to_string_lossy().replace('\\', "/");
+        let spec = format!("{sha}:{path_str}");
+        match self.run(&["show", &spec]).await {
+            Ok(s) => Ok(s),
+            Err(GitError::Failed { stderr, .. })
+                if stderr.contains("does not exist") || stderr.contains("exists on disk") =>
+            {
+                Err(GitError::FileNotAtRevision {
+                    sha: sha.to_string(),
+                    path: path.to_path_buf(),
+                })
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     // ----- commit -----
 
     pub async fn commit(
@@ -351,6 +375,8 @@ pub enum GitError {
     },
     #[error("invalid input: {0}")]
     Invalid(String),
+    #[error("path {path:?} does not exist at revision {sha}")]
+    FileNotAtRevision { sha: String, path: PathBuf },
 }
 
 // ---------------------------------------------------------------- validators

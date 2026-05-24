@@ -29,6 +29,7 @@ egui.workspace = true
 egui_dock.workspace = true
 egui_commonmark.workspace = true
 syntect.workspace = true
+similar.workspace = true
 ignore.workspace = true
 camino.workspace = true
 dunce.workspace = true

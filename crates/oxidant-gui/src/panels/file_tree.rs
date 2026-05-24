@@ -260,7 +260,7 @@ fn render_leaf(
         })
         .inner
         .on_hover_text(format!(
-            "{} — double-click to open",
+            "{} — double-click to open, right-click for history",
             file.path
                 .strip_prefix(workspace_root)
                 .map(|p| p.to_string_lossy().replace('\\', "/"))
@@ -269,6 +269,15 @@ fn render_leaf(
     if resp.double_clicked() {
         push_open(state, &file.path, workspace_root);
     }
+    let abs_path = file.path.clone();
+    let workspace_root_owned = workspace_root.to_path_buf();
+    let state_for_menu = state.clone();
+    resp.context_menu(move |ui| {
+        if ui.button("View history").clicked() {
+            push_open_history(&state_for_menu, &abs_path, &workspace_root_owned);
+            ui.close_menu();
+        }
+    });
 }
 
 fn tag_for(name: &str) -> (Option<&'static str>, Color32) {
@@ -293,6 +302,24 @@ fn push_open(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, workspace_root
         .unwrap_or_else(|_| abs_path.to_path_buf());
     let source = source_for(abs_path, workspace_root);
     let tab = DockTab::File { path, source };
+    if let Ok(mut s) = state.lock()
+        && !s.pending_centre_tabs.contains(&tab)
+    {
+        s.pending_centre_tabs.push(tab);
+    }
+}
+
+/// Like `push_open` but queues a read-only `DiffHistory` tab. The source
+/// flavour drives the syntect syntax used inside the panel — `.md` under
+/// `spec/` gets markdown highlighting, everything else gets matched by
+/// extension. See [[flows/view-spec-history]].
+fn push_open_history(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, workspace_root: &Path) {
+    let path = abs_path
+        .strip_prefix(workspace_root)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|_| abs_path.to_path_buf());
+    let source = source_for(abs_path, workspace_root);
+    let tab = DockTab::DiffHistory { path, source };
     if let Ok(mut s) = state.lock()
         && !s.pending_centre_tabs.contains(&tab)
     {

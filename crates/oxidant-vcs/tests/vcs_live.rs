@@ -11,7 +11,10 @@ use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
 use oxidant_core::{Tool, ToolContext, ToolResult};
-use oxidant_vcs::{VcsBranchCreate, VcsCommit, VcsDiff, VcsExplore, VcsLog, VcsStatus, worktree};
+use oxidant_vcs::{
+    Git, GitError, LogOpts, VcsBranchCreate, VcsCommit, VcsDiff, VcsExplore, VcsLog, VcsStatus,
+    worktree,
+};
 
 fn run_git(repo: &Path, args: &[&str]) {
     let status = SyncCommand::new("git")
@@ -214,4 +217,52 @@ async fn worktree_list_includes_main_and_sub() {
     assert!(entries.len() >= 2);
     assert!(entries.iter().any(|w| w.is_main));
     assert!(entries.iter().any(|w| !w.is_main));
+}
+
+#[tokio::test]
+async fn show_file_returns_contents_at_revision() {
+    let dir = make_repo(&[("a.txt", "first\n"), ("a.txt", "first\nsecond\n")]);
+    let git = Git::at(dunce::canonicalize(dir.path()).unwrap());
+    let commits = git
+        .log(LogOpts {
+            limit: Some(10),
+            path: Some(Path::new("a.txt").to_path_buf()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(commits.len(), 2, "two commits should touch a.txt");
+    // Commits are newest-first; the older commit holds "first\n".
+    let older = git
+        .show_file(&commits[1].sha, Path::new("a.txt"))
+        .await
+        .unwrap();
+    assert_eq!(older, "first\n");
+    let newer = git
+        .show_file(&commits[0].sha, Path::new("a.txt"))
+        .await
+        .unwrap();
+    assert_eq!(newer, "first\nsecond\n");
+}
+
+#[tokio::test]
+async fn show_file_reports_file_not_at_revision() {
+    let dir = make_repo(&[("a.txt", "only a\n"), ("b.txt", "only b\n")]);
+    let git = Git::at(dunce::canonicalize(dir.path()).unwrap());
+    let commits = git
+        .log(LogOpts {
+            limit: Some(10),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    // commits[1] is the older commit (only a.txt existed then). b.txt didn't.
+    let err = git
+        .show_file(&commits[1].sha, Path::new("b.txt"))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, GitError::FileNotAtRevision { ref path, .. } if path == Path::new("b.txt")),
+        "expected FileNotAtRevision, got {err:?}"
+    );
 }

@@ -27,6 +27,7 @@ impl Git {
     pub async fn status(&self) -> Result<StatusOutput>;
     pub async fn diff(&self, revspec: Option<&str>, name_only: bool) -> Result<DiffOutput>;
     pub async fn log(&self, opts: LogOpts) -> Result<Vec<Commit>>;
+    pub async fn show_file(&self, sha: &str, path: &Path) -> Result<String>;            // git show <sha>:<path>
     pub async fn commit(&self, message: &str, paths: &[PathBuf]) -> Result<String>;     // returns SHA
     pub async fn branch_create(&self, name: &str, base: Option<&str>) -> Result<()>;
     pub async fn checkout(&self, branch: &str) -> Result<()>;
@@ -56,6 +57,8 @@ Avoid colour/locale-dependent output: always pass `LC_ALL=C` and `--no-pager` in
 ## Errors
 
 Every command's exit code + stderr is surfaced. Non-zero with empty stderr is unusual and reported with the full command line.
+
+`show_file` distinguishes "file not at this revision" from other failures: a non-zero exit with stderr matching `path '...' does not exist in '<sha>'` becomes `GitError::FileNotAtRevision { sha, path }`, so callers (e.g. [[components/gui/diff-history-panel]]) can render the absence cleanly rather than surfacing a generic command failure.
 
 ## Push / fetch / pull
 

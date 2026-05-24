@@ -199,10 +199,22 @@ fn render_leaf(
             ui.add(egui::Label::new(text).sense(Sense::click()))
         })
         .inner
-        .on_hover_text(format!("{} — double-click to edit", rec.canonical_id));
+        .on_hover_text(format!(
+            "{} — double-click to edit, right-click for history",
+            rec.canonical_id
+        ));
     if resp.double_clicked() {
         push_open(state, &rec.path, workspace_root);
     }
+    let abs_path = rec.path.clone();
+    let workspace_root_owned = workspace_root.to_path_buf();
+    let state_for_menu = state.clone();
+    resp.context_menu(move |ui| {
+        if ui.button("View history").clicked() {
+            push_open_history(&state_for_menu, &abs_path, &workspace_root_owned);
+            ui.close_menu();
+        }
+    });
 }
 
 /// Push a `DockTab::File { source: Spec }` onto the shared state's
@@ -218,11 +230,27 @@ fn push_open(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, workspace_root
         path,
         source: FileSource::Spec,
     };
-    if let Ok(mut s) = state.lock() {
-        // De-duplicate: if the same tab is already pending this frame
-        // (e.g. accidental triple-click), don't queue twice.
-        if !s.pending_centre_tabs.contains(&tab) {
-            s.pending_centre_tabs.push(tab);
-        }
+    if let Ok(mut s) = state.lock()
+        && !s.pending_centre_tabs.contains(&tab)
+    {
+        s.pending_centre_tabs.push(tab);
+    }
+}
+
+/// Like `push_open` but queues a read-only `DiffHistory` tab instead of
+/// the editable `File` tab. See [[flows/view-spec-history]].
+fn push_open_history(state: &Arc<StdMutex<SharedState>>, abs_path: &Path, workspace_root: &Path) {
+    let path = abs_path
+        .strip_prefix(workspace_root)
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|_| abs_path.to_path_buf());
+    let tab = DockTab::DiffHistory {
+        path,
+        source: FileSource::Spec,
+    };
+    if let Ok(mut s) = state.lock()
+        && !s.pending_centre_tabs.contains(&tab)
+    {
+        s.pending_centre_tabs.push(tab);
     }
 }

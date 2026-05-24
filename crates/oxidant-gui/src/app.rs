@@ -20,7 +20,7 @@ use crate::dock::{
     singleton_tabs,
 };
 use crate::panels::{
-    chat_input::ChatInputPanel, diagnostic::DiagnosticPanel,
+    chat_input::ChatInputPanel, diagnostic::DiagnosticPanel, diff_history::DiffHistoryPanel,
     exploration_list::ExplorationListPanel, file_tab::FileTabPanel, file_tree::FileTreePanel,
     settings::SettingsPanel, spec_tree::SpecTreePanel, transcript::TranscriptPanel,
 };
@@ -38,6 +38,11 @@ pub struct App {
     file_tree_panel: FileTreePanel,
     diag_panel: DiagnosticPanel,
     settings_panel: SettingsPanel,
+    /// One DiffHistory panel per open path. Lazily inserted when the tab
+    /// first paints; entries leak across tab close in MVP (cheap state,
+    /// at most a handful per session). See
+    /// spec/components/gui/diff-history-panel.md.
+    diff_history_panels: HashMap<PathBuf, DiffHistoryPanel>,
     /// Currently-active theme. Mirrors what `theme::apply` recorded;
     /// kept here so the View → Theme submenu can render the radio
     /// state without a global lock.
@@ -185,6 +190,7 @@ impl App {
             file_tree_panel,
             diag_panel: DiagnosticPanel::new(),
             settings_panel,
+            diff_history_panels: HashMap::new(),
             config,
             dock: default_layout(),
             state,
@@ -193,7 +199,6 @@ impl App {
             active_theme,
         }
     }
-
 }
 
 impl eframe::App for App {
@@ -247,6 +252,7 @@ impl eframe::App for App {
             file_tree_panel: &mut self.file_tree_panel,
             diag_panel: &mut self.diag_panel,
             settings_panel: &mut self.settings_panel,
+            diff_history_panels: &mut self.diff_history_panels,
             settings: self.config.settings.clone(),
             active_theme: &mut self.active_theme,
             event_tx: self.event_tx.clone(),
@@ -327,6 +333,7 @@ pub(crate) struct TabViewer<'a> {
     pub file_tree_panel: &'a mut FileTreePanel,
     pub diag_panel: &'a mut DiagnosticPanel,
     pub settings_panel: &'a mut SettingsPanel,
+    pub diff_history_panels: &'a mut HashMap<PathBuf, DiffHistoryPanel>,
     pub settings: Arc<StdMutex<oxidant_config::Settings>>,
     pub active_theme: &'a mut Theme,
     pub event_tx: UnboundedSender<AgentEvent>,
@@ -388,6 +395,20 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
             }
             DockTab::File { path, source } => {
                 FileTabPanel.render(ui, path, *source, &self.workspace_root, &self.state);
+            }
+            DockTab::DiffHistory { path, .. } => {
+                let absolute = if path.is_absolute() {
+                    path.clone()
+                } else {
+                    self.workspace_root.join(path)
+                };
+                let panel = self
+                    .diff_history_panels
+                    .entry(absolute.clone())
+                    .or_insert_with(|| {
+                        DiffHistoryPanel::new(absolute.clone(), self.workspace_root.clone())
+                    });
+                panel.render(ui, &self.tokio_handle);
             }
         }
     }
