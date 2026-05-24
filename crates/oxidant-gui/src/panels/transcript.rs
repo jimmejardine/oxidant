@@ -4,7 +4,7 @@
 // assistant turn (text, thinking, tool calls) in place. Markdown
 // rendering via egui_commonmark; rich tool-call cards.
 
-use egui::{Color32, Id, RichText, ScrollArea};
+use egui::{Color32, CursorIcon, Id, RichText, ScrollArea, Sense};
 
 use oxidant_core::{ContentBlock, Message, ToolResultContent};
 
@@ -196,23 +196,30 @@ fn collapsible_block(
 ) {
     let mut open: bool = ui.data_mut(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     if !open {
+        // The whole "▸ summary" row should be one click target. Inner
+        // labels are non-interactive; we then `interact` the resulting
+        // horizontal area's rect with Sense::click so the entire row
+        // (including the gap between the arrow and the text) reacts to
+        // the click. Using the labels' own .clicked() would miss clicks
+        // on the gap and force two separate hot zones.
         let resp = ui
             .horizontal(|ui| {
-                ui.add(
-                    egui::Label::new(RichText::new("▸").color(theme::muted_text()))
-                        .sense(egui::Sense::click()),
-                );
-                ui.add(egui::Label::new(summary_text).sense(egui::Sense::click()))
+                ui.label(RichText::new("▸").color(theme::muted_text()));
+                ui.label(summary_text);
             })
-            .response;
+            .response
+            .interact(Sense::click())
+            .on_hover_cursor(CursorIcon::PointingHand);
         if resp.clicked() {
             open = true;
         }
     } else {
-        let resp = ui.add(
-            egui::Label::new(RichText::new("▾").color(theme::muted_text()))
-                .sense(egui::Sense::click()),
-        );
+        let resp = ui
+            .add(
+                egui::Label::new(RichText::new("▾").color(theme::muted_text()))
+                    .sense(Sense::click()),
+            )
+            .on_hover_cursor(CursorIcon::PointingHand);
         if resp.clicked() {
             open = false;
         }
