@@ -24,7 +24,7 @@ use crate::panels::{
     exploration_list::ExplorationListPanel, file_tab::FileTabPanel, file_tree::FileTreePanel,
     settings::SettingsPanel, spec_tree::SpecTreePanel, transcript::TranscriptPanel,
 };
-use crate::theme::{self, Theme};
+use crate::theme::Theme;
 use crate::viewport::ViewportConfig;
 
 pub struct App {
@@ -194,23 +194,6 @@ impl App {
         }
     }
 
-    /// Build the "View" menu — currently a Theme submenu with one radio
-    /// entry per `Theme::ALL`. Clicking a different entry swaps the
-    /// palette immediately via `theme::apply`. See
-    /// spec/components/gui/theme.md.
-    fn render_view_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button("View", |ui| {
-            ui.menu_button("Theme", |ui| {
-                for t in Theme::ALL {
-                    let resp = ui.radio_value(&mut self.active_theme, *t, t.display_name());
-                    if resp.clicked() {
-                        theme::apply(ui.ctx(), self.active_theme);
-                        ui.close_menu();
-                    }
-                }
-            });
-        });
-    }
 }
 
 impl eframe::App for App {
@@ -237,7 +220,6 @@ impl eframe::App for App {
                 ui.label(egui::RichText::new("oxidant").strong());
                 ui.separator();
                 self.render_window_menu(ui);
-                self.render_view_menu(ui);
                 ui.separator();
                 let state = self.state.lock().unwrap();
                 let n = state.exploration.conversation.len();
