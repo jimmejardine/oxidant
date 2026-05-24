@@ -16,6 +16,7 @@ pub enum DockTab {
     Transcript,
     SpecTree,
     FileTree,
+    SpecGraph,
     ExplorationList,
     DiagnosticPreview,
     ChatInput,
@@ -36,6 +37,7 @@ impl DockTab {
             DockTab::Transcript => "Transcript".into(),
             DockTab::SpecTree => "Specs".into(),
             DockTab::FileTree => "Files".into(),
+            DockTab::SpecGraph => "Spec Graph".into(),
             DockTab::ExplorationList => "Explorations".into(),
             DockTab::DiagnosticPreview => "Diagnostics".into(),
             DockTab::ChatInput => "Chat".into(),
@@ -86,11 +88,12 @@ pub fn default_layout() -> DockState<DockTab> {
 /// The singletons offered in the Window menu. Order matches the spec
 /// (transcript, specs, explorations, diagnostics, chat, settings). File
 /// tabs are excluded — they have their own discovery flow.
-pub fn singleton_tabs() -> [DockTab; 7] {
+pub fn singleton_tabs() -> [DockTab; 8] {
     [
         DockTab::Transcript,
         DockTab::SpecTree,
         DockTab::FileTree,
+        DockTab::SpecGraph,
         DockTab::ExplorationList,
         DockTab::DiagnosticPreview,
         DockTab::ChatInput,
@@ -175,9 +178,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_layout_has_every_singleton() {
+    fn default_layout_has_every_default_visible_singleton() {
+        // Most singletons are present in the default layout. The
+        // exceptions are opt-in: the user opens them via Window menu
+        // when needed. SpecGraph is opt-in because the left panel is
+        // already busy and the graph deserves room to breathe.
+        const OPT_IN: &[DockTab] = &[DockTab::SpecGraph];
         let state = default_layout();
         for tab in singleton_tabs() {
+            if OPT_IN.contains(&tab) {
+                assert!(
+                    !is_tab_open(&state, &tab),
+                    "{:?} listed as opt-in but appears in default_layout",
+                    tab
+                );
+                continue;
+            }
             assert!(
                 is_tab_open(&state, &tab),
                 "default layout missing singleton {:?}",
@@ -264,8 +280,14 @@ mod tests {
             is_tab_open(&fresh, &file),
             "file tab dropped on reset_layout"
         );
-        // Singletons are back too.
+        // Default-visible singletons are back too. Opt-in singletons
+        // (see default_layout_has_every_default_visible_singleton) stay
+        // closed after reset — the user re-opens them via Window menu.
+        const OPT_IN: &[DockTab] = &[DockTab::SpecGraph];
         for tab in singleton_tabs() {
+            if OPT_IN.contains(&tab) {
+                continue;
+            }
             assert!(is_tab_open(&fresh, &tab));
         }
     }

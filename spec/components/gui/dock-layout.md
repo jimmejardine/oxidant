@@ -30,6 +30,7 @@ pub enum DockTab {
     Transcript,
     SpecTree,
     FileTree,
+    SpecGraph,                                           // force-directed relationship viewer
     ExplorationList,
     ValidateWarnings,
     DiagnosticPreview,
@@ -70,9 +71,12 @@ Each `DockTab` variant's render is delegated to its panel component:
 - `Transcript` → [[components/gui/transcript-tab]]
 - `SpecTree` → [[components/gui/spec-tree-panel]]
 - `FileTree` → [[components/gui/file-tree-panel]]
+- `SpecGraph` → [[components/gui/spec-graph-panel]]
 - `ExplorationList` → [[components/gui/exploration-list]]
 - `ValidateWarnings` → handled inline (small surface)
 - `DiagnosticPreview` → [[components/gui/diagnostic-panel]]
 - `ChatInput` → [[components/gui/chat-input-panel]]
 - `File` → [[components/gui/file-tabs]]
 - `DiffHistory` → [[components/gui/diff-history-panel]]
+
+`SpecGraph` is a singleton (one instance per viewport) but is **not** present in `default_layout` — users open it from the Window menu when they want it. The left panel is already crowded.

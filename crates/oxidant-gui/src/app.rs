@@ -22,7 +22,8 @@ use crate::dock::{
 use crate::panels::{
     chat_input::ChatInputPanel, diagnostic::DiagnosticPanel, diff_history::DiffHistoryPanel,
     exploration_list::ExplorationListPanel, file_tab::FileTabPanel, file_tree::FileTreePanel,
-    settings::SettingsPanel, spec_tree::SpecTreePanel, transcript::TranscriptPanel,
+    settings::SettingsPanel, spec_graph::SpecGraphPanel, spec_tree::SpecTreePanel,
+    transcript::TranscriptPanel,
 };
 use crate::theme::Theme;
 use crate::viewport::ViewportConfig;
@@ -36,6 +37,7 @@ pub struct App {
     chat_panel: ChatInputPanel,
     spec_panel: SpecTreePanel,
     file_tree_panel: FileTreePanel,
+    spec_graph_panel: SpecGraphPanel,
     diag_panel: DiagnosticPanel,
     settings_panel: SettingsPanel,
     /// One DiffHistory panel per open path. Lazily inserted when the tab
@@ -182,12 +184,14 @@ impl App {
 
         let spec_panel = SpecTreePanel::new(config.workspace_root.clone());
         let file_tree_panel = FileTreePanel::new(config.workspace_root.clone());
+        let spec_graph_panel = SpecGraphPanel::new(config.workspace_root.clone());
         let active_theme = config.theme;
         let settings_panel = SettingsPanel::new(&config.settings);
         Self {
             chat_panel: ChatInputPanel::new(),
             spec_panel,
             file_tree_panel,
+            spec_graph_panel,
             diag_panel: DiagnosticPanel::new(),
             settings_panel,
             diff_history_panels: HashMap::new(),
@@ -250,6 +254,7 @@ impl eframe::App for App {
             chat_panel: &mut self.chat_panel,
             spec_panel: &mut self.spec_panel,
             file_tree_panel: &mut self.file_tree_panel,
+            spec_graph_panel: &mut self.spec_graph_panel,
             diag_panel: &mut self.diag_panel,
             settings_panel: &mut self.settings_panel,
             diff_history_panels: &mut self.diff_history_panels,
@@ -331,6 +336,7 @@ pub(crate) struct TabViewer<'a> {
     pub chat_panel: &'a mut ChatInputPanel,
     pub spec_panel: &'a mut SpecTreePanel,
     pub file_tree_panel: &'a mut FileTreePanel,
+    pub spec_graph_panel: &'a mut SpecGraphPanel,
     pub diag_panel: &'a mut DiagnosticPanel,
     pub settings_panel: &'a mut SettingsPanel,
     pub diff_history_panels: &'a mut HashMap<PathBuf, DiffHistoryPanel>,
@@ -363,6 +369,9 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
             }
             DockTab::FileTree => {
                 self.file_tree_panel.render(ui, &self.state);
+            }
+            DockTab::SpecGraph => {
+                self.spec_graph_panel.render(ui, &self.state);
             }
             DockTab::ExplorationList => {
                 ExplorationListPanel.render(ui, &self.workspace_root);
