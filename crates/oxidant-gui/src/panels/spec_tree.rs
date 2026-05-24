@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
-use egui::{Color32, RichText, Sense};
+use egui::text::LayoutJob;
+use egui::{Color32, CursorIcon, RichText, SelectableLabel, Stroke, TextFormat};
 
 use oxidant_spec_tools::{SpecRecord, walk_specs};
 
@@ -185,20 +186,33 @@ fn render_leaf(
         "decision" => Color32::from_rgb(200, 200, 200),
         _ => theme::muted_text(),
     };
-    let text = RichText::new(leaf_name);
-    let text = if matches!(status, oxidant_spec_tools::SpecStatus::Deprecated) {
-        text.color(theme::faint_text()).strikethrough()
-    } else if matches!(status, oxidant_spec_tools::SpecStatus::Draft) {
-        text.color(Color32::from_rgb(255, 200, 100))
-    } else {
-        text
+    let (leaf_color, strike) = match status {
+        oxidant_spec_tools::SpecStatus::Deprecated => (theme::faint_text(), true),
+        oxidant_spec_tools::SpecStatus::Draft => (Color32::from_rgb(255, 200, 100), false),
+        _ => (ui.visuals().text_color(), false),
     };
+
+    let mut job = LayoutJob::default();
+    job.append(
+        &format!("[{kind}] "),
+        0.0,
+        TextFormat {
+            color: kind_color,
+            ..Default::default()
+        },
+    );
+    let mut leaf_fmt = TextFormat {
+        color: leaf_color,
+        ..Default::default()
+    };
+    if strike {
+        leaf_fmt.strikethrough = Stroke::new(1.0, leaf_color);
+    }
+    job.append(leaf_name, 0.0, leaf_fmt);
+
     let resp = ui
-        .horizontal(|ui| {
-            ui.label(RichText::new(format!("[{kind}]")).color(kind_color));
-            ui.add(egui::Label::new(text).sense(Sense::click()))
-        })
-        .inner
+        .add(SelectableLabel::new(false, job))
+        .on_hover_cursor(CursorIcon::PointingHand)
         .on_hover_text(format!(
             "{} — double-click to edit, right-click for history",
             rec.canonical_id

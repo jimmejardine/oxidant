@@ -11,7 +11,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
-use egui::{Color32, RichText, Sense};
+use egui::text::LayoutJob;
+use egui::{Color32, CursorIcon, RichText, SelectableLabel, TextFormat};
 use ignore::WalkBuilder;
 
 use crate::app::SharedState;
@@ -251,14 +252,30 @@ fn render_leaf(
     state: &Arc<StdMutex<SharedState>>,
 ) {
     let (tag, tag_color) = tag_for(&file.name);
+    let leaf_color = ui.visuals().text_color();
+    let mut job = LayoutJob::default();
+    if let Some(t) = tag {
+        job.append(
+            &format!("[{t}] "),
+            0.0,
+            TextFormat {
+                color: tag_color,
+                ..Default::default()
+            },
+        );
+    }
+    job.append(
+        &file.name,
+        0.0,
+        TextFormat {
+            color: leaf_color,
+            ..Default::default()
+        },
+    );
+
     let resp = ui
-        .horizontal(|ui| {
-            if let Some(t) = tag {
-                ui.label(RichText::new(format!("[{t}]")).color(tag_color));
-            }
-            ui.add(egui::Label::new(&file.name).sense(Sense::click()))
-        })
-        .inner
+        .add(SelectableLabel::new(false, job))
+        .on_hover_cursor(CursorIcon::PointingHand)
         .on_hover_text(format!(
             "{} — double-click to open, right-click for history",
             file.path
