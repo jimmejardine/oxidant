@@ -197,15 +197,19 @@ fn collapsible_block(
     let mut open: bool = ui.data_mut(|d| d.get_temp::<bool>(id)).unwrap_or(false);
     if !open {
         // The whole "▸ summary" row should be one click target. Inner
-        // labels are non-interactive; we then `interact` the resulting
-        // horizontal area's rect with Sense::click so the entire row
-        // (including the gap between the arrow and the text) reacts to
-        // the click. Using the labels' own .clicked() would miss clicks
-        // on the gap and force two separate hot zones.
+        // labels must be non-selectable, otherwise their default
+        // Sense::drag (for text selection) consumes pointer events on
+        // the arrow and the text and only clicks on the gap between
+        // them reach the row-level interact below. With .selectable
+        // (false), clicks bubble up to the row rect and the entire
+        // line toggles.
         let resp = ui
             .horizontal(|ui| {
-                ui.label(RichText::new("▸").color(theme::muted_text()));
-                ui.label(summary_text);
+                ui.add(
+                    egui::Label::new(RichText::new("▸").color(theme::muted_text()))
+                        .selectable(false),
+                );
+                ui.add(egui::Label::new(summary_text).selectable(false));
             })
             .response
             .interact(Sense::click())
@@ -217,6 +221,7 @@ fn collapsible_block(
         let resp = ui
             .add(
                 egui::Label::new(RichText::new("▾").color(theme::muted_text()))
+                    .selectable(false)
                     .sense(Sense::click()),
             )
             .on_hover_cursor(CursorIcon::PointingHand);
