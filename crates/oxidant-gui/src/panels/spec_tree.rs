@@ -132,25 +132,24 @@ fn render_node(
     state: &Arc<StdMutex<SharedState>>,
     new_item: &mut NewItemDialog,
 ) {
-    let header =
-        egui::CollapsingHeader::new(RichText::new(label).strong())
-            .default_open(label == "spec")
-            .show(ui, |ui| {
-                for (name, child) in &node.dirs {
-                    render_node(
-                        ui,
-                        child,
-                        name,
-                        &node_dir.join(name),
-                        workspace_root,
-                        state,
-                        new_item,
-                    );
-                }
-                for rec in &node.files {
-                    render_leaf(ui, rec, workspace_root, state);
-                }
-            });
+    let header = egui::CollapsingHeader::new(RichText::new(label).strong())
+        .default_open(label == "spec")
+        .show(ui, |ui| {
+            for (name, child) in &node.dirs {
+                render_node(
+                    ui,
+                    child,
+                    name,
+                    &node_dir.join(name),
+                    workspace_root,
+                    state,
+                    new_item,
+                );
+            }
+            for rec in &node.files {
+                render_leaf(ui, rec, workspace_root, state);
+            }
+        });
     header.header_response.context_menu(|ui| {
         if ui.button("New spec").clicked() {
             new_item.open(node_dir.to_path_buf(), NewKind::File);

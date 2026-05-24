@@ -1,0 +1,74 @@
+name: ci
+
+# One workflow, one job, one cache. Steps run sequentially so the
+# `target/` dir is reused across them — clippy compiles everything, the
+# tests pick up the same artifacts, and the spec gate builds the oxidant
+# binary in dev mode so it shares the cache too. Replaces the earlier
+# split lint / test / spec workflows.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install GUI system libs (egui/winit on Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev \
+            libxi-dev libxcursor-dev libxrandr-dev
+
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy, rust-analyzer
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      # ---- lint ----
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      # ---- check ----
+      # Near-instant after clippy (artifacts are already in target/), but
+      # keeps a clean "the workspace compiles" signal in the log.
+      - name: cargo check
+        run: cargo check --workspace --all-targets
+
+      # ---- tests ----
+      - name: cargo nextest run
+        run: cargo nextest run --workspace
+
+      - name: cargo test --doc
+        run: cargo test --doc --workspace
+
+      # ---- oxidant spec gate ----
+      # Dev build, not --release: shares the cache that clippy / nextest
+      # already populated. The spec validate/diff workload is sub-second
+      # either way, so release optimisation isn't worth the rebuild cost.
+      - name: Build oxidant binary
+        run: cargo build -p oxidant
+
+      - name: oxidant spec validate --strict
+        run: ./target/debug/oxidant spec validate --strict
+
+      - name: oxidant spec diff --strict
+        run: ./target/debug/oxidant spec diff --strict

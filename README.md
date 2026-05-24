@@ -1,8 +1,6 @@
 # oxidant
 
-[![lint](https://github.com/jimmejardine/oxidant/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/jimmejardine/oxidant/actions/workflows/lint.yml)
-[![test](https://github.com/jimmejardine/oxidant/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/jimmejardine/oxidant/actions/workflows/test.yml)
-[![spec](https://github.com/jimmejardine/oxidant/actions/workflows/spec.yml/badge.svg?branch=main)](https://github.com/jimmejardine/oxidant/actions/workflows/spec.yml)
+[![CI](https://github.com/jimmejardine/oxidant/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jimmejardine/oxidant/actions/workflows/ci.yml)
 
 A Rust-native desktop code agent for working on Rust projects. Three things distinguish it from general-purpose agents: **first-class Rust tooling** (rust-analyzer, cargo, syn, clippy exposed as structured tools — not text-scraped), **spec-driven design** (the `spec/` tree is the source of truth; code realises spec, not the other way round), and **multi-exploration via git worktrees** (each side conversation is its own branch + worktree + rust-analyzer + `target/`). See [`spec/overview.md`](spec/overview.md) for the full picture.
 
