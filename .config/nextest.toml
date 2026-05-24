@@ -1,0 +1,20 @@
+# Workspace-wide nextest configuration.
+#
+# Default execution is fine for everything *except* the live LSP suite.
+# Each lsp_live test spawns its own rust-analyzer subprocess against a
+# fresh tempdir crate, and running them in parallel produces 4+
+# rust-analyzer processes competing for CPU/IO on a cold sccache. On
+# Linux that pushes some past the 60s analyze-file cap in
+# wait_for_file_analysis — false failures we don't want to chase down
+# one at a time by bumping timeouts.
+#
+# The `lsp` test-group caps them at one at a time. Cold start is
+# ~10-30s per test, so the whole binary runs in well under a minute
+# instead of timing out chunks of it.
+
+[test-groups]
+lsp = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary(lsp_live)'
+test-group = 'lsp'
