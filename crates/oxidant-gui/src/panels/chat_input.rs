@@ -23,6 +23,15 @@ use crate::app::{AgentEvent, SharedState, TurnOutcome};
 use crate::dock::DockTab;
 use crate::theme;
 
+/// Default `max_iterations` for a fresh prompt. The chat input passes
+/// this into `spawn_agent_inner`. The default in
+/// `AgentLoopConfig::new` is the same number — kept aligned here so
+/// future tuning is a single-place edit.
+pub(crate) const DEFAULT_TURN_MAX_ITERATIONS: usize = 30;
+/// How much each "Continue iterating" click bumps `max_iterations` by.
+/// See spec/components/gui/chat-input-panel.md "Continue iterating".
+pub(crate) const CONTINUE_ITERATIONS_INCREMENT: usize = 20;
+
 pub struct ChatInputPanel {
     draft: String,
     /// Plan vs Implement. Defaults to Plan per
@@ -63,6 +72,29 @@ impl ChatInputPanel {
         system_prompt: Option<&str>,
         egui_ctx: &egui::Context,
     ) {
+        // Drain pending_continue before drawing — clicking the
+        // "Continue iterating" button in the transcript queued a
+        // resume request via SharedState. Dispatch it immediately so
+        // `streaming` (computed below) reflects the new in-flight
+        // turn. No new user message is appended. See
+        // spec/components/gui/chat-input-panel.md "Continue iterating".
+        let pending_continue = state.lock().unwrap().pending_continue.take();
+        if let Some(new_max) = pending_continue {
+            spawn_agent_inner(
+                None,
+                new_max,
+                state.clone(),
+                event_tx.clone(),
+                tokio_handle,
+                workspace_root.to_path_buf(),
+                provider.clone(),
+                model.to_string(),
+                system_prompt.map(String::from),
+                self.mode,
+                egui_ctx.clone(),
+            );
+        }
+
         let streaming = state.lock().unwrap().live_turn.is_some();
 
         // Drain pending_chat_prompt before drawing — another panel
@@ -131,8 +163,9 @@ impl ChatInputPanel {
                                 self.draft = prompt;
                             }
                             crate::panels::slash_commands::ChatCommand::Prompt(text) => {
-                                spawn_agent(
-                                    text.to_string(),
+                                spawn_agent_inner(
+                                    Some(text.to_string()),
+                                    DEFAULT_TURN_MAX_ITERATIONS,
                                     state.clone(),
                                     event_tx.clone(),
                                     tokio_handle,
@@ -238,9 +271,22 @@ fn render_mode_chip(ui: &mut egui::Ui, mode: AgentMode, streaming: bool) -> bool
         .clicked()
 }
 
+/// Spawn an agent loop turn on the conversation in `state`.
+///
+/// - `prompt = Some(text)` appends a user message before snapshotting —
+///   the path for a fresh user prompt.
+/// - `prompt = None` snapshots the conversation as-is — the path for a
+///   "Continue iterating" resume, which picks up after the previous
+///   turn's last `Message::ToolResult`. See
+///   spec/components/gui/chat-input-panel.md "Continue iterating".
+///
+/// `max_iter` is the `AgentLoopConfig::max_iterations` to use for this
+/// turn — `DEFAULT_TURN_MAX_ITERATIONS` for fresh prompts, the bumped
+/// value for continuations.
 #[allow(clippy::too_many_arguments)]
-fn spawn_agent(
-    prompt: String,
+fn spawn_agent_inner(
+    prompt: Option<String>,
+    max_iter: usize,
     state: Arc<StdMutex<SharedState>>,
     event_tx: UnboundedSender<AgentEvent>,
     tokio_handle: &Handle,
@@ -251,12 +297,12 @@ fn spawn_agent(
     mode: AgentMode,
     egui_ctx: egui::Context,
 ) {
-    // Append the user message, snapshot the conversation, set up
-    // cancellation, then move into the tokio task.
     let cancellation = CancellationToken::new();
     let (snapshot, registry, exploration_id) = {
         let mut s = state.lock().unwrap();
-        s.exploration.conversation.push_user_text(prompt);
+        if let Some(text) = prompt {
+            s.exploration.conversation.push_user_text(text);
+        }
         s.live_turn = Some(crate::app::LiveTurn::default());
         s.last_outcome = None;
         s.cancellation = Some(cancellation.clone());
@@ -276,6 +322,7 @@ fn spawn_agent(
             model,
             system_prompt,
             mode,
+            max_iter,
             cancellation,
             exploration_id,
             event_tx.clone(),
@@ -296,6 +343,7 @@ async fn drive_agent(
     model: String,
     system_prompt: Option<String>,
     mode: AgentMode,
+    max_iter: usize,
     cancellation: CancellationToken,
     exploration_id: String,
     event_tx: UnboundedSender<AgentEvent>,
@@ -308,11 +356,8 @@ async fn drive_agent(
         Ok(p) => p,
         Err(_) => {
             return TurnOutcome {
-                stop_reason: None,
-                usage: Default::default(),
-                iterations: 0,
-                tool_calls: 0,
                 error: Some(format!("non-UTF-8 workspace path: {}", canonical.display())),
+                ..Default::default()
             };
         }
     };
@@ -333,7 +378,7 @@ async fn drive_agent(
     // up against an undersized truncation_length is harder to debug
     // than a too-low max_tokens cap.
     config.max_tokens = 2048;
-    config.max_iterations = 12;
+    config.max_iterations = max_iter;
     config.post_edit_check_tool = Some("spec_diff".to_string());
 
     let event_tx_for_loop = event_tx.clone();
@@ -398,14 +443,27 @@ async fn drive_agent(
             iterations,
             tool_calls: tool_calls_dispatched,
             error: None,
+            hit_max_iterations: false,
         },
-        Err(e) => TurnOutcome {
-            stop_reason: None,
-            usage: Default::default(),
-            iterations: 0,
-            tool_calls: 0,
-            error: Some(e.to_string()),
-        },
+        Err(e) => outcome_from_loop_err(e, max_iter),
+    }
+}
+
+/// Translate an `agent_loop::run` error into a `TurnOutcome`. Setting
+/// `hit_max_iterations` here — based on the verbatim error prefix at
+/// `oxidant-core/src/agent_loop.rs`'s "agent loop exceeded
+/// max_iterations" — is what lets the transcript decide whether to
+/// render the "Continue iterating" button. `max_iter` carries through
+/// to `iterations` so the button's bump math (`iterations +
+/// INCREMENT`) is correct.
+fn outcome_from_loop_err(err: anyhow::Error, max_iter: usize) -> TurnOutcome {
+    let msg = err.to_string();
+    let hit_max = msg.contains("agent loop exceeded max_iterations");
+    TurnOutcome {
+        error: Some(msg),
+        iterations: if hit_max { max_iter } else { 0 },
+        hit_max_iterations: hit_max,
+        ..Default::default()
     }
 }
 
@@ -462,11 +520,8 @@ async fn run_compaction(
         Ok(s) => s,
         Err(e) => {
             return TurnOutcome {
-                stop_reason: None,
-                usage: Default::default(),
-                iterations: 0,
-                tool_calls: 0,
                 error: Some(format!("compaction request failed: {e}")),
+                ..Default::default()
             };
         }
     };
@@ -487,11 +542,9 @@ async fn run_compaction(
             }
             ChatEvent::Error(e) => {
                 return TurnOutcome {
-                    stop_reason: None,
                     usage,
-                    iterations: 0,
-                    tool_calls: 0,
                     error: Some(e),
+                    ..Default::default()
                 };
             }
             _ => {}
@@ -501,9 +554,8 @@ async fn run_compaction(
         return TurnOutcome {
             stop_reason,
             usage,
-            iterations: 0,
-            tool_calls: 0,
             error: Some("compaction returned an empty summary".to_string()),
+            ..Default::default()
         };
     }
     if let Ok(mut s) = state.lock() {
@@ -514,9 +566,7 @@ async fn run_compaction(
     TurnOutcome {
         stop_reason,
         usage,
-        iterations: 0,
-        tool_calls: 0,
-        error: None,
+        ..Default::default()
     }
 }
 
@@ -572,5 +622,33 @@ fn build_compaction_request(conv: &Conversation, model: String) -> ChatRequest {
         max_tokens: 1024,
         temperature: Some(0.3),
         thinking: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outcome_from_loop_err_marks_max_iterations_hit() {
+        let err = anyhow::anyhow!("agent loop exceeded max_iterations (30)");
+        let out = outcome_from_loop_err(err, 30);
+        assert!(out.hit_max_iterations);
+        assert_eq!(out.iterations, 30);
+        assert!(out.error.as_deref().unwrap().contains("max_iterations"));
+    }
+
+    #[test]
+    fn outcome_from_loop_err_leaves_unrelated_errors_alone() {
+        let err = anyhow::anyhow!("provider returned 503: rate limited");
+        let out = outcome_from_loop_err(err, 30);
+        assert!(!out.hit_max_iterations);
+        // iterations stays 0 for non-max-iter failures so the
+        // transcript doesn't mis-render a bogus "n iterations" count.
+        assert_eq!(out.iterations, 0);
+        assert_eq!(
+            out.error.as_deref().unwrap(),
+            "provider returned 503: rate limited"
+        );
     }
 }

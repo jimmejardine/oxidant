@@ -62,6 +62,12 @@ Behaviour:
 
 Why a sentence rather than a fixed-line count: a wrapped paragraph's line count depends on the panel's width, so collapsed height would jitter as the user resizes the dock. A sentence-based summary stays stable.
 
+## Continue iterating button
+
+When `SharedState.last_outcome.hit_max_iterations` is true, a `▶ Continue iterating (+N)` button renders immediately under the red `error: agent loop exceeded max_iterations (…)` label — same scroll position, no extra divider. Clicking the button does not mutate `SharedState` from the transcript directly; instead `TranscriptPanel::render` returns a `TranscriptAction::ContinueIterating { new_max }`, which the caller in `app.rs` writes into `SharedState.pending_continue`. The chat input panel drains that field next frame and re-invokes the agent loop on the same conversation with the higher cap. See [[components/gui/chat-input-panel]] "Continue iterating".
+
+`new_max = last_outcome.iterations + N` where `iterations` is the exhausted cap and `N` is `CONTINUE_ITERATIONS_INCREMENT` (currently 20). The button does NOT render for other failure modes (provider error, cancellation, tool panic) — `hit_max_iterations` is the only gate.
+
 ## Selection and copy
 
 Standard egui text selection within text blocks. Multi-message selection deferred to v2.

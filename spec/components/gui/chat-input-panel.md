@@ -122,3 +122,13 @@ Compacting again later collapses the latest live-tail into a new summary; only t
 - Sets `self.command_feedback = Some("unknown command: /foo")` (a per-panel `Option<String>` field rendered as a muted one-line label below the input).
 - Restores `self.draft` to the original input so the user can fix the typo.
 - Clears `command_feedback` on the next keystroke that modifies the draft.
+
+## Continue iterating
+
+When the most recent `TurnOutcome` has `hit_max_iterations == true`, the [[components/gui/transcript-tab]] renders a `▶ Continue iterating (+N)` button beneath the red error label. Clicking it resumes the *same* conversation — **no new user message is appended** — with `max_iterations + N` (`N = 20`). Repeat clicks compound: second click 50, third 70, …
+
+The transcript can't write back to `SharedState` directly (its render is read-only), so the click returns a `TranscriptAction::ContinueIterating { new_max }` that the panel host (`app.rs`) writes into `SharedState.pending_continue: Option<usize>`. The chat input panel drains that field at the top of its next `render` — mirroring how `pending_chat_prompt` is drained — and dispatches a continuation via the shared spawn path with `prompt = None` and `max_iter = new_max`.
+
+The continuation uses the panel's current `self.mode`: if the user flipped PLAN/IMPLEMENT between cap-hit and click, the new mode wins. The base `max_iterations` for fresh prompts is `DEFAULT_TURN_MAX_ITERATIONS` (currently 30), defined as a `const` in the panel for easy tuning.
+
+A turn that fails for any *other* reason — provider error, cancellation, tool panic — does not show the button. The detection is anchored to the verbatim "agent loop exceeded max_iterations" prefix that `agent_loop::run` returns; `drive_agent` translates that match into `hit_max_iterations: true` on the outcome.

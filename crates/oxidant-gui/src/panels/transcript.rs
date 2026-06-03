@@ -11,7 +11,24 @@ use egui::{Color32, CursorIcon, Id, RichText, ScrollArea, Sense};
 use oxidant_core::{ContentBlock, Message, ToolResultContent};
 
 use crate::app::{LiveTurn, SharedState};
+use crate::panels::chat_input::CONTINUE_ITERATIONS_INCREMENT;
 use crate::theme;
+
+/// Result of a `TranscriptPanel::render` call — actions the panel
+/// can't perform itself because it only holds `&SharedState`. The
+/// caller in `app.rs` translates these into mutations on the
+/// already-held lock. See spec/components/gui/transcript-tab.md
+/// "Continue iterating button".
+#[must_use]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum TranscriptAction {
+    #[default]
+    None,
+    /// User clicked the "Continue iterating" button. `new_max` is the
+    /// `max_iterations` to use when re-entering the agent loop on the
+    /// existing conversation.
+    ContinueIterating { new_max: usize },
+}
 
 /// Per-render lookup for inlining `Message::ToolResult` underneath the
 /// `ContentBlock::ToolUse` that produced it. See
@@ -76,9 +93,10 @@ const SUMMARY_LIMIT: usize = 120;
 pub struct TranscriptPanel;
 
 impl TranscriptPanel {
-    pub fn render(&self, ui: &mut egui::Ui, state: &SharedState) {
+    pub fn render(&self, ui: &mut egui::Ui, state: &SharedState) -> TranscriptAction {
         let ctx = build_render_ctx(&state.exploration.conversation.messages);
         let compaction_at = state.exploration.conversation.compaction_at;
+        let mut action = TranscriptAction::None;
         ScrollArea::vertical()
             .auto_shrink([false; 2])
             .stick_to_bottom(true)
@@ -124,6 +142,25 @@ impl TranscriptPanel {
                         .color(theme::muted_text())
                     };
                     ui.label(summary);
+                    // "Continue iterating" affordance — only on the
+                    // specific max_iterations failure mode. See
+                    // spec/components/gui/transcript-tab.md
+                    // "Continue iterating button".
+                    if o.hit_max_iterations
+                        && ui
+                            .button(format!(
+                                "▶ Continue iterating (+{CONTINUE_ITERATIONS_INCREMENT})"
+                            ))
+                            .on_hover_text(
+                                "Resume the agent on this conversation with a larger \
+                                 max_iterations cap. No new user message is sent.",
+                            )
+                            .clicked()
+                    {
+                        action = TranscriptAction::ContinueIterating {
+                            new_max: o.iterations + CONTINUE_ITERATIONS_INCREMENT,
+                        };
+                    }
                 }
                 if state.exploration.conversation.is_empty() && state.live_turn.is_none() {
                     ui.add_space(80.0);
@@ -140,6 +177,7 @@ impl TranscriptPanel {
                     });
                 }
             });
+        action
     }
 }
 

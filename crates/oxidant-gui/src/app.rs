@@ -85,6 +85,12 @@ pub struct SharedState {
     /// mode, request focus, clear the field. No auto-send.
     /// See spec/components/gui/chat-input-panel.md "External prompt fill".
     pub pending_chat_prompt: Option<PendingChatPrompt>,
+    /// "Continue iterating" request from the transcript: the new
+    /// `max_iterations` to use when re-entering the agent loop on the
+    /// existing conversation. Drained once per frame by
+    /// `ChatInputPanel::render` — mirror of `pending_chat_prompt`. See
+    /// spec/components/gui/chat-input-panel.md "Continue iterating".
+    pub pending_continue: Option<usize>,
     /// Per-path edit buffers for File tabs. Keyed by absolute path so
     /// the same file in two tabs (which can't actually happen — dock
     /// tabs are unique) would share state. See
@@ -153,13 +159,18 @@ pub struct LiveToolCall {
     pub finished: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TurnOutcome {
     pub stop_reason: Option<StopReason>,
     pub usage: Usage,
     pub iterations: usize,
     pub tool_calls: usize,
     pub error: Option<String>,
+    /// `true` only when the failure mode was the agent loop hitting its
+    /// `max_iterations` cap. Drives the "Continue iterating" affordance
+    /// in the transcript — see spec/components/gui/chat-input-panel.md
+    /// "Continue iterating".
+    pub hit_max_iterations: bool,
 }
 
 // ---------------------------------------------------------------- Health report
@@ -310,6 +321,7 @@ impl App {
             health: HealthReport::default(),
             pending_centre_tabs: Vec::new(),
             pending_chat_prompt: None,
+            pending_continue: None,
             editor_buffers: HashMap::new(),
             selected_preview: None,
         }));
@@ -496,8 +508,14 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
         match tab {
             DockTab::Transcript => {
-                let state = self.state.lock().unwrap();
-                TranscriptPanel.render(ui, &state);
+                let mut state = self.state.lock().unwrap();
+                let action = TranscriptPanel.render(ui, &state);
+                match action {
+                    crate::panels::transcript::TranscriptAction::None => {}
+                    crate::panels::transcript::TranscriptAction::ContinueIterating { new_max } => {
+                        state.pending_continue = Some(new_max);
+                    }
+                }
             }
             DockTab::Selected => {
                 let preview = self

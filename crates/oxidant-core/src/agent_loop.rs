@@ -52,7 +52,7 @@ impl AgentLoopConfig {
             model: model.into(),
             system_prompt: None,
             max_tokens: 4096,
-            max_iterations: 16,
+            max_iterations: 30,
             temperature: None,
             thinking: None,
             post_edit_check_tool: None,

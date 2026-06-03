@@ -49,7 +49,7 @@ User types into the [[components/gui/chat-input-panel]] and hits Ctrl+Enter (or 
 
 7. **Post-edit hook.** If any Mutating tool fired and `config.post_edit_check_tool` is set (default: `spec_diff`), [[flows/mutating-edit]] runs that hook now. Its output is appended as a synthetic User message so the model sees it on the next iteration.
 
-8. **Loop or finish.** If the iteration produced no tool calls, return — the turn is done. Otherwise go to step 3 with the updated conversation, up to `max_iterations` (default 16; exhausting it returns `Err`).
+8. **Loop or finish.** If the iteration produced no tool calls, return — the turn is done. Otherwise go to step 3 with the updated conversation, up to `max_iterations` (default 30; exhausting it returns `Err`). The chat input panel detects this specific error and surfaces a **Continue iterating** button — see [[components/gui/chat-input-panel]] — that re-invokes the loop on the same conversation with a higher cap.
 
 9. **Surface the outcome.** The task sends `AgentEvent::Completed(outcome)` to the GUI; `SharedState.live_turn` is cleared, `last_outcome` is recorded, and the transcript shows the committed history.
 
@@ -64,7 +64,7 @@ The per-turn `CancellationToken` is held on `SharedState.cancellation`. Esc in t
 
 ## Common failure modes
 
-- **`max_iterations` exhausted.** The model kept calling tools without finishing. Typically a runaway plan; the outcome's `error` field surfaces this so the GUI shows it.
+- **`max_iterations` exhausted.** The model kept calling tools without finishing. Typically a runaway plan; the outcome's `error` field surfaces this so the GUI shows it, and `TurnOutcome.hit_max_iterations` is set so the chat input can offer a one-click resume with a higher cap.
 - **Provider stream `Error(_)`.** Network drop, auth failure, rate limit. Returned as `Err`; the partial assistant message (whatever streamed first) is still committed.
 - **Malformed tool input JSON.** The loop substitutes `{}` and dispatches anyway — schema validation in the registry produces the actual error message, which is the most useful signal to the model.
 

@@ -98,6 +98,10 @@ Wired via `AgentLoopConfig::post_edit_check_tool: Option<String>`. Default `None
 
 This is the agent-loop side of [[decisions/0008-spec-is-canonical]]: drift is detected mechanically, surfaced immediately, and the model is given a chance to resolve before the next user turn.
 
+## Re-entrancy on an existing conversation
+
+`run` takes `conv: &mut Conversation` and never reads index history; it only appends. So a caller may invoke `run` again on the *same* conversation with a *larger* `AgentLoopConfig::max_iterations` to **resume** a turn that previously exhausted its budget — no new user message is injected, and the provider sees the existing context ending in the most recent tool_result(s). The chat input panel uses this for its "Continue iterating" affordance (see [[components/gui/chat-input-panel]]): the prior turn's `TurnOutcome.hit_max_iterations` triggers the button, and clicking it re-enters `run` with `max_iterations + N`. The default budget is **30**.
+
 ## Cancellation
 
 Each loop runs on a tokio task spawned by `oxidant-core`. Cancellation: drop the task handle. Any in-flight tool call sees `ctx.is_cancelled()` and short-circuits.
