@@ -37,6 +37,15 @@ Rendered by setting `ViewportBuilder::with_title` and updating via `egui_ctx.sen
 - Window close on **sub**: end the session for that exploration; LSP and agent loop shut down. Worktree and transcript persist on disk.
 - Re-open a closed sub: from the exploration list ([[components/gui/exploration-list]]).
 
+## GPU load readout
+
+The top bar shows GPU utilisation + VRAM (e.g. `GPU 42% · 3.1/24.0 GB`) via a small `GpuMonitor`
+abstraction (`crates/oxidant-gui/src/gpu.rs`). The only backend today is **NVIDIA NVML**
+(`nvml-wrapper`), which loads the NVML library at runtime — so the readout is simply **absent** when
+NVML/NVIDIA isn't present (non-NVIDIA GPUs, no driver, CI). The abstraction (`GpuBackend` trait) is
+the seam for future vendor/OS backends (Windows PDH for any vendor, Linux AMD sysfs, macOS IOReport)
+without touching the call site. Sampled ~1 Hz.
+
 ## Resource budget
 
-Each open viewport draws an egui canvas at vsync. Repaint requests come from `ChatEvent` arrivals (see [[components/gui/transcript-tab]]); idle viewports do not redraw. 10 open viewports idle = negligible CPU.
+Each open viewport draws an egui canvas at vsync. Repaint requests come from `ChatEvent` arrivals (see [[components/gui/transcript-tab]]); idle viewports do not redraw — **except** when the GPU readout is active, which requests a repaint ~1×/sec to refresh the number (negligible). 10 open viewports idle = negligible CPU.

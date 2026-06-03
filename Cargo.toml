@@ -82,6 +82,7 @@ egui_dock      = "0.14"
 egui_commonmark = "0.18"
 syntect        = "5"
 similar        = "2"
+nvml-wrapper   = "0.12"
 
 # Misc
 clap           = { version = "4", features = ["derive"] }

@@ -17,6 +17,7 @@
 
 pub mod app;
 pub mod dock;
+pub mod gpu;
 pub mod graph_layout;
 pub mod highlighter;
 pub mod panels;

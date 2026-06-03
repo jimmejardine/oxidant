@@ -57,6 +57,9 @@ pub struct App {
     /// once here and threaded into each File tab so parse/image state
     /// survives across frames. See spec/components/gui/file-tabs.md.
     markdown_cache: egui_commonmark::CommonMarkCache,
+    /// GPU load readout for the top bar. Inert when no GPU backend is
+    /// available. See spec/components/gui/viewport.md "GPU load readout".
+    gpu: crate::gpu::GpuMonitor,
 }
 
 /// The mutable bits shared between the GUI thread and the agent task.
@@ -346,6 +349,7 @@ impl App {
             event_tx,
             active_theme,
             markdown_cache: egui_commonmark::CommonMarkCache::default(),
+            gpu: crate::gpu::GpuMonitor::new(),
         }
     }
 }
@@ -366,6 +370,14 @@ impl eframe::App for App {
             // Keep redrawing while a turn is in flight even between events,
             // so the spinner stays animated.
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
+        }
+
+        // Refresh the GPU readout (throttled internally to ~1 Hz) and
+        // keep the frame ticking so the number updates while idle —
+        // only when a GPU backend is actually present.
+        self.gpu.sample();
+        if self.gpu.is_active() {
+            ctx.request_repaint_after(std::time::Duration::from_secs(1));
         }
 
         // Top menu bar: title + Window menu + status + model.
@@ -389,6 +401,10 @@ impl eframe::App for App {
                         self.config.model,
                         self.config.workspace_root.display()
                     ));
+                    if let Some(gpu) = self.gpu.label() {
+                        ui.separator();
+                        ui.label(egui::RichText::new(gpu).color(crate::theme::muted_text()));
+                    }
                 });
             });
         });
