@@ -396,7 +396,7 @@ fn wire_file_actions(
 }
 
 /// A clickable ref row pointing at a spec that declares this file.
-/// Double-click opens the spec (sourced as Spec by `push_open`).
+/// Click previews; double-click opens the spec (sourced as Spec by `push_open`).
 fn ref_row_spec(
     ui: &mut egui::Ui,
     sr: &SpecRef,
@@ -420,7 +420,13 @@ fn ref_row_spec(
     let resp = ui
         .add(SelectableLabel::new(false, job))
         .on_hover_cursor(CursorIcon::PointingHand)
-        .on_hover_text(format!("{} — double-click to open", sr.canonical_id));
+        .on_hover_text(format!(
+            "{} — click to preview, double-click to open",
+            sr.canonical_id
+        ));
+    if resp.clicked() {
+        set_selected_preview(state, &sr.path);
+    }
     if resp.double_clicked() {
         push_open(state, &sr.path, workspace_root);
     }

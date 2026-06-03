@@ -255,7 +255,7 @@ fn render_leaf(
                     ref_row_spec(ui, node, *ek, workspace_root, state);
                 }
                 for code in code_files {
-                    ref_row_code(ui, code, state);
+                    ref_row_code(ui, code, workspace_root, state);
                 }
             });
 
@@ -344,15 +344,23 @@ fn ref_row_spec(
     let resp = ui
         .add(SelectableLabel::new(false, job))
         .on_hover_cursor(CursorIcon::PointingHand)
-        .on_hover_text(format!("{} — double-click to open", node.id));
+        .on_hover_text(format!("{} — click to preview, double-click to open", node.id));
+    if resp.clicked() {
+        set_selected_preview(state, &node.path);
+    }
     if resp.double_clicked() {
         push_open(state, &node.path, workspace_root);
     }
 }
 
 /// A clickable ref row pointing at a source file declared in the spec's
-/// `code:` frontmatter. Double-click opens that file as a code tab.
-fn ref_row_code(ui: &mut egui::Ui, code: &Path, state: &Arc<StdMutex<SharedState>>) {
+/// `code:` frontmatter. Click previews; double-click opens it as a code tab.
+fn ref_row_code(
+    ui: &mut egui::Ui,
+    code: &Path,
+    workspace_root: &Path,
+    state: &Arc<StdMutex<SharedState>>,
+) {
     let rel = code.to_string_lossy().replace('\\', "/");
     let name = code
         .file_name()
@@ -378,7 +386,10 @@ fn ref_row_code(ui: &mut egui::Ui, code: &Path, state: &Arc<StdMutex<SharedState
     let resp = ui
         .add(SelectableLabel::new(false, job))
         .on_hover_cursor(CursorIcon::PointingHand)
-        .on_hover_text(format!("{rel} — double-click to open"));
+        .on_hover_text(format!("{rel} — click to preview, double-click to open"));
+    if resp.clicked() {
+        set_selected_preview(state, &workspace_root.join(code));
+    }
     if resp.double_clicked() {
         push_open_code(state, code);
     }

@@ -63,7 +63,7 @@ Colours fall through `theme::muted_text()` and `theme::faint_text()` so they sta
 
 ## Refs in subtree
 
-A file leaf that is declared by one or more specs (via their `code:` frontmatter) expands to a **Refs in (N)** subtree listing those specs, each coloured by spec kind and double-click-to-open (as a Spec tab). This is the file-side mirror of the [[components/gui/spec-tree-panel]]'s Refs subtrees, restricted to spec associations — there is no source→source code graph here (that would need rust-analyzer; deferred). Files no spec declares stay plain rows with no expander.
+A file leaf that is declared by one or more specs (via their `code:` frontmatter) expands to a **Refs in (N)** subtree listing those specs, each coloured by spec kind, **single-click to preview** in the [[components/gui/dock-layout]] Selected tab and **double-click to open** (as a Spec tab). This is the file-side mirror of the [[components/gui/spec-tree-panel]]'s Refs subtrees, restricted to spec associations — there is no source→source code graph here (that would need rust-analyzer; deferred). Files no spec declares stay plain rows with no expander.
 
 The reverse map (workspace-relative code path → declaring specs) is built once from `walk_specs` and cached alongside the file tree; ⟳ rebuilds both.
 
