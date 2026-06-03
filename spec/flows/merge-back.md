@@ -46,17 +46,22 @@ git commit -m "<message>"               # squash needs an explicit commit
 ## Conflict handling
 
 If `git merge` exits non-zero with conflicts:
-1. A dedicated **conflict pane** opens in the parent's window listing conflicted files (from `git status --porcelain=v2`).
-2. For each conflict, the user can:
-   - Open the file (centre tab) and edit manually.
-   - Ask the agent to resolve via a structured prompt that includes both `<<<<<<<` regions plus surrounding context.
-   - Accept "ours" or "theirs".
-3. After resolution, `cargo_check` runs; the conflict pane updates with any new diagnostics.
-4. When the conflict pane reports zero conflicts and `cargo_check` is clean: `git commit` finalises the merge.
+
+1. `SharedState.merge_conflicts` populates with `{ sub_id, parent_id, target_branch, message, files: Vec<String>, resolved: HashSet<String> }`. The exploration-list panel pushes a `DockTab::MergeConflicts` into the centre area so the resolution panel opens automatically; see [[components/gui/merge-conflicts]].
+
+2. For each file the user picks one of two paths:
+   - **Open in editor** (default): the file opens in a centre tab via `pending_centre_tabs`. The file on disk already carries standard `<<<<<<<` / `=======` / `>>>>>>>` markers from git; the user edits them out in oxidant's editor and saves. "Mark resolved" runs `git add <file>`.
+   - **Open in mergetool**: spawns `git mergetool --no-prompt -- <file>` as a subprocess. The user's configured external tool launches (kdiff3, meld, VS Code, vimdiff — whatever `git config merge.tool` points at). When the tool exits cleanly, `git add` is implicit; the user clicks "Mark resolved" to confirm.
+
+3. Once every file in `files` is in `resolved`, the **Finalize merge commit** button enables. For squash merges this runs `git commit -m <message>`. For `--no-ff` merges that hit a conflict it runs `git commit` to finish the in-progress merge using the merge message git already prepared.
+
+4. **Abort merge** at any time runs `git merge --abort` for `--no-ff` paths, or `git reset --hard HEAD` for `--squash` paths (which doesn't set `MERGE_HEAD`). Either resets the parent's index to a clean state; the sub-exploration is left intact.
+
+**Why shell out to `git mergetool` instead of a Rust merge crate.** Git has already done the 3-way merge and inserted standard conflict markers — the work left is purely UX. `git mergetool` already brokers every mature external diff/merge tool via the user's existing `git config merge.tool`. Reimplementing that brokerage in Rust (gitoxide's `gix-merge`, the `merge3` crate, etc.) duplicates a battle-tested git feature and reads the user's tooling preference twice. Aligns with [[decisions/0006-shell-out-to-git-cli]].
 
 ## Post-merge
 
-- The sub-exploration's worktree is **not** automatically removed. User can discard separately via [[components/gui/exploration-list]] (which calls [[components/vcs/worktree-mgmt]]).
+- After a clean finalise (no conflicts, or conflicts resolved and committed): the exploration-list panel removes the sub from `SharedState.explorations`, runs `worktree::discard` on its path (+ deletes the branch via `Git::branch_delete`), and switches `active_id` back to the parent. Cleanup is automatic; the user doesn't need to discard separately.
 - The merge commit SHA + outcome are appended to both the sub and the main exploration's transcripts as system messages.
 
 ## Failure modes

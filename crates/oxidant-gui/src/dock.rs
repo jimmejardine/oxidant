@@ -37,6 +37,10 @@ pub enum DockTab {
     SpecGraph {
         seed: String,
     },
+    /// Centre tab that surfaces when a merge-back leaves conflicts.
+    /// Reads from `SharedState.merge_conflicts`; closes itself when
+    /// that field clears. See spec/components/gui/merge-conflicts.md.
+    MergeConflicts,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -75,6 +79,7 @@ impl DockTab {
                 let short = trimmed.rsplit('/').next().unwrap_or(trimmed);
                 format!("⊕ {short}")
             }
+            DockTab::MergeConflicts => "⚠ Merge Conflicts".into(),
         }
     }
 }

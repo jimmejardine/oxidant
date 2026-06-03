@@ -396,6 +396,56 @@ impl Git {
         self.run(&refs).await?;
         Ok(())
     }
+
+    /// Delete a local branch. `force = true` maps to `-D` so a
+    /// branch whose commits weren't reached from another head can
+    /// still be removed (typical post-squash state, since the sub's
+    /// commits are reachable only via the discarded branch). With
+    /// `force = false` git refuses to delete an "unmerged" branch.
+    pub async fn branch_delete(&self, branch: &str, force: bool) -> Result<(), GitError> {
+        validate_branch_name(branch)?;
+        let flag = if force { "-D" } else { "-d" };
+        self.run(&["branch", flag, branch]).await?;
+        Ok(())
+    }
+
+    // ----- staging -----
+
+    /// Stage one or more paths via `git add`. Paths are passed
+    /// through unmodified after a `--` separator so leading dashes
+    /// don't get parsed as flags. Used by the merge-conflicts panel
+    /// to mark a resolved file.
+    pub async fn add(&self, paths: &[&str]) -> Result<(), GitError> {
+        let mut args: Vec<&str> = vec!["add", "--"];
+        args.extend(paths.iter().copied());
+        self.run(&args).await?;
+        Ok(())
+    }
+
+    /// `git commit -m <message>`. No paths — commits whatever is
+    /// already staged. Used to finalise a `--squash` merge after
+    /// the conflicts panel has marked all files resolved (which
+    /// `git add`-ed them).
+    pub async fn commit_message_only(&self, message: &str) -> Result<String, GitError> {
+        self.run(&["commit", "-m", message]).await?;
+        Ok(self.run(&["rev-parse", "HEAD"]).await?.trim().to_string())
+    }
+
+    /// `git merge --abort`. Use after a non-squash merge that hit
+    /// conflicts; for squash merges use `git reset --hard HEAD` —
+    /// `--squash` does not set MERGE_HEAD so `--abort` errors out.
+    pub async fn merge_abort(&self) -> Result<(), GitError> {
+        self.run(&["merge", "--abort"]).await?;
+        Ok(())
+    }
+
+    /// `git reset --hard HEAD`. Used to abort a half-finished
+    /// `--squash` merge, since `git merge --abort` doesn't apply
+    /// (no MERGE_HEAD was set).
+    pub async fn reset_hard_head(&self) -> Result<(), GitError> {
+        self.run(&["reset", "--hard", "HEAD"]).await?;
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------- errors

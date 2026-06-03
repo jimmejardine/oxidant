@@ -16,7 +16,8 @@ use tokio::runtime::Handle;
 use oxidant_core::{Exploration, ExplorationId, ExplorationKind};
 use oxidant_vcs::{MergeBackOpts, SpawnOpts, WorktreeHandle, worktree};
 
-use crate::app::SharedState;
+use crate::app::{MergeConflictsState, SharedState};
+use crate::dock::DockTab;
 use crate::theme;
 
 pub struct ExplorationListPanel {
@@ -324,15 +325,37 @@ fn merge_back_squash(
             }
         };
         if !outcome.conflicts.is_empty() {
-            // Phase 3 will turn this into a resolution panel. For
-            // MVP, just surface the count + names; the worktree is
-            // left in its half-merged state for the user to either
-            // resolve by hand or run `git reset --hard HEAD` in.
+            // Populate MergeConflictsState so the merge-conflicts
+            // panel can drive resolution. Push a centre-tab open so
+            // it surfaces immediately. See
+            // spec/components/gui/merge-conflicts.md.
             let n = outcome.conflicts.len();
-            let listed = outcome.conflicts.join(", ");
+            {
+                let mut s = state.lock().unwrap();
+                s.merge_conflicts = Some(MergeConflictsState {
+                    sub_id,
+                    parent_id,
+                    target_branch: parent_branch.clone(),
+                    parent_worktree: parent_worktree.clone(),
+                    sub_branch: sub_handle.branch.clone(),
+                    sub_worktree: sub_handle.path.clone(),
+                    squash: true,
+                    message: format!(
+                        "Merge exploration {}: branch {}",
+                        sub_handle
+                            .path
+                            .file_name()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_default(),
+                        sub_handle.branch
+                    ),
+                    files: outcome.conflicts.clone(),
+                    resolved: std::collections::HashSet::new(),
+                });
+                s.pending_centre_tabs.push(DockTab::MergeConflicts);
+            }
             *status.lock().unwrap() = Some(format!(
-                "merge produced {n} conflict(s): {listed} — resolve in the parent worktree, \
-                 then `git commit` to finalise. (Conflict UX lands in Phase 3.)"
+                "merge produced {n} conflict(s) — see the Merge Conflicts tab to resolve."
             ));
             egui_ctx.request_repaint();
             return;

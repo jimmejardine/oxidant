@@ -22,8 +22,9 @@ use crate::dock::{
 use crate::panels::{
     chat_input::ChatInputPanel, diff_history::DiffHistoryPanel,
     exploration_list::ExplorationListPanel, file_tab::FileTabPanel, file_tree::FileTreePanel,
-    health_check::HealthCheckPanel, settings::SettingsPanel, spec_graph::SpecGraphPanel,
-    spec_tree::SpecTreePanel, transcript::TranscriptPanel,
+    health_check::HealthCheckPanel, merge_conflicts::MergeConflictsPanel,
+    settings::SettingsPanel, spec_graph::SpecGraphPanel, spec_tree::SpecTreePanel,
+    transcript::TranscriptPanel,
 };
 use crate::theme::Theme;
 use crate::viewport::ViewportConfig;
@@ -45,6 +46,7 @@ pub struct App {
     health_panel: HealthCheckPanel,
     settings_panel: SettingsPanel,
     exploration_list_panel: ExplorationListPanel,
+    merge_conflicts_panel: MergeConflictsPanel,
     /// One DiffHistory panel per open path. Lazily inserted when the tab
     /// first paints; entries leak across tab close in MVP (cheap state,
     /// at most a handful per session). See
@@ -114,6 +116,29 @@ pub struct SharedState {
     /// single-click in the spec/file tree; rendered by the Selected tab.
     /// See spec/components/gui/dock-layout.md "Selected preview tab".
     pub selected_preview: Option<SelectedPreview>,
+    /// Conflict-resolution state populated when a merge-back returns
+    /// conflicts; consumed by the MergeConflicts panel. None means
+    /// no merge is in progress. See spec/components/gui/merge-conflicts.md.
+    pub merge_conflicts: Option<MergeConflictsState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct MergeConflictsState {
+    pub sub_id: ExplorationId,
+    pub parent_id: ExplorationId,
+    pub target_branch: String,
+    /// The parent's worktree path — where the in-progress merge lives.
+    pub parent_worktree: PathBuf,
+    pub sub_branch: String,
+    pub sub_worktree: PathBuf,
+    /// True if the merge was started with `--squash`. Drives the
+    /// finalise call: squash needs `git commit -m <message>`; the
+    /// non-squash path (`--no-ff` with conflicts) just runs
+    /// `git commit` with git's prepared merge message.
+    pub squash: bool,
+    pub message: String,
+    pub files: Vec<String>,
+    pub resolved: std::collections::HashSet<String>,
 }
 
 impl SharedState {
@@ -358,6 +383,7 @@ impl App {
             pending_continue: None,
             editor_buffers: HashMap::new(),
             selected_preview: None,
+            merge_conflicts: None,
         }));
         let (event_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
 
@@ -373,6 +399,7 @@ impl App {
             health_panel: HealthCheckPanel::new(),
             settings_panel,
             exploration_list_panel: ExplorationListPanel::new(),
+            merge_conflicts_panel: MergeConflictsPanel::new(),
             diff_history_panels: HashMap::new(),
             config,
             dock: default_layout(),
@@ -451,6 +478,7 @@ impl eframe::App for App {
             health_panel: &mut self.health_panel,
             settings_panel: &mut self.settings_panel,
             exploration_list_panel: &mut self.exploration_list_panel,
+            merge_conflicts_panel: &mut self.merge_conflicts_panel,
             diff_history_panels: &mut self.diff_history_panels,
             settings: self.config.settings.clone(),
             active_theme: &mut self.active_theme,
@@ -535,6 +563,7 @@ pub(crate) struct TabViewer<'a> {
     pub health_panel: &'a mut HealthCheckPanel,
     pub settings_panel: &'a mut SettingsPanel,
     pub exploration_list_panel: &'a mut ExplorationListPanel,
+    pub merge_conflicts_panel: &'a mut MergeConflictsPanel,
     pub diff_history_panels: &'a mut HashMap<PathBuf, DiffHistoryPanel>,
     pub settings: Arc<StdMutex<oxidant_config::Settings>>,
     pub active_theme: &'a mut Theme,
@@ -600,6 +629,14 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                     ui,
                     &self.state,
                     &self.workspace_root,
+                    &self.tokio_handle,
+                    &self.egui_ctx,
+                );
+            }
+            DockTab::MergeConflicts => {
+                self.merge_conflicts_panel.render(
+                    ui,
+                    &self.state,
                     &self.tokio_handle,
                     &self.egui_ctx,
                 );
