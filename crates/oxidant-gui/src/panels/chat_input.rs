@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
-use egui::{Color32, EventFilter, Key, Modifiers, RichText, TextEdit};
+use egui::{Color32, Key, Modifiers, RichText, TextEdit};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
@@ -117,31 +117,12 @@ impl ChatInputPanel {
         ui.add_space(2.0);
         let id = ui.make_persistent_id("oxidant-chat-input");
 
-        // Suppress egui's automatic Tab focus navigation while the chat
-        // input has focus. egui's Focus::begin_pass scans the raw input
-        // for Tab keypresses at the START of every frame and sets
-        // focus_direction; consume_key later in the frame is too late
-        // to undo that — focus moves regardless. The event-filter
-        // escape hatch (egui-0.29 memory/mod.rs:556-588) makes
-        // begin_pass skip focus_direction for keys we mark as "the
-        // widget wants this". `set_focus_lock_filter` is a no-op
-        // unless our id has focus, so it's safe to call every frame.
-        ui.memory_mut(|m| {
-            m.set_focus_lock_filter(
-                id,
-                EventFilter {
-                    tab: true,
-                    ..Default::default()
-                },
-            );
-        });
-
-        // With focus navigation suppressed, the Shift+Tab event stays
-        // in the InputState events queue. Consume it here to flip the
-        // mode. Plain Tab (no Shift) lands in the queue too but the
-        // TextEdit's default `lock_focus=false` means it's ignored —
-        // net effect is a no-op while focused, which is fine for a
-        // chat textbox.
+        // Consume Shift+Tab BEFORE the TextEdit renders so we can flip
+        // the mode without it reaching the widget's event loop. With
+        // .lock_focus(true) below, the TextEdit would otherwise see
+        // Shift+Tab and outdent (decrease_indentation); pulling the
+        // event from the queue first means our consume_key fires and
+        // the TextEdit's filtered_events returns nothing for Shift+Tab.
         let chat_input_focused = ui.memory(|m| m.has_focus(id));
         if chat_input_focused
             && !streaming
@@ -156,11 +137,22 @@ impl ChatInputPanel {
         } else {
             self.mode_hint()
         };
+        // .lock_focus(true) is what actually suppresses egui's Tab
+        // focus-traversal — it's the only way to set the EventFilter
+        // at the right point in the frame (the TextEdit's interaction
+        // phase). egui's Focus::begin_pass scans the raw input for Tab
+        // BEFORE widgets render, so a manual set_focus_lock_filter
+        // call earlier in render() is a no-op (precondition
+        // `had_focus_last_frame && has_focus` fails for our id before
+        // the widget has registered focus). Side-effect: plain Tab now
+        // inserts a literal '\t' inside the chat input — useful for
+        // pasted snippets, harmless otherwise.
         let _edit_response = ui.add_sized(
             [ui.available_width(), ui.available_height().max(60.0)],
             TextEdit::multiline(&mut self.draft)
                 .id(id)
                 .desired_rows(4)
+                .lock_focus(true)
                 .hint_text(hint),
         );
     }
