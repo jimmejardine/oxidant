@@ -8,11 +8,12 @@ depends_on:
   - components/rust-tools/cargo-runner
   - components/spec-tools/validate
   - components/spec-tools/diff
+  - health-check-panel-ui
+  - health-check-panel-runner
 code:
   - crates/oxidant-gui/src/panels/health_check.rs
 status: active
-responsibility: |
-  Right-docked tree panel showing the workspace's CI-equivalent state — every check the project gates on, surfaced as a root node with a green ✔ if clean or a red ✗ with an auto-expanded subtree of issues. Replaces the earlier single-check Diagnostics panel.
+responsibility: "Right-docked tree panel showing the workspace's CI-equivalent state — every check the project gates on, surfaced as a root node with a green ✔ if clean or a red ✗ with an auto-expanded subtree of issues. Replaces the earlier single-check Diagnostics panel."
 ---
 
 ## Checks
@@ -42,9 +43,9 @@ pub struct CheckState {
     pub status: CheckStatus,
     pub issues: Vec<HealthIssue>,
     pub finished_in_ms: u64,
-    /// True once the user has manually toggled this root's collapsed
-    /// state. Suppresses auto-expand on the NEXT red transition so the
-    /// user's collapse decision sticks.
+    /// True once the user has manually toggled this root's collapsed state.
+    /// Suppresses auto-expand on the NEXT red transition so the user's collapse
+    /// decision sticks.
     pub user_toggled: bool,
 }
 
@@ -53,8 +54,8 @@ pub enum CheckStatus { Idle, Running, Done, Failed(String) }
 pub struct HealthIssue {
     pub check: CheckKind,
     pub severity: IssueSeverity,
-    /// First non-empty piece of context: a file path, a spec id, a
-    /// test name. Drives subtree grouping.
+    /// First non-empty piece of context: a file path, a spec id, a test name.
+    /// Drives subtree grouping.
     pub group_key: String,
     pub message: String,
     /// Optional file location for click-to-open.
@@ -66,90 +67,12 @@ pub struct HealthIssue {
 pub enum IssueSeverity { Error, Warning, Note }
 ```
 
-## Run-all
+## Decomposition
 
-The Refresh button becomes **Run all**. On click:
+The panel is split into three specs:
 
-1. Snapshot the `ToolRegistry`, `workspace_root`, `exploration_id` from `SharedState`.
-2. For each `CheckKind`, set `status = Running` and `tokio::spawn` a task that calls `registry.invoke(tool_name, json!({}), &ctx)`, parses the result, and writes back into `health.checks[kind]` with the parsed issues and `status = Done` (or `Failed(msg)` on tool error).
-3. Each task is independent — they run in parallel. Each calls `egui_ctx.request_repaint()` when done so the panel updates live.
-4. `last_run_at = Some(Instant::now())` is set at the start of the spawn so the header can render elapsed.
-
-Run-all is disabled while any check is `Running`.
-
-## Per-row run
-
-Each root carries a leading `▶` button (immediately to the left of the status glyph) that kicks off only that check. While the check is `Running` the button switches to a disabled `⟳` so the user can't double-fire. The dispatch helper is shared with Run-all: a private `spawn_check(state, tokio_handle, workspace_root, egui_ctx, kind)` marks the single `checks[kind]` entry as `Running`, then spawns the same `invoke → parse → write-back → request_repaint` future Run-all uses. Run-all loops over `ALL_CHECKS` calling `spawn_check`.
-
-`last_run_at` (the "last run Xs ago" header) only updates on Run-all — it refers to the most recent *batch* run. Per-row runs don't touch it.
-
-## UI — tree
-
-Header row (right-aligned action):
-```
-health check · 4 errors · 12 warnings · last run 14s ago    [Run all]
-```
-
-Body is a list of `egui::CollapsingHeader` roots, one per `CheckKind`. The header glyph is the only visual the user needs to scan:
-
-| Glyph    | Condition                                       | Default open? |
-|----------|-------------------------------------------------|----------------|
-| ✔ green  | `Done` AND `issues.is_empty()`                  | collapsed       |
-| ✗ red    | `Done` AND has issues, OR `Failed(_)`           | auto-expand on first red transition (unless `user_toggled`) |
-| ⟳ spinner| `Running`                                        | collapsed       |
-| · grey   | `Idle` (initial)                                 | collapsed       |
-
-Root header text:
-```
-✗ clippy · 3 errors, 12 warnings (1.4s)
-✔ cargo check · clean (0.8s)
-⟳ tests · running…
-✗ spec diff · 1 finding (0.2s)
-```
-
-### Subtree per check
-
-Each red root expands into a check-specific subtree. Grouping is keyed on `HealthIssue.group_key`, picked at parse time to be the most useful first axis for that check:
-
-- **CargoCheck / Clippy** — `group_key = file_path`. Issues under each file row sort errors before warnings, then by line. File rows with at least one error auto-expand; warnings-only file rows stay collapsed.
-- **Tests** — `group_key = test_binary` (cargo target). Leaves are failing test names with the panic site as `file:line`.
-- **SpecValidate** — `group_key = WarningKind`. Letting the user fix a whole class at once is more useful than per-spec grouping.
-- **SpecDiff** — `group_key = Drift::kind` discriminant (one of the four variants). One leaf per finding.
-
-Each leaf row shows `[severity] <message>` with the optional `file:line:character` rendered in muted text.
-
-### Row interactions
-
-Every row in the tree (root, group header, leaf) shows a `CursorIcon::PointingHand` on hover. Leaf rows carry two distinct actions:
-
-- **Single-click** opens the issue's file in a centre tab (via `pending_centre_tabs` — same flow the trees use). No-op when `issue.file` is `None` (e.g. a `SpecValidate::Orphan` warning without a source location).
-- **Double-click** auto-fills the chat input with a structured "address this" prompt and switches the chat to `AgentMode::Plan`. The user reviews and presses Ctrl+Enter to send. The auto-fill flows through `SharedState::pending_chat_prompt`; see [[components/gui/chat-input-panel]].
-
-The prompt template (rendered by `build_issue_prompt`):
-
-```
-Help me address this Health Check issue. Investigate first, then describe (don't make) the fix you'd apply.
-
-Check:    clippy
-Severity: warning
-File:     crates/oxidant-gui/src/panels/spec_graph.rs:765:13
-Group:    src/foo.rs
-Message:  unused variable `near`
-```
-
-Fields are omitted when empty: `File:` is dropped when `issue.file` is `None`; `Group:` is dropped when `group_key` equals the file path (it would duplicate the `File:` line).
-
-Forcing Plan mode is deliberate — double-clicking an issue is a "help me think" gesture. If the user wants the agent to immediately fix it, they flip to Implement after reading the proposal.
-
-Leaf rows are rendered as a single `egui::SelectableLabel` over a multi-segment `egui::text::LayoutJob` (severity tag in the severity colour, message in default text, location suffix in muted), matching the pattern in [[components/gui/spec-tree-panel]] and [[components/gui/file-tree-panel]]. This is what makes the pointer cursor land on the actual text rather than only on the inter-label gaps a `ui.horizontal(|ui| { ui.label(...); ui.label(...); })` layout would produce — separate `Label` widgets each consume the hover for their own rect and the outer horizontal-row response no longer reads as hovered over the text.
-
-### Failure isolation
-
-If a check's tool returns `ToolResult::Err` or the spawned task panics, the root renders `✗ {kind} · failed: {message}` and does NOT auto-expand any subtree. The other roots are unaffected — one broken checker does not poison Run-all.
-
-### Auto-expand bookkeeping
-
-Auto-expand fires **only on the transition** from non-red to red AND when `user_toggled == false`. Tracked per-`CheckState`. Once the user explicitly collapses a red root, `user_toggled = true` and the panel respects that across subsequent Run-all cycles. No flapping.
+- **health-check-panel-ui** — UI rendering: glyphs per check, collapsible tree structure, subtree grouping, row interactions, failure isolation, auto-expand bookkeeping, and leaf-row rendering.
+- **health-check-panel-runner** — run execution: Run-all flow, per-row run dispatch (`spawn_check`), `last_run_at` semantics, disabled-while-running state.
 
 ## Out of scope for v1
 
