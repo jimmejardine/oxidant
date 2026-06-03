@@ -5,6 +5,7 @@
 //   spec/components/core/conversation.md
 //   spec/components/core/exploration.md
 //   spec/components/core/tool-registry.md
+//   spec/components/core/text-tool-call-extraction.md
 //   spec/contracts/tool.md
 
 pub mod agent_loop;
@@ -12,6 +13,7 @@ pub mod conversation;
 pub mod exploration;
 pub mod message;
 pub mod registry;
+pub mod text_tool_calls;
 
 pub use agent_loop::{AgentLoopConfig, AgentLoopOutcome, build_request, run};
 pub use conversation::Conversation;

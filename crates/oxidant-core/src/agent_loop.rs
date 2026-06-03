@@ -21,6 +21,7 @@ use oxidant_providers::{
 use crate::conversation::Conversation;
 use crate::message::{ContentBlock, ImageSource, Message, ToolResultContent};
 use crate::registry::{ToolCategory, ToolContext, ToolRegistry, ToolResult};
+use crate::text_tool_calls::{self, ExtractedToolCall};
 
 #[derive(Debug, Clone)]
 pub struct AgentLoopConfig {
@@ -142,6 +143,16 @@ where
         outcome.total_usage.cache_creation_input_tokens += acc.usage.cache_creation_input_tokens;
         outcome.total_usage.cache_read_input_tokens += acc.usage.cache_read_input_tokens;
 
+        // If the provider didn't emit any native tool-use events, the
+        // model may have written the call as literal text — common with
+        // Qwen / Hermes / smolagents running on textgen-webui. Recover
+        // those into the same PendingToolCall structure the streaming
+        // path produces, so the existing dispatch logic just works.
+        // See spec/components/core/text-tool-call-extraction.md.
+        if acc.order.is_empty() && text_tool_calls::looks_like_text_tool_call(&acc.text) {
+            absorb_text_tool_calls(&mut acc);
+        }
+
         let assistant_content = build_assistant_blocks(&acc);
         let has_tool_calls = !acc.order.is_empty();
         conv.push_assistant(assistant_content, acc.stop_reason, Some(acc.usage));
@@ -207,6 +218,34 @@ struct TurnAccumulator {
 struct PendingToolCall {
     name: String,
     input_buffer: String,
+}
+
+/// Scan `acc.text` for text-style tool-call envelopes, replace each
+/// recognised envelope with a synthesised `PendingToolCall`, and strip
+/// the envelope text so it doesn't leak into the transcript. Per the
+/// spec, parse failures leave the offending block in the text rather
+/// than dropping it silently.
+fn absorb_text_tool_calls(acc: &mut TurnAccumulator) {
+    let result = text_tool_calls::extract(&acc.text);
+    if result.calls.is_empty() {
+        return;
+    }
+    acc.text = result.stripped_text;
+    for (i, ExtractedToolCall { name, arguments_json }) in result.calls.into_iter().enumerate() {
+        let id = format!("text_extracted_{i}");
+        acc.order.push(id.clone());
+        acc.tool_calls.insert(
+            id,
+            PendingToolCall {
+                name,
+                input_buffer: arguments_json,
+            },
+        );
+    }
+    tracing::debug!(
+        "text_tool_calls: absorbed {} call(s) from assistant text",
+        acc.order.len()
+    );
 }
 
 fn tool_is_mutating(registry: &ToolRegistry, name: &str) -> bool {
