@@ -32,7 +32,7 @@ The drift detector for spec hygiene. Warnings, never errors — even severe issu
 | unresolved_ref | A `[[ref]]` (frontmatter or body) doesn't resolve to an existing spec. |
 | short_form_ambiguous | A short-form `[[name]]` matches multiple canonical refs. |
 | orphan | A non-`overview` spec has zero inbound edges. |
-| cycle | The graph contains a cycle in `parent` or `depends_on`. |
+| cycle | The graph contains a cycle in `parent` or `depends_on`. The message lists the participating specs as a path (e.g. `components/a → components/b → components/c → components/a`) so the agent can immediately fix the offending edge without grepping. One warning is emitted per disjoint cycle. |
 | length_budget_exceeded | Spec body exceeds the per-kind budget. |
 | missing_code_path | A `code:` entry refers to a file that doesn't exist. |
 | orphan_test | A `#[test]` exists in code but no spec's `tests:` claims it (directly or via whole-file shorthand). See [[decisions/0011-specs-claim-their-tests]]. |

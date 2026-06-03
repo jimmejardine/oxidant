@@ -295,11 +295,15 @@ fn check_one_ref(
 }
 
 fn check_cycles_in_deps(graph: &SpecGraph, warnings: &mut Vec<Warning>) {
-    if graph.topo_sort_by_deps().is_empty() && graph.nodes().next().is_some() {
+    // One warning per disjoint cycle, with the participating specs
+    // listed in path form so the message is immediately actionable.
+    // See spec/components/spec-tools/validate.md "cycle".
+    for cycle in graph.dep_cycles() {
+        let path = cycle.join(" → ");
         warnings.push(Warning {
             spec_id: None,
             kind: WarningKind::Cycle,
-            message: "dependency cycle detected in depends_on edges".to_string(),
+            message: format!("dependency cycle in depends_on: {path}"),
             location: None,
         });
     }

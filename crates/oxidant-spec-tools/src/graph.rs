@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
 use petgraph::Direction;
-use petgraph::algo::{astar, toposort};
+use petgraph::algo::{astar, tarjan_scc, toposort};
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::frontmatter::{SpecFile, SpecKind, SpecStatus};
@@ -164,6 +164,43 @@ impl SpecGraph {
         }
     }
 
+    /// Return every cycle present in the `DependsOn` subgraph, each as an
+    /// ordered list of node ids that walks the cycle's edges
+    /// `a → b → c → a` (the last id duplicates the first so the rendered
+    /// string closes unambiguously). Empty when the graph is acyclic.
+    /// Outer order is sorted by the starting id of each cycle so the
+    /// validator's output is stable across runs. See
+    /// spec/components/spec-tools/validate.md "cycle" check.
+    pub fn dep_cycles(&self) -> Vec<Vec<String>> {
+        // Build the depends-on-only subgraph, same trick as topo_sort_by_deps.
+        let deps_only = self.inner.filter_map(
+            |_, node| Some(node.clone()),
+            |_, edge| {
+                if *edge == EdgeKind::DependsOn {
+                    Some(*edge)
+                } else {
+                    None
+                }
+            },
+        );
+
+        let mut cycles: Vec<Vec<String>> = Vec::new();
+        for scc in tarjan_scc(&deps_only) {
+            // tarjan_scc returns singletons too; a singleton is a real cycle
+            // only when there's a self-loop edge.
+            let is_cycle = scc.len() > 1 || {
+                let i = scc[0];
+                deps_only.find_edge(i, i).is_some()
+            };
+            if !is_cycle {
+                continue;
+            }
+            cycles.push(cycle_path(&deps_only, &scc));
+        }
+        cycles.sort_by(|a, b| a.first().cmp(&b.first()));
+        cycles
+    }
+
     /// Nodes not reachable from `root` along any edge kind (unbounded depth).
     pub fn unreachable_from(&self, root: &str) -> Vec<&Node> {
         let reached: HashSet<NodeIndex> = self
@@ -236,6 +273,67 @@ impl SpecGraph {
             out.push((&self.inner[other], *edge.weight()));
         }
         out
+    }
+}
+
+/// Reconstruct a cycle's traversal order from a strongly-connected
+/// component. Starts on the lexicographically smallest id (deterministic),
+/// then follows outbound `DependsOn` edges within the SCC until it
+/// closes back on the start. The returned vec ends with the start id
+/// duplicated so renderings like `a → b → c → a` are unambiguous. Falls
+/// back to alphabetical SCC members if the walk gets stuck — defensive,
+/// shouldn't fire for a genuine SCC.
+fn cycle_path(graph: &DiGraph<Node, EdgeKind>, scc: &[NodeIndex]) -> Vec<String> {
+    let in_scc: HashSet<NodeIndex> = scc.iter().copied().collect();
+
+    // Pick the start as the node with the smallest id.
+    let start = *scc
+        .iter()
+        .min_by(|&&a, &&b| graph[a].id.cmp(&graph[b].id))
+        .expect("scc is non-empty");
+    let start_id = graph[start].id.clone();
+
+    let mut path: Vec<String> = vec![start_id.clone()];
+    let mut visited: HashSet<NodeIndex> = HashSet::new();
+    visited.insert(start);
+    let mut cursor = start;
+
+    loop {
+        // Pick any outbound DependsOn edge to a node in the SCC that
+        // closes the cycle, or to a new unvisited node we can continue
+        // through. Prefer the closing edge so we don't over-walk on a
+        // bigger SCC that contains nested loops.
+        let mut chosen: Option<NodeIndex> = None;
+        for nbr in graph.neighbors(cursor) {
+            if !in_scc.contains(&nbr) {
+                continue;
+            }
+            if nbr == start && path.len() > 1 {
+                chosen = Some(nbr);
+                break;
+            }
+            if !visited.contains(&nbr) && chosen.is_none() {
+                chosen = Some(nbr);
+            }
+        }
+        let next = match chosen {
+            Some(n) => n,
+            None => {
+                // Walk got stuck — fall back to a sorted member list so
+                // we never silently drop a detected cycle.
+                let mut members: Vec<String> = scc.iter().map(|&i| graph[i].id.clone()).collect();
+                members.sort();
+                members.push(members[0].clone());
+                return members;
+            }
+        };
+        if next == start {
+            path.push(start_id);
+            return path;
+        }
+        path.push(graph[next].id.clone());
+        visited.insert(next);
+        cursor = next;
     }
 }
 
@@ -418,6 +516,40 @@ mod tests {
             .map(|n| n.id.clone())
             .collect();
         assert_eq!(unreachable, vec!["components/orphan".to_string()]);
+    }
+
+    #[test]
+    fn dep_cycles_returns_path_for_simple_three_cycle() {
+        // a depends_on b, b depends_on c, c depends_on a.
+        let inputs = vec![
+            input("a", make_file("a", SpecKind::Component, None, &["b"], &[])),
+            input("b", make_file("b", SpecKind::Component, None, &["c"], &[])),
+            input("c", make_file("c", SpecKind::Component, None, &["a"], &[])),
+        ];
+        let g = SpecGraph::build(&inputs);
+        let cycles = g.dep_cycles();
+        assert_eq!(cycles.len(), 1, "expected one cycle, got {cycles:?}");
+        let path = &cycles[0];
+        // Starts on smallest id and closes back on itself.
+        assert_eq!(path.first().map(String::as_str), Some("a"));
+        assert_eq!(path.last().map(String::as_str), Some("a"));
+        // All three participants appear; the closing duplicate makes len 4.
+        assert_eq!(path.len(), 4);
+        let unique: HashSet<&str> = path.iter().map(String::as_str).collect();
+        assert!(unique.contains("a") && unique.contains("b") && unique.contains("c"));
+    }
+
+    #[test]
+    fn dep_cycles_returns_empty_for_acyclic_graph() {
+        // Same shape as reachable_within_respects_depth: a→b→c→d, no cycle.
+        let inputs = vec![
+            input("a", make_file("a", SpecKind::Overview, None, &["b"], &[])),
+            input("b", make_file("b", SpecKind::Component, None, &["c"], &[])),
+            input("c", make_file("c", SpecKind::Component, None, &["d"], &[])),
+            input("d", make_file("d", SpecKind::Component, None, &[], &[])),
+        ];
+        let g = SpecGraph::build(&inputs);
+        assert!(g.dep_cycles().is_empty());
     }
 
     #[test]
