@@ -183,26 +183,9 @@ fn render_editor(
                 CommonMarkViewer::new().show(ui, markdown_cache, &buf.text);
             });
     } else {
-        // Editor body with syntect-driven syntax highlighting through the
-        // TextEdit `layouter` callback.
+        // Editable source view: syntect highlighting + a line-number gutter.
         let text_before = buf.text.clone();
-        let path_for_layout = absolute.to_path_buf();
-        let font_id = FontId::monospace(13.0);
-        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-            let job = highlighter::highlight(&path_for_layout, text, font_id.clone(), wrap_width);
-            ui.fonts(|f| f.layout_job(job))
-        };
-        egui::ScrollArea::both()
-            .auto_shrink([false; 2])
-            .show(ui, |ui| {
-                ui.add_sized(
-                    [ui.available_width(), ui.available_height().max(120.0)],
-                    egui::TextEdit::multiline(&mut buf.text)
-                        .code_editor()
-                        .desired_rows(20)
-                        .layouter(&mut layouter),
-                );
-            });
+        render_code_with_gutter(ui, absolute, &mut buf.text, true);
         if buf.text != text_before {
             buf.dirty = true;
         }
@@ -305,36 +288,94 @@ pub fn render_selected(
                 CommonMarkViewer::new().show(ui, markdown_cache, &preview.text);
             });
     } else {
-        // Read-only highlighted view: a non-interactive TextEdit reusing
-        // the same syntect layouter as the editor.
-        let path_for_layout = preview.path.clone();
-        let font_id = FontId::monospace(13.0);
-        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-            let job = highlighter::highlight(&path_for_layout, text, font_id.clone(), wrap_width);
-            ui.fonts(|f| f.layout_job(job))
-        };
-        // TextEdit needs a &mut str-backed buffer even when read-only;
-        // clone into a throwaway the widget can't actually mutate.
+        // Read-only highlighted view with a line-number gutter. TextEdit
+        // needs a &mut buffer even when non-interactive; feed it a
+        // throwaway clone the widget can't actually mutate.
         let mut text = preview.text.clone();
-        egui::ScrollArea::both()
-            .auto_shrink([false; 2])
-            .show(ui, |ui| {
-                ui.add_sized(
-                    [ui.available_width(), ui.available_height().max(120.0)],
-                    egui::TextEdit::multiline(&mut text)
+        render_code_with_gutter(ui, &preview.path, &mut text, false);
+    }
+}
+
+/// Right-aligned line numbers `"1\n2\n…\nN"` for the gutter. Pure so it
+/// can be unit-tested without a UI.
+fn gutter_text(line_count: usize) -> String {
+    use std::fmt::Write;
+    let width = line_count.to_string().len();
+    let mut s = String::with_capacity(line_count * (width + 1));
+    for n in 1..=line_count {
+        if n > 1 {
+            s.push('\n');
+        }
+        let _ = write!(s, "{n:>width$}");
+    }
+    s
+}
+
+/// Render `text` as a no-wrap, syntect-highlighted code view with a
+/// line-number gutter on the left. `interactive` toggles editability.
+/// No-wrap (the layouter is called with `f32::INFINITY`) keeps every
+/// logical line one visual row so the gutter stays aligned 1:1.
+///
+/// Known limitation: with `ScrollArea::both`, scrolling far right also
+/// scrolls the gutter off — it isn't horizontally pinned. Pinning needs
+/// linked scroll offsets; deferred.
+fn render_code_with_gutter(ui: &mut egui::Ui, path: &Path, text: &mut String, interactive: bool) {
+    let font_id = FontId::monospace(13.0);
+    let path_for_layout = path.to_path_buf();
+    let mut layouter = |ui: &egui::Ui, t: &str, _wrap_width: f32| {
+        // Force no-wrap so visual rows == logical lines (gutter alignment).
+        let job = highlighter::highlight(&path_for_layout, t, font_id.clone(), f32::INFINITY);
+        ui.fonts(|f| f.layout_job(job))
+    };
+    // `'\n' count + 1` matches what the editor shows, including the empty
+    // line a trailing newline produces.
+    let line_count = text.bytes().filter(|&b| b == b'\n').count() + 1;
+
+    egui::ScrollArea::both()
+        .auto_shrink([false; 2])
+        .show(ui, |ui| {
+            ui.horizontal_top(|ui| {
+                // Gutter: same monospace size as the code → equal row
+                // height; `frame(false)` on the editor drops its inset so
+                // the first number lines up with the first code row.
+                ui.add(
+                    egui::Label::new(
+                        RichText::new(gutter_text(line_count))
+                            .font(FontId::monospace(13.0))
+                            .color(theme::faint_text()),
+                    )
+                    .wrap_mode(egui::TextWrapMode::Extend),
+                );
+                ui.add(
+                    egui::TextEdit::multiline(text)
                         .code_editor()
-                        .interactive(false)
+                        .interactive(interactive)
+                        .frame(false)
                         .desired_rows(20)
                         .layouter(&mut layouter),
                 );
             });
-    }
+        });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_markdown;
+    use super::{gutter_text, is_markdown};
     use std::path::Path;
+
+    #[test]
+    fn gutter_text_single_digit_unpadded() {
+        assert_eq!(gutter_text(3), "1\n2\n3");
+        assert_eq!(gutter_text(1), "1");
+    }
+
+    #[test]
+    fn gutter_text_right_aligns_to_widest_number() {
+        // 10 lines → width 2; single digits get a leading space.
+        let g = gutter_text(10);
+        assert!(g.starts_with(" 1\n 2\n"), "got: {g:?}");
+        assert!(g.ends_with("\n10"), "got: {g:?}");
+    }
 
     #[test]
     fn markdown_extensions_detected_case_insensitively() {
