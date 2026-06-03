@@ -76,8 +76,7 @@ impl MergeConflictsPanel {
         );
         ui.label(
             RichText::new(format!("parent worktree: {}", conflicts.parent_worktree.display()))
-                .color(theme::muted_text())
-                .small(),
+                .color(theme::muted_text()),
         );
         ui.separator();
 
@@ -183,7 +182,7 @@ impl MergeConflictsPanel {
 
         if let Some(msg) = self.status.lock().unwrap().clone() {
             ui.add_space(4.0);
-            ui.label(RichText::new(msg).color(theme::muted_text()).small());
+            ui.label(RichText::new(msg).color(theme::muted_text()));
         }
     }
 }

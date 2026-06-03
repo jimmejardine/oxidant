@@ -20,8 +20,14 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use egui::{Color32, Visuals, style::Selection};
+use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, TextStyle, Visuals, style::Selection};
 use serde::{Deserialize, Serialize};
+
+/// Single point size used for every `TextStyle`. The user can scale the
+/// whole UI via Ctrl+scroll / Ctrl+0 / the settings panel slider; this
+/// is the logical baseline before the zoom factor is applied. See
+/// spec/components/gui/typography.md.
+pub const BASE_FONT_PT: f32 = 15.0;
 
 // ---------------------------------------------------------------- Theme enum
 
@@ -149,6 +155,62 @@ pub fn apply(ctx: &egui::Context, theme: Theme) {
     if let Ok(mut g) = CURRENT_COLOURS.lock() {
         *g = (p.muted, p.faint);
     }
+    apply_uniform_text_styles(ctx);
+}
+
+/// Set every `TextStyle` to `BASE_FONT_PT` so panels render at a single
+/// consistent size. The user's zoom factor (`ctx.set_zoom_factor`) is
+/// composed on top of this. See spec/components/gui/typography.md.
+fn apply_uniform_text_styles(ctx: &egui::Context) {
+    let mut style = (*ctx.style()).clone();
+    let prop = FontFamily::Proportional;
+    let mono = FontFamily::Monospace;
+    for ts in [
+        TextStyle::Heading,
+        TextStyle::Body,
+        TextStyle::Button,
+        TextStyle::Small,
+    ] {
+        style
+            .text_styles
+            .insert(ts, FontId::new(BASE_FONT_PT, prop.clone()));
+    }
+    style
+        .text_styles
+        .insert(TextStyle::Monospace, FontId::new(BASE_FONT_PT, mono));
+    ctx.set_style(style);
+}
+
+/// Install the bundled Noto fonts as the primary Proportional and
+/// Monospace families. Noto's "no tofu" coverage means the symbols we
+/// use across the GUI (✗ ✓ ⟳ ↩ ⊕ ⌖ ⚠ ⏎) render rather than missing-
+/// glyph boxes. Egui's existing fallback chain (emoji, etc.) is left
+/// in place after our entries.
+///
+/// Call **once** at app startup from `viewport.rs::run_viewport`. Do
+/// not call from `apply` — egui re-uploads the font atlas to the GPU
+/// on every `set_fonts`, which is wasteful on theme switches.
+pub fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = FontDefinitions::default();
+    fonts.font_data.insert(
+        "noto_sans".into(),
+        FontData::from_static(include_bytes!("../assets/fonts/NotoSans-Regular.ttf")).into(),
+    );
+    fonts.font_data.insert(
+        "noto_sans_mono".into(),
+        FontData::from_static(include_bytes!("../assets/fonts/NotoSansMono-Regular.ttf")).into(),
+    );
+    fonts
+        .families
+        .entry(FontFamily::Proportional)
+        .or_default()
+        .insert(0, "noto_sans".into());
+    fonts
+        .families
+        .entry(FontFamily::Monospace)
+        .or_default()
+        .insert(0, "noto_sans_mono".into());
+    ctx.set_fonts(fonts);
 }
 
 pub fn current() -> Theme {

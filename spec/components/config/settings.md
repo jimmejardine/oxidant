@@ -38,6 +38,7 @@ default_model = "llama3"
 [gui]
 theme = "system"            # light | dark | system
 enter_sends = false         # if true, Enter sends and Shift+Enter inserts newline
+zoom_factor = 1.0           # global UI scale (0.5..=3.0); see components/gui/typography
 
 [permissions]
 auto_approve_readonly = true

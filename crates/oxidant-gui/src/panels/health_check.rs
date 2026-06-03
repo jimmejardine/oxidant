@@ -163,7 +163,7 @@ fn render_root(
         let button_text = if is_running { "⟳" } else { "▶" };
         let btn = ui.add_enabled(
             !is_running,
-            egui::Button::new(RichText::new(button_text).monospace()).small(),
+            egui::Button::new(RichText::new(button_text).monospace()),
         );
         let btn = btn.on_hover_text(format!("Run {}", kind.display_name()));
         if btn.clicked() {

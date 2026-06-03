@@ -106,8 +106,7 @@ impl SettingsPanel {
         if let Some(path) = user_config_path() {
             ui.label(
                 RichText::new(format!("config file: {}", path.display()))
-                    .color(theme::faint_text())
-                    .small(),
+                    .color(theme::faint_text()),
             );
         }
         ui.separator();
@@ -178,8 +177,7 @@ impl SettingsPanel {
                     );
                     ui.label(
                         RichText::new("Stored in plain text in the user config TOML.")
-                            .color(theme::faint_text())
-                            .small(),
+                            .color(theme::faint_text()),
                     );
                 });
 
@@ -245,6 +243,37 @@ impl SettingsPanel {
                     &mut self.draft.gui.enter_sends,
                     "Enter sends (Shift+Enter inserts a newline)",
                 );
+
+                // Zoom factor — slider + reset. The Ctrl+scroll handler
+                // in App::update writes the same field; the slider here
+                // is the explicit-UI counterpart. Live-previews on
+                // change so the user sees the scale immediately; Save
+                // persists. See spec/components/gui/typography.md.
+                ui.add_space(4.0);
+                ui.label(RichText::new("Zoom factor").strong());
+                let prev = self.draft.gui.zoom_factor;
+                ui.horizontal(|ui| {
+                    let resp = ui.add(
+                        egui::Slider::new(&mut self.draft.gui.zoom_factor, 0.5..=3.0)
+                            .step_by(0.05)
+                            .text("× (Ctrl+scroll on the GUI also adjusts; Ctrl+0 resets)"),
+                    );
+                    if resp.changed() {
+                        ui.ctx().set_zoom_factor(self.draft.gui.zoom_factor);
+                    }
+                    if ui.button("Reset (1.0)").clicked() {
+                        self.draft.gui.zoom_factor = 1.0;
+                        ui.ctx().set_zoom_factor(1.0);
+                    }
+                });
+                // Mirror the live ctx zoom into the draft when something
+                // ELSE (Ctrl+scroll handler) has changed it; this stops
+                // the slider from snapping back to the stale draft when
+                // the user opens Settings after scroll-zooming.
+                let live = ui.ctx().zoom_factor();
+                if (live - prev).abs() > f32::EPSILON {
+                    self.draft.gui.zoom_factor = live;
+                }
             });
     }
 
@@ -262,8 +291,7 @@ impl SettingsPanel {
                          allowlist entry. Patterns: `fs_write` (exact name), \
                          `bash:cargo *` (bash glob), `bash:/^git /` (bash regex). One per line.",
                     )
-                    .color(theme::faint_text())
-                    .small(),
+                    .color(theme::faint_text()),
                 );
                 ui.add_space(4.0);
                 ui.label(RichText::new("Allowlist").strong());

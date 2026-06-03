@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub provider: ProviderSettings,
@@ -88,7 +88,7 @@ impl LocalSettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GuiSettings {
     /// Active colour scheme. One of the slugs from
@@ -98,6 +98,15 @@ pub struct GuiSettings {
     pub theme: String,
     /// If true, Enter sends and Shift+Enter inserts a newline.
     pub enter_sends: bool,
+    /// Global UI scale applied via `egui::Context::set_zoom_factor`.
+    /// Clamped to 0.5..=3.0 at load and on every interactive change.
+    /// 1.0 = no scaling. See spec/components/gui/typography.md.
+    #[serde(default = "default_zoom_factor")]
+    pub zoom_factor: f32,
+}
+
+fn default_zoom_factor() -> f32 {
+    1.0
 }
 
 impl Default for GuiSettings {
@@ -105,6 +114,7 @@ impl Default for GuiSettings {
         Self {
             theme: "espresso".into(),
             enter_sends: false,
+            zoom_factor: default_zoom_factor(),
         }
     }
 }

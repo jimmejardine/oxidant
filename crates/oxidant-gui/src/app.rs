@@ -435,6 +435,39 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
 
+        // Global UI zoom: Ctrl+scroll-wheel steps the zoom factor;
+        // Ctrl+0 resets to 1.0. Consumed at this layer so ScrollAreas
+        // don't ALSO scroll. Persisted to GuiSettings on every change.
+        // See spec/components/gui/typography.md.
+        let (zoom_delta, reset) = ctx.input_mut(|i| {
+            let cmd = i.modifiers.command;
+            let delta = if cmd && i.raw_scroll_delta.y.abs() > 0.5 {
+                let dir = i.raw_scroll_delta.y.signum();
+                i.raw_scroll_delta.y = 0.0;
+                i.smooth_scroll_delta.y = 0.0;
+                Some(dir * 0.1)
+            } else {
+                None
+            };
+            let reset = i.consume_key(egui::Modifiers::COMMAND, egui::Key::Num0);
+            (delta, reset)
+        });
+        let new_factor = if reset {
+            Some(1.0)
+        } else {
+            zoom_delta.map(|d| (ctx.zoom_factor() + d).clamp(0.5, 3.0))
+        };
+        if let Some(z) = new_factor {
+            ctx.set_zoom_factor(z);
+            if let Ok(mut s) = self.config.settings.lock() {
+                s.gui.zoom_factor = z;
+                if let Err(e) = oxidant_config::save_user(&s) {
+                    tracing::warn!(?e, "saving zoom_factor to user settings");
+                }
+            }
+            ctx.request_repaint();
+        }
+
         // Refresh the GPU readout (throttled internally to ~1 Hz) and
         // keep the frame ticking so the number updates while idle —
         // only when a GPU backend is actually present.

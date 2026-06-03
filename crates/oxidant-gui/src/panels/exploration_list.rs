@@ -205,9 +205,7 @@ impl ExplorationListPanel {
                 }
             });
             ui.label(
-                RichText::new(row.worktree_path.to_string_lossy())
-                    .color(theme::muted_text())
-                    .small(),
+                RichText::new(row.worktree_path.to_string_lossy()).color(theme::muted_text()),
             );
             ui.add_space(2.0);
         }
@@ -216,7 +214,7 @@ impl ExplorationListPanel {
         if let Some(msg) = self.status.lock().unwrap().clone() {
             ui.add_space(4.0);
             ui.separator();
-            ui.label(RichText::new(msg).color(theme::muted_text()).small());
+            ui.label(RichText::new(msg).color(theme::muted_text()));
         }
     }
 }

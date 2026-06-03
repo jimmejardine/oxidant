@@ -168,9 +168,7 @@ impl TranscriptPanel {
                     ui.add_space(80.0);
                     ui.vertical_centered(|ui| {
                         ui.label(
-                            RichText::new("oxidant")
-                                .size(32.0)
-                                .color(theme::faint_text()),
+                            RichText::new("oxidant").color(theme::faint_text()),
                         );
                         ui.label(
                             RichText::new("Type a prompt below and press Ctrl+Enter to send.")

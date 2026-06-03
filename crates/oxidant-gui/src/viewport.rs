@@ -52,7 +52,22 @@ pub fn run_viewport(config: ViewportConfig) -> Result<(), eframe::Error> {
         &title,
         native_options,
         Box::new(move |cc| {
+            // install_fonts swaps egui's default proportional and mono
+            // families for Noto so symbols like ✗ ↩ ⊕ ⌖ ⚠ ⏎ render
+            // cleanly. Called once at startup; apply() handles the rest
+            // (visuals + uniform text_styles).
+            theme::install_fonts(&cc.egui_ctx);
             theme::apply(&cc.egui_ctx, config.theme);
+            // Apply the persisted UI zoom factor before the first paint.
+            // Clamped on load — guards against a hand-edited TOML out of
+            // sane range. See spec/components/gui/typography.md.
+            let z = config
+                .settings
+                .lock()
+                .map(|s| s.gui.zoom_factor)
+                .unwrap_or(1.0)
+                .clamp(0.5, 3.0);
+            cc.egui_ctx.set_zoom_factor(z);
             Ok(Box::new(App::new(config)))
         }),
     )
