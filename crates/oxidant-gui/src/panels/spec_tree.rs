@@ -14,7 +14,7 @@ use egui::{Color32, CursorIcon, RichText, SelectableLabel, Stroke, TextFormat};
 
 use oxidant_spec_tools::{EdgeKind, GraphInput, Node, SpecGraph, SpecRecord, walk_specs};
 
-use crate::app::SharedState;
+use crate::app::{SelectedPreview, SharedState};
 use crate::dock::{DockTab, FileSource};
 use crate::panels::new_item_dialog::{NewItemDialog, NewKind};
 use crate::theme;
@@ -288,6 +288,9 @@ fn wire_leaf_actions(
             "{} — double-click to edit, right-click for history",
             rec.canonical_id
         ));
+    if resp.clicked() {
+        set_selected_preview(state, &rec.path);
+    }
     if resp.double_clicked() {
         push_open(state, &rec.path, workspace_root);
     }

@@ -14,7 +14,7 @@ use std::time::SystemTime;
 use egui::{Color32, FontId, RichText};
 use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
-use crate::app::{EditorBuffer, SharedState, ViewMode};
+use crate::app::{EditorBuffer, SelectedPreview, SharedState, ViewMode};
 use crate::dock::FileSource;
 use crate::highlighter;
 use crate::theme;
@@ -251,6 +251,83 @@ fn mtimes_differ(a: Option<SystemTime>, b: Option<SystemTime>) -> bool {
     match (a, b) {
         (Some(x), Some(y)) => x != y,
         _ => false,
+    }
+}
+
+/// Render the read-only `Selected` preview tab. Markdown is rendered via
+/// `egui_commonmark`; other files show syntect-highlighted, non-editable
+/// text. Content comes from `SharedState::selected_preview` (loaded once
+/// at single-click time). See spec/components/gui/dock-layout.md.
+pub fn render_selected(
+    ui: &mut egui::Ui,
+    preview: Option<&SelectedPreview>,
+    workspace_root: &Path,
+    markdown_cache: &mut CommonMarkCache,
+) {
+    let preview = match preview {
+        Some(p) => p,
+        None => {
+            ui.vertical_centered(|ui| {
+                ui.add_space(24.0);
+                ui.label(
+                    RichText::new("Click a file or spec in the explorer to preview it here.")
+                        .color(theme::muted_text()),
+                );
+            });
+            return;
+        }
+    };
+
+    let header_path = preview
+        .path
+        .strip_prefix(workspace_root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| preview.path.to_string_lossy().to_string());
+
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(header_path).strong());
+        ui.label(
+            RichText::new("(preview — double-click in the tree to edit)")
+                .color(theme::muted_text()),
+        );
+    });
+    ui.separator();
+
+    if let Some(err) = &preview.error {
+        ui.label(RichText::new(format!("could not read file: {err}")).color(Color32::RED));
+        return;
+    }
+
+    if is_markdown(&preview.path) {
+        egui::ScrollArea::both()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| {
+                CommonMarkViewer::new().show(ui, markdown_cache, &preview.text);
+            });
+    } else {
+        // Read-only highlighted view: a non-interactive TextEdit reusing
+        // the same syntect layouter as the editor.
+        let path_for_layout = preview.path.clone();
+        let font_id = FontId::monospace(13.0);
+        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+            let job = highlighter::highlight(&path_for_layout, text, font_id.clone(), wrap_width);
+            ui.fonts(|f| f.layout_job(job))
+        };
+        // TextEdit needs a &mut str-backed buffer even when read-only;
+        // clone into a throwaway the widget can't actually mutate.
+        let mut text = preview.text.clone();
+        egui::ScrollArea::both()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| {
+                ui.add_sized(
+                    [ui.available_width(), ui.available_height().max(120.0)],
+                    egui::TextEdit::multiline(&mut text)
+                        .code_editor()
+                        .interactive(false)
+                        .desired_rows(20)
+                        .layouter(&mut layouter),
+                );
+            });
     }
 }
 

@@ -14,6 +14,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DockTab {
     Transcript,
+    /// Read-only single-click preview of the explorer's current
+    /// selection. Content comes from `SharedState::selected_preview`.
+    Selected,
     SpecTree,
     FileTree,
     ExplorationList,
@@ -46,6 +49,7 @@ impl DockTab {
     pub fn title(&self) -> String {
         match self {
             DockTab::Transcript => "Transcript".into(),
+            DockTab::Selected => "Selected".into(),
             DockTab::SpecTree => "Specs".into(),
             DockTab::FileTree => "Files".into(),
             DockTab::ExplorationList => "Explorations".into(),
@@ -81,7 +85,7 @@ impl DockTab {
 ///   RIGHT:  diagnostic_preview
 ///   BOTTOM: chat_input
 pub fn default_layout() -> DockState<DockTab> {
-    let mut tree: DockState<DockTab> = DockState::new(vec![DockTab::Transcript]);
+    let mut tree: DockState<DockTab> = DockState::new(vec![DockTab::Transcript, DockTab::Selected]);
     let root = NodeIndex::root();
     let surface = tree.main_surface_mut();
     let [_centre, left] = surface.split_left(
@@ -104,11 +108,13 @@ pub fn default_layout() -> DockState<DockTab> {
 }
 
 /// The singletons offered in the Window menu. Order matches the spec
-/// (transcript, specs, explorations, diagnostics, chat, settings). File
-/// tabs are excluded — they have their own discovery flow.
-pub fn singleton_tabs() -> [DockTab; 7] {
+/// (transcript, selected, specs, explorations, diagnostics, chat,
+/// settings). File tabs are excluded — they have their own discovery
+/// flow.
+pub fn singleton_tabs() -> [DockTab; 8] {
     [
         DockTab::Transcript,
+        DockTab::Selected,
         DockTab::SpecTree,
         DockTab::FileTree,
         DockTab::ExplorationList,

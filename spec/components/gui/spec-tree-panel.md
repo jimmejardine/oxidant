@@ -47,7 +47,7 @@ Tooltip on hover gives last-modified timestamp + commit subject.
 
 ## Interactions
 
-- Single-click: select the leaf (visual highlight; no tab opens). MVP renders this as no-op — selection state lands when the right-click context menu does.
+- **Single-click**: preview the spec read-only in the [[components/gui/dock-layout]] **Selected** tab (a fast browse pane — content swaps in place, no new tab piles up). Double-click still opens an editable tab.
 - **Double-click**: open the spec as an **editable** centre tab via [[components/gui/file-tabs]]. The tab dock-key is the spec's path, so double-clicking the same spec twice just focuses the already-open tab.
 - **Right-click on a directory header**: context menu with **New spec** and **New folder**. Each opens a small modal dialog asking for the name; pressing Enter (or Create) makes the entry on disk under that directory. **New spec** additionally pushes the new path onto `SharedState::pending_centre_tabs` so the editor opens immediately. The dialog rejects empty names, names containing path separators, `.` / `..`, and names that already exist; the error renders inline above the input. New specs are created as empty files — the user adds the frontmatter — so they will show up as a validate warning until they grow a frontmatter block, which is the right default.
 - **Right-click on a leaf**: context menu with:

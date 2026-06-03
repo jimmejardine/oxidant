@@ -5,7 +5,7 @@ parent: overview
 order: 7
 implements: []
 depends_on:
-  - components/core/agent-loop
+  
 code:
   - crates/oxidant-core/src/agent_loop.rs
 status: active

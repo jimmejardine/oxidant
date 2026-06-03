@@ -36,7 +36,7 @@ Within each directory:
 
 ## Interactions
 
-- Single-click: select (visual highlight; no tab opens). MVP renders as no-op.
+- **Single-click**: preview the file read-only in the [[components/gui/dock-layout]] **Selected** tab (fast browse pane — content swaps in place, no new tab piles up). Double-click still opens an editable tab.
 - **Double-click on a file**: open it as a centre tab via the same pending-queue mechanism described in [[components/gui/spec-tree-panel]] — push a `DockTab::File { ..., source }` onto `SharedState::pending_centre_tabs`, the host viewport drains and `open_in_centre`'s it.
   - `source = FileSource::Spec` for `*.md` under `spec/`.
   - `source = FileSource::Code` for everything else.

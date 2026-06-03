@@ -90,6 +90,22 @@ pub struct SharedState {
     /// tabs are unique) would share state. See
     /// spec/components/gui/file-tabs.md "Edit lifecycle for specs".
     pub editor_buffers: HashMap<PathBuf, EditorBuffer>,
+    /// Read-only contents for the `Selected` preview tab. Set by a
+    /// single-click in the spec/file tree; rendered by the Selected tab.
+    /// See spec/components/gui/dock-layout.md "Selected preview tab".
+    pub selected_preview: Option<SelectedPreview>,
+}
+
+/// Snapshot of a file shown read-only in the `Selected` preview tab.
+/// Loaded once at single-click time (no per-frame disk reads).
+#[derive(Debug, Clone)]
+pub struct SelectedPreview {
+    /// Absolute path of the previewed file.
+    pub path: PathBuf,
+    /// File contents at click time.
+    pub text: String,
+    /// Read error, if the file couldn't be loaded.
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -295,6 +311,7 @@ impl App {
             pending_centre_tabs: Vec::new(),
             pending_chat_prompt: None,
             editor_buffers: HashMap::new(),
+            selected_preview: None,
         }));
         let (event_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
 
@@ -481,6 +498,19 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
             DockTab::Transcript => {
                 let state = self.state.lock().unwrap();
                 TranscriptPanel.render(ui, &state);
+            }
+            DockTab::Selected => {
+                let preview = self
+                    .state
+                    .lock()
+                    .ok()
+                    .and_then(|s| s.selected_preview.clone());
+                crate::panels::file_tab::render_selected(
+                    ui,
+                    preview.as_ref(),
+                    &self.workspace_root,
+                    self.markdown_cache,
+                );
             }
             DockTab::SpecTree => {
                 self.spec_panel.render(ui, &self.state);

@@ -18,7 +18,7 @@ The dock manager lives via `egui_dock::DockArea`. Each exploration's viewport ow
 
 ```
 LEFT:    [spec_tree, file_tree, exploration_list, validate_warnings]    (tab group)
-CENTRE:  [transcript, ...opened_files]                                  (tab group; transcript is the home tab)
+CENTRE:  [transcript, selected, ...opened_files]                        (tab group; transcript is the home tab)
 RIGHT:   [diagnostic_preview]
 BOTTOM:  [chat_input]
 ```
@@ -28,6 +28,7 @@ BOTTOM:  [chat_input]
 ```rust
 pub enum DockTab {
     Transcript,
+    Selected,                                            // read-only single-click preview
     SpecTree,
     FileTree,
     ExplorationList,
@@ -44,6 +45,10 @@ pub enum DockTab {
 
 `DiffHistory` is *not* a singleton (multiple files can have history tabs open at once) and *not* part of `default_layout` (only opens on the user's "View history" action). Both forms key on the `path`, so re-triggering "View history" for an already-open file focuses the existing tab instead of duplicating — same `open_in_centre` semantics as `File`.
 
+## Selected preview tab
+
+`Selected` is a **singleton, read-only** centre tab for fast browsing. **Single-clicking** a leaf in the [[components/gui/spec-tree-panel]] or [[components/gui/file-tree-panel]] loads that file's contents into `SharedState::selected_preview` and queues `DockTab::Selected` onto `pending_centre_tabs`, so the drain's `open_in_centre` focuses the existing Selected tab (it isn't duplicated — single-click swaps the *content*, not the tab). Rendering reuses the [[components/gui/file-tabs]] renderer in a read-only mode: markdown is rendered via `egui_commonmark`, other files show syntect-highlighted non-editable text. Editing is still a **double-click** → an editable `File` tab. The Selected tab is part of `default_layout` (centre, beside Transcript) and listed in the Window menu, so closing it is recoverable.
+
 ## Persistence
 
 - The dock tree is serialised to `<worktree>/.oxidant/dock-layout.json` per exploration.
@@ -54,7 +59,7 @@ pub enum DockTab {
 
 The viewport's top menu bar carries a **Window** menu so a user can recover from closing a panel they later want back. Contents:
 
-- One entry per **singleton** tab — `Transcript`, `Specs`, `Explorations`, `Health Check`, `Chat`. Each shows a checkmark when the tab is already open and is disabled in that state; clicking an unchecked entry re-inserts the tab into the focused leaf (or the first leaf if nothing is focused).
+- One entry per **singleton** tab — `Transcript`, `Selected`, `Specs`, `Explorations`, `Health Check`, `Chat`. Each shows a checkmark when the tab is already open and is disabled in that state; clicking an unchecked entry re-inserts the tab into the focused leaf (or the first leaf if nothing is focused).
 - **Reset layout** at the bottom of the menu rebuilds the default layout (see below). File tabs that are currently open are preserved as centre tabs — closing a file is still done via the `×` on the tab itself.
 
 File tabs (`DockTab::File { … }`) are not listed in the Window menu — they are opened from the spec tree or by following a navigation result. A recent-files history is out of scope for the MVP.
@@ -71,6 +76,7 @@ A menu command rebuilds the default layout and clears `dock-layout.json`. Opened
 
 Each `DockTab` variant's render is delegated to its panel component:
 - `Transcript` → [[components/gui/transcript-tab]]
+- `Selected` → read-only preview via [[components/gui/file-tabs]] rendering
 - `SpecTree` → [[components/gui/spec-tree-panel]]
 - `FileTree` → [[components/gui/file-tree-panel]]
 - `ExplorationList` → [[components/gui/exploration-list]]
