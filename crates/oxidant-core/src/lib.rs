@@ -15,7 +15,10 @@ pub mod message;
 pub mod registry;
 pub mod text_tool_calls;
 
-pub use agent_loop::{AgentLoopConfig, AgentLoopOutcome, build_request, run};
+pub use agent_loop::{
+    AgentLoopConfig, AgentLoopOutcome, AgentMode, PLAN_MODE_SYSTEM_PROMPT_SUFFIX, build_request,
+    run,
+};
 pub use conversation::Conversation;
 pub use exploration::{Exploration, ExplorationId, ExplorationKind, ExplorationSummary, LspHandle};
 pub use message::{ContentBlock, ImageSource, Message, ToolResultContent};

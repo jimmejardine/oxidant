@@ -38,6 +38,10 @@ pub struct AgentLoopConfig {
     /// it on the next iteration. Typically "spec_diff" — see
     /// spec/components/core/agent-loop.md and spec/tools/spec/spec-diff.md.
     pub post_edit_check_tool: Option<String>,
+    /// Plan vs Implement. See spec/components/core/agent-mode.md.
+    /// Plan filters the registry to ReadOnly tools and appends a
+    /// describe-don't-do suffix to the system prompt.
+    pub mode: AgentMode,
 }
 
 impl AgentLoopConfig {
@@ -50,9 +54,43 @@ impl AgentLoopConfig {
             temperature: None,
             thinking: None,
             post_edit_check_tool: None,
+            mode: AgentMode::default(),
         }
     }
 }
+
+/// The two interaction modes for the chat agent. See
+/// spec/components/core/agent-mode.md.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AgentMode {
+    /// Read-only tools only; the agent describes what it would do.
+    /// Default — the safer side of "I'm not sure what you'll do next".
+    #[default]
+    Plan,
+    /// Full tool access; the agent acts on the workspace.
+    Implement,
+}
+
+impl AgentMode {
+    pub fn flip(self) -> Self {
+        match self {
+            AgentMode::Plan => AgentMode::Implement,
+            AgentMode::Implement => AgentMode::Plan,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            AgentMode::Plan => "PLAN",
+            AgentMode::Implement => "IMPLEMENT",
+        }
+    }
+}
+
+/// Verbatim plan-mode system-prompt suffix. Implementations MUST use this
+/// exact text so behaviour is stable across providers — the spec at
+/// spec/components/core/agent-mode.md pins the wording.
+pub const PLAN_MODE_SYSTEM_PROMPT_SUFFIX: &str = "\n\nYou are currently in PLAN MODE.\n\nUse read-only tools (read files, grep, spec lookups, cargo_check, LSP queries, git log/diff/status, etc.) to investigate as much as you need. Then DESCRIBE the change you would make:\n- the files you'd touch\n- the substantive edits\n- the order you'd do them in\n- and why\n\nDo NOT attempt to mutate files, git state, or the workspace — those tools are not exposed to you in this mode. If you reach for one, the call will fail. The user will switch you to IMPLEMENT mode when they are ready for you to act.";
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AgentLoopOutcome {
@@ -360,8 +398,16 @@ pub fn build_request(
     }
     flush_tool_results(&mut tool_result_buf, &mut messages);
 
+    // Per spec/components/core/agent-mode.md: Plan mode hides every
+    // non-ReadOnly tool from the model. The model literally can't
+    // pick a tool it doesn't see, and a text-extracted call to a
+    // hidden tool falls through to the unknown-tool path.
     let tools: Vec<ToolSpec> = registry
         .iter()
+        .filter(|tool| match config.mode {
+            AgentMode::Plan => matches!(tool.category(), ToolCategory::ReadOnly),
+            AgentMode::Implement => true,
+        })
         .map(|tool| ToolSpec {
             name: tool.name().to_string(),
             description: tool.description().to_string(),
@@ -369,9 +415,19 @@ pub fn build_request(
         })
         .collect();
 
+    // In Plan mode, append the describe-don't-do suffix to whatever
+    // system prompt the caller supplied.
+    let system = match config.mode {
+        AgentMode::Plan => Some(match &config.system_prompt {
+            Some(base) => format!("{base}{PLAN_MODE_SYSTEM_PROMPT_SUFFIX}"),
+            None => PLAN_MODE_SYSTEM_PROMPT_SUFFIX.trim_start().to_string(),
+        }),
+        AgentMode::Implement => config.system_prompt.clone(),
+    };
+
     ChatRequest {
         model: config.model.clone(),
-        system: config.system_prompt.clone(),
+        system,
         messages,
         tools,
         max_tokens: config.max_tokens,
@@ -467,5 +523,142 @@ mod tests {
         let registry = ToolRegistry::new();
         let req = build_request(&conv, &registry, &AgentLoopConfig::new("m"));
         assert!(req.messages.is_empty());
+    }
+
+    // ----- AgentMode + mode-aware build_request --------------------------
+
+    struct DummyTool {
+        name_: &'static str,
+        category_: ToolCategory,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::registry::Tool for DummyTool {
+        fn name(&self) -> &str {
+            self.name_
+        }
+        fn description(&self) -> &str {
+            "test tool"
+        }
+        fn schema(&self) -> Value {
+            serde_json::json!({"type":"object","properties":{}})
+        }
+        fn category(&self) -> ToolCategory {
+            self.category_
+        }
+        async fn invoke(&self, _args: Value, _ctx: &ToolContext) -> ToolResult {
+            ToolResult::Ok(Value::Null)
+        }
+    }
+
+    fn registry_with_one_of_each() -> ToolRegistry {
+        let mut r = ToolRegistry::new();
+        r.register(std::sync::Arc::new(DummyTool {
+            name_: "read_only_tool",
+            category_: ToolCategory::ReadOnly,
+        }));
+        r.register(std::sync::Arc::new(DummyTool {
+            name_: "mutating_tool",
+            category_: ToolCategory::Mutating,
+        }));
+        r.register(std::sync::Arc::new(DummyTool {
+            name_: "network_tool",
+            category_: ToolCategory::Network,
+        }));
+        r
+    }
+
+    #[test]
+    fn agent_mode_default_is_plan() {
+        assert_eq!(AgentMode::default(), AgentMode::Plan);
+    }
+
+    #[test]
+    fn agent_mode_flip_is_involutive() {
+        assert_eq!(AgentMode::Plan.flip().flip(), AgentMode::Plan);
+        assert_eq!(AgentMode::Implement.flip().flip(), AgentMode::Implement);
+        assert_eq!(AgentMode::Plan.flip(), AgentMode::Implement);
+        assert_eq!(AgentMode::Implement.flip(), AgentMode::Plan);
+    }
+
+    #[test]
+    fn build_request_in_plan_mode_excludes_non_readonly_tools() {
+        let conv = Conversation::new();
+        let registry = registry_with_one_of_each();
+        let mut config = AgentLoopConfig::new("m");
+        config.mode = AgentMode::Plan;
+
+        let req = build_request(&conv, &registry, &config);
+        let names: Vec<&str> = req.tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"read_only_tool"));
+        assert!(
+            !names.contains(&"mutating_tool"),
+            "mutating_tool should be hidden in Plan mode; got {names:?}"
+        );
+        assert!(
+            !names.contains(&"network_tool"),
+            "network_tool should be hidden in Plan mode; got {names:?}"
+        );
+    }
+
+    #[test]
+    fn build_request_in_implement_mode_exposes_every_tool() {
+        let conv = Conversation::new();
+        let registry = registry_with_one_of_each();
+        let mut config = AgentLoopConfig::new("m");
+        config.mode = AgentMode::Implement;
+
+        let req = build_request(&conv, &registry, &config);
+        let names: Vec<&str> = req.tools.iter().map(|t| t.name.as_str()).collect();
+        assert!(names.contains(&"read_only_tool"));
+        assert!(names.contains(&"mutating_tool"));
+        assert!(names.contains(&"network_tool"));
+    }
+
+    #[test]
+    fn build_request_in_plan_mode_appends_plan_system_prompt() {
+        let conv = Conversation::new();
+        let registry = ToolRegistry::new();
+        let mut config = AgentLoopConfig::new("m");
+        config.mode = AgentMode::Plan;
+        config.system_prompt = Some("Be terse.".to_string());
+
+        let req = build_request(&conv, &registry, &config);
+        let system = req.system.expect("plan mode should produce a system prompt");
+        assert!(
+            system.starts_with("Be terse."),
+            "caller's prompt should lead: {system:?}"
+        );
+        assert!(
+            system.contains("PLAN MODE"),
+            "plan-mode marker should be present: {system:?}"
+        );
+    }
+
+    #[test]
+    fn build_request_in_plan_mode_uses_suffix_alone_when_caller_provided_no_prompt() {
+        let conv = Conversation::new();
+        let registry = ToolRegistry::new();
+        let mut config = AgentLoopConfig::new("m");
+        config.mode = AgentMode::Plan;
+        config.system_prompt = None;
+
+        let req = build_request(&conv, &registry, &config);
+        let system = req.system.expect("plan mode should produce a system prompt");
+        assert!(system.contains("PLAN MODE"));
+        // Suffix's natural leading whitespace is trimmed when standalone.
+        assert!(system.starts_with("You are currently in PLAN MODE"));
+    }
+
+    #[test]
+    fn build_request_in_implement_mode_passes_system_prompt_through_unchanged() {
+        let conv = Conversation::new();
+        let registry = ToolRegistry::new();
+        let mut config = AgentLoopConfig::new("m");
+        config.mode = AgentMode::Implement;
+        config.system_prompt = Some("Just be a normal assistant.".to_string());
+
+        let req = build_request(&conv, &registry, &config);
+        assert_eq!(req.system.as_deref(), Some("Just be a normal assistant."));
     }
 }

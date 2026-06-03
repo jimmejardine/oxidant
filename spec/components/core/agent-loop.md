@@ -9,6 +9,7 @@ depends_on:
   - contracts/tool
   - components/core/tool-registry
   - components/core/conversation
+  - components/core/agent-mode
 code:
   - crates/oxidant-core/src/agent_loop.rs
 tests:

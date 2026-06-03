@@ -7,13 +7,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
-use egui::{RichText, TextEdit};
+use egui::{Color32, Key, Modifiers, RichText, TextEdit};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
 use oxidant_core::{
-    AgentLoopConfig, AgentLoopOutcome, Conversation, ToolContext, ToolRegistry, run,
+    AgentLoopConfig, AgentLoopOutcome, AgentMode, Conversation, ToolContext, ToolRegistry, run,
 };
 use oxidant_providers::{ChatEvent, Provider};
 
@@ -22,6 +22,10 @@ use crate::theme;
 
 pub struct ChatInputPanel {
     draft: String,
+    /// Plan vs Implement. Defaults to Plan per
+    /// spec/components/core/agent-mode.md. Flipped by Shift+Tab while
+    /// the text edit is focused, or by clicking the header chip.
+    mode: AgentMode,
 }
 
 impl Default for ChatInputPanel {
@@ -34,6 +38,7 @@ impl ChatInputPanel {
     pub fn new() -> Self {
         Self {
             draft: String::new(),
+            mode: AgentMode::default(),
         }
     }
 
@@ -52,8 +57,12 @@ impl ChatInputPanel {
     ) {
         let streaming = state.lock().unwrap().live_turn.is_some();
 
-        // Header row: model + send/cancel buttons.
+        // Header row: mode chip · model · send/cancel.
         ui.horizontal(|ui| {
+            let chip_clicked = render_mode_chip(ui, self.mode, streaming);
+            if chip_clicked && !streaming {
+                self.mode = self.mode.flip();
+            }
             ui.label(RichText::new(format!("model: {model}")).color(theme::muted_text()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if streaming {
@@ -82,6 +91,7 @@ impl ChatInputPanel {
                             provider.clone(),
                             model.to_string(),
                             system_prompt.map(String::from),
+                            self.mode,
                             egui_ctx.clone(),
                         );
                     }
@@ -92,18 +102,61 @@ impl ChatInputPanel {
         // Multi-line input.
         ui.add_space(2.0);
         let id = ui.make_persistent_id("oxidant-chat-input");
-        let _ = ui.add_sized(
+        // Hoist the hint out before borrowing self.draft mutably.
+        let hint: &str = if streaming {
+            "streaming… cancel with Esc to type a new prompt"
+        } else {
+            self.mode_hint()
+        };
+        let edit_response = ui.add_sized(
             [ui.available_width(), ui.available_height().max(60.0)],
             TextEdit::multiline(&mut self.draft)
                 .id(id)
                 .desired_rows(4)
-                .hint_text(if streaming {
-                    "streaming… cancel with Esc to type a new prompt"
-                } else {
-                    "type a prompt — Ctrl+Enter to send"
-                }),
+                .hint_text(hint),
         );
+
+        // Shift+Tab flips the mode while the text edit owns focus. We
+        // consume the key so Tab focus-traversal and a literal '\t'
+        // insert are both suppressed when Shift is held — plain Tab
+        // (no Shift) still behaves normally.
+        if edit_response.has_focus() && !streaming {
+            let toggled = ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab));
+            if toggled {
+                self.mode = self.mode.flip();
+            }
+        }
     }
+
+    fn mode_hint(&self) -> &'static str {
+        match self.mode {
+            AgentMode::Plan => "PLAN mode · type a prompt — Ctrl+Enter to send · Shift+Tab to flip",
+            AgentMode::Implement => {
+                "IMPLEMENT mode · type a prompt — Ctrl+Enter to send · Shift+Tab to flip"
+            }
+        }
+    }
+}
+
+/// Draw the mode chip (`[PLAN]` yellow, `[IMPLEMENT]` green). Returns
+/// true when the chip was clicked. Disabled visually while a turn is
+/// streaming — the in-flight request was sent with the prior mode and
+/// flipping would mislead.
+fn render_mode_chip(ui: &mut egui::Ui, mode: AgentMode, streaming: bool) -> bool {
+    let (label, colour) = match mode {
+        AgentMode::Plan => ("PLAN", Color32::from_rgb(255, 200, 100)),
+        AgentMode::Implement => ("IMPLEMENT", Color32::LIGHT_GREEN),
+    };
+    let mut text = RichText::new(format!("[{label}]")).color(colour).strong();
+    if streaming {
+        text = text.color(theme::muted_text());
+    }
+    let resp = ui.add_enabled(
+        !streaming,
+        egui::Button::new(text).frame(false),
+    );
+    resp.on_hover_text("Shift+Tab to toggle mode (or click).")
+        .clicked()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -116,6 +169,7 @@ fn spawn_agent(
     provider: Arc<dyn Provider>,
     model: String,
     system_prompt: Option<String>,
+    mode: AgentMode,
     egui_ctx: egui::Context,
 ) {
     // Append the user message, snapshot the conversation, set up
@@ -142,6 +196,7 @@ fn spawn_agent(
             provider,
             model,
             system_prompt,
+            mode,
             cancellation,
             exploration_id,
             event_tx.clone(),
@@ -161,6 +216,7 @@ async fn drive_agent(
     provider: Arc<dyn Provider>,
     model: String,
     system_prompt: Option<String>,
+    mode: AgentMode,
     cancellation: CancellationToken,
     exploration_id: String,
     event_tx: UnboundedSender<AgentEvent>,
@@ -189,6 +245,7 @@ async fn drive_agent(
 
     let mut config = AgentLoopConfig::new(model);
     config.system_prompt = system_prompt;
+    config.mode = mode;
     // 2048 fits comfortably under textgen-webui's default truncation
     // budget (8192 - 2048 = 6144 tokens for prompt+history) while still
     // leaving plenty of headroom for a typical assistant turn. Bump on
