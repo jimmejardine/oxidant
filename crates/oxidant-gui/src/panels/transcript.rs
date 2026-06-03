@@ -319,7 +319,7 @@ fn render_tool_result_nested(ui: &mut egui::Ui, id: Id, r: &ToolResultRef<'_>) {
         .show(ui, |ui| {
             ScrollArea::vertical()
                 .max_height(360.0)
-                .auto_shrink([false; 2])
+                .auto_shrink([false, true])
                 .id_salt(id.with("scroll"))
                 .show(ui, |ui| {
                     ui.code(&body);
@@ -328,11 +328,17 @@ fn render_tool_result_nested(ui: &mut egui::Ui, id: Id, r: &ToolResultRef<'_>) {
 }
 
 fn body_string(content: &ToolResultContent) -> String {
+    // Trim trailing whitespace for display only — subprocess tools
+    // (cargo, git, lsp) routinely emit a trailing newline (often two)
+    // and rendering those literally adds a row of empty space at the
+    // bottom of every tool-result card. The persisted form is
+    // untouched.
     match content {
-        ToolResultContent::Text(s) => s.clone(),
-        ToolResultContent::Json(v) => {
-            serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string())
-        }
+        ToolResultContent::Text(s) => s.trim_end().to_string(),
+        ToolResultContent::Json(v) => serde_json::to_string_pretty(v)
+            .unwrap_or_else(|_| v.to_string())
+            .trim_end()
+            .to_string(),
     }
 }
 
@@ -476,7 +482,7 @@ fn collapsible_code(ui: &mut egui::Ui, id: Id, body: &str) {
                 move |ui| {
                     ScrollArea::vertical()
                         .max_height(360.0)
-                        .auto_shrink([false; 2])
+                        .auto_shrink([false, true])
                         .id_salt(id.with("scroll"))
                         .show(ui, |ui| {
                             ui.code(&body_owned);
