@@ -111,6 +111,34 @@ async fn vcs_log_lists_commits() {
 }
 
 #[tokio::test]
+async fn commits_ahead_counts_branch_divergence() {
+    // Start with a main commit, branch off, add commits on the branch.
+    let dir = make_repo(&[("a.txt", "1")]);
+    run_git(dir.path(), &["checkout", "-q", "-b", "feature"]);
+    std::fs::write(dir.path().join("b.txt"), "2").unwrap();
+    run_git(dir.path(), &["add", "b.txt"]);
+    run_git(dir.path(), &["commit", "-m", "feature 1", "--quiet"]);
+    std::fs::write(dir.path().join("c.txt"), "3").unwrap();
+    run_git(dir.path(), &["add", "c.txt"]);
+    run_git(dir.path(), &["commit", "-m", "feature 2", "--quiet"]);
+    let git = Git::at(dir.path());
+    let ahead = git.commits_ahead("main", "feature").await.unwrap();
+    assert_eq!(ahead, 2, "feature is 2 commits ahead of main");
+    let behind = git.commits_ahead("feature", "main").await.unwrap();
+    assert_eq!(behind, 0, "main is 0 commits ahead of feature");
+}
+
+#[tokio::test]
+async fn commits_ahead_zero_when_branch_matches_base() {
+    // No new commits on the branch — it should be 0 ahead.
+    let dir = make_repo(&[("a.txt", "1")]);
+    run_git(dir.path(), &["checkout", "-q", "-b", "feature"]);
+    let git = Git::at(dir.path());
+    let ahead = git.commits_ahead("main", "feature").await.unwrap();
+    assert_eq!(ahead, 0);
+}
+
+#[tokio::test]
 async fn vcs_diff_with_modifications() {
     let dir = make_repo(&[("a.txt", "line 1\nline 2\n")]);
     std::fs::write(
@@ -298,7 +326,10 @@ async fn merge_back_squashes_when_requested() {
     .await
     .unwrap();
     assert!(outcome.conflicts.is_empty(), "squash should be clean here");
-    assert!(outcome.commit_sha.is_some(), "squash should produce a commit_sha");
+    assert!(
+        outcome.commit_sha.is_some(),
+        "squash should produce a commit_sha"
+    );
 
     let after = main_git
         .log(LogOpts {

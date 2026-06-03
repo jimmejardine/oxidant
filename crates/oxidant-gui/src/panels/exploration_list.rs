@@ -9,16 +9,22 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
+use std::time::{Duration, Instant};
 
 use egui::{Color32, CursorIcon, RichText, Sense};
 use tokio::runtime::Handle;
 
 use oxidant_core::{Exploration, ExplorationId, ExplorationKind};
-use oxidant_vcs::{MergeBackOpts, SpawnOpts, WorktreeHandle, worktree};
+use oxidant_vcs::{Git, MergeBackOpts, SpawnOpts, WorktreeHandle, worktree};
 
 use crate::app::{MergeConflictsState, SharedState};
 use crate::dock::DockTab;
 use crate::theme;
+
+/// How long the red "Confirm discard" stays armed before the UI
+/// reverts to the plain "Discard" label. Keeps a stale warning from
+/// hanging around indefinitely after the user walks away.
+const DISCARD_ARM_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct ExplorationListPanel {
     /// Form-field text for the spawn-new dialog. Drained on submit.
@@ -27,6 +33,36 @@ pub struct ExplorationListPanel {
     /// Set by spawned tasks via the shared Arc; rendered at the
     /// bottom of the panel. None hides the line.
     status: Arc<StdMutex<Option<String>>>,
+    /// First click on Discard for a sub with unmerged commits arms
+    /// the button — a red "Confirm discard ({N} unmerged)" requires
+    /// a second click within `DISCARD_ARM_TIMEOUT` to fire. See
+    /// spec/components/gui/exploration-list.md "Discard".
+    discard_armed: Option<DiscardArmed>,
+    /// Result slot for the async "commits ahead of parent" pre-check.
+    /// The spawned task drops a value here; `render` drains it at the
+    /// top of the next frame and either fires the discard immediately
+    /// (ahead == 0) or arms the warning (ahead > 0).
+    discard_check: Arc<StdMutex<Option<DiscardCheckResult>>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DiscardArmed {
+    id: ExplorationId,
+    ahead: usize,
+    at: Instant,
+}
+
+#[derive(Debug, Clone)]
+struct DiscardCheckResult {
+    id: ExplorationId,
+    /// Parent branch the sub was checked against; included for the
+    /// status-line message.
+    parent_branch: String,
+    /// `Ok(n)` = the sub is `n` commits ahead. `Err(msg)` = the check
+    /// itself failed (bad ref, git error). On Err we conservatively
+    /// arm with ahead=0 and a status-line warning so the user can
+    /// inspect, rather than silently fire the discard.
+    ahead: Result<usize, String>,
 }
 
 impl Default for ExplorationListPanel {
@@ -40,6 +76,8 @@ impl ExplorationListPanel {
         Self {
             new_name: String::new(),
             status: Arc::new(StdMutex::new(None)),
+            discard_armed: None,
+            discard_check: Arc::new(StdMutex::new(None)),
         }
     }
 
@@ -51,6 +89,19 @@ impl ExplorationListPanel {
         tokio_handle: &Handle,
         egui_ctx: &egui::Context,
     ) {
+        // Drain any discard pre-check result the spawned task left
+        // for us. Either auto-fires the discard (ahead == 0) or arms
+        // the red confirm button (ahead > 0 / check failed).
+        self.drain_discard_check(state, workspace_root, tokio_handle, egui_ctx);
+
+        // Expire a stale arm: the red "Confirm discard" reverts to a
+        // plain "Discard" if the user didn't click within the window.
+        if let Some(armed) = self.discard_armed
+            && armed.at.elapsed() >= DISCARD_ARM_TIMEOUT
+        {
+            self.discard_armed = None;
+        }
+
         ui.label(RichText::new("explorations").strong());
         ui.separator();
 
@@ -127,16 +178,13 @@ impl ExplorationListPanel {
             let active_dot = if is_active { "● " } else { "  " };
 
             ui.horizontal(|ui| {
-                let row_resp = ui.add(
-                    egui::SelectableLabel::new(
-                        is_active,
-                        RichText::new(format!("{active_dot}{badge}")).color(badge_colour),
-                    ),
-                );
+                let row_resp = ui.add(egui::SelectableLabel::new(
+                    is_active,
+                    RichText::new(format!("{active_dot}{badge}")).color(badge_colour),
+                ));
                 let row_resp = row_resp.on_hover_cursor(CursorIcon::PointingHand);
                 let branch_label = ui.add(
-                    egui::Label::new(RichText::new(&row.branch).strong())
-                        .sense(Sense::click()),
+                    egui::Label::new(RichText::new(&row.branch).strong()).sense(Sense::click()),
                 );
                 let branch_label = branch_label.on_hover_cursor(CursorIcon::PointingHand);
                 if (row_resp.clicked() || branch_label.clicked()) && !is_active {
@@ -148,17 +196,37 @@ impl ExplorationListPanel {
 
                 // Per-Sub actions: Merge (squash), Discard.
                 if matches!(row.kind, RowKind::Sub) {
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            if ui
-                                .button("Discard")
-                                .on_hover_text(
-                                    "git worktree remove + delete branch. \
-                                     Refuses if the worktree has uncommitted changes.",
-                                )
-                                .clicked()
-                            {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // Discard is two-stage when the sub has
+                        // unmerged commits. See spec/components/gui/
+                        // exploration-list.md "Discard".
+                        let armed_for_this_row = self.discard_armed.filter(|a| a.id == row.id);
+                        let (label, hover, danger) = if let Some(a) = armed_for_this_row {
+                            (
+                                format!("Confirm discard ({} unmerged)", a.ahead),
+                                "Click again to discard. The unmerged commits will be lost.",
+                                true,
+                            )
+                        } else {
+                            (
+                                "Discard".to_string(),
+                                "git worktree remove + delete branch. Pre-check warns if \
+                                     the sub has commits not yet merged into its parent.",
+                                false,
+                            )
+                        };
+                        let mut btn = egui::Button::new(if danger {
+                            RichText::new(label).color(Color32::WHITE).strong()
+                        } else {
+                            RichText::new(label)
+                        });
+                        if danger {
+                            btn = btn.fill(Color32::from_rgb(160, 40, 40));
+                        }
+                        if ui.add(btn).on_hover_text(hover).clicked() {
+                            if let Some(_a) = armed_for_this_row {
+                                // Confirmed — fire the discard.
+                                self.discard_armed = None;
                                 discard_sub(
                                     state.clone(),
                                     workspace_root.to_path_buf(),
@@ -168,45 +236,86 @@ impl ExplorationListPanel {
                                     row.id,
                                     row.worktree_path.clone(),
                                 );
+                            } else {
+                                // First click on a non-armed row.
+                                // Clear any other row's stale arm
+                                // and kick off the pre-check.
+                                self.discard_armed = None;
+                                let parent_branch = parents_by_id
+                                    .get(&row.id)
+                                    .map(|(b, _)| b.clone())
+                                    .unwrap_or_else(|| "main".into());
+                                let parent_worktree =
+                                    parents_by_id.get(&row.id).and_then(|(_, pid)| {
+                                        state.lock().ok().and_then(|s| {
+                                            s.explorations.get(pid).map(|e| e.worktree_path.clone())
+                                        })
+                                    });
+                                if let Some(pw) = parent_worktree {
+                                    kick_discard_check(
+                                        tokio_handle,
+                                        egui_ctx.clone(),
+                                        self.discard_check.clone(),
+                                        row.id,
+                                        parent_branch,
+                                        row.branch.clone(),
+                                        pw,
+                                    );
+                                } else {
+                                    // No parent worktree to check
+                                    // against — conservatively just
+                                    // fire the discard (matches the
+                                    // prior behaviour). The worktree
+                                    // operation itself will still
+                                    // refuse on dirty files.
+                                    discard_sub(
+                                        state.clone(),
+                                        workspace_root.to_path_buf(),
+                                        tokio_handle,
+                                        egui_ctx.clone(),
+                                        self.status.clone(),
+                                        row.id,
+                                        row.worktree_path.clone(),
+                                    );
+                                }
                             }
-                            if let Some((parent_branch, parent_id)) = parents_by_id.get(&row.id)
-                                && ui
-                                    .button("Merge ↩ squash")
-                                    .on_hover_text(
-                                        "git merge --squash + commit, then \
+                        }
+                        if let Some((parent_branch, parent_id)) = parents_by_id.get(&row.id)
+                            && ui
+                                .button("Merge ↩ squash")
+                                .on_hover_text(
+                                    "git merge --squash + commit, then \
                                          remove the worktree. Conflicts (Phase 3) \
                                          will surface in a resolution panel.",
-                                    )
-                                    .clicked()
-                            {
-                                merge_back_squash(
-                                    state.clone(),
-                                    workspace_root.to_path_buf(),
-                                    tokio_handle,
-                                    egui_ctx.clone(),
-                                    self.status.clone(),
-                                    row.id,
-                                    *parent_id,
-                                    parent_branch.clone(),
-                                    WorktreeHandle {
-                                        path: row.worktree_path.clone(),
-                                        branch: row.branch.clone(),
-                                        // worktree::merge_back only reads `path`
-                                        // and `branch` from this — created_at is
-                                        // irrelevant. Reconstruct from row data.
-                                        created_at: row.created_at_rfc.parse().unwrap_or_else(
-                                            |_| chrono::Utc::now(),
-                                        ),
-                                    },
-                                );
-                            }
-                        },
-                    );
+                                )
+                                .clicked()
+                        {
+                            merge_back_squash(
+                                state.clone(),
+                                workspace_root.to_path_buf(),
+                                tokio_handle,
+                                egui_ctx.clone(),
+                                self.status.clone(),
+                                row.id,
+                                *parent_id,
+                                parent_branch.clone(),
+                                WorktreeHandle {
+                                    path: row.worktree_path.clone(),
+                                    branch: row.branch.clone(),
+                                    // worktree::merge_back only reads `path`
+                                    // and `branch` from this — created_at is
+                                    // irrelevant. Reconstruct from row data.
+                                    created_at: row
+                                        .created_at_rfc
+                                        .parse()
+                                        .unwrap_or_else(|_| chrono::Utc::now()),
+                                },
+                            );
+                        }
+                    });
                 }
             });
-            ui.label(
-                RichText::new(row.worktree_path.to_string_lossy()).color(theme::muted_text()),
-            );
+            ui.label(RichText::new(row.worktree_path.to_string_lossy()).color(theme::muted_text()));
             ui.add_space(2.0);
         }
 
@@ -217,6 +326,96 @@ impl ExplorationListPanel {
             ui.label(RichText::new(msg).color(theme::muted_text()));
         }
     }
+
+    /// Pick up the async discard pre-check result, if any, and either
+    /// auto-fire the discard (ahead == 0) or arm the red Confirm
+    /// button (ahead > 0 or the check itself errored).
+    fn drain_discard_check(
+        &mut self,
+        state: &Arc<StdMutex<SharedState>>,
+        workspace_root: &Path,
+        tokio_handle: &Handle,
+        egui_ctx: &egui::Context,
+    ) {
+        let result = self.discard_check.lock().unwrap().take();
+        let Some(result) = result else { return };
+        let DiscardCheckResult {
+            id,
+            parent_branch,
+            ahead,
+        } = result;
+        match ahead {
+            Ok(0) => {
+                // Clean — fire the discard immediately.
+                let path = state
+                    .lock()
+                    .ok()
+                    .and_then(|s| s.explorations.get(&id).map(|e| e.worktree_path.clone()));
+                if let Some(path) = path {
+                    discard_sub(
+                        state.clone(),
+                        workspace_root.to_path_buf(),
+                        tokio_handle,
+                        egui_ctx.clone(),
+                        self.status.clone(),
+                        id,
+                        path,
+                    );
+                }
+            }
+            Ok(n) => {
+                self.discard_armed = Some(DiscardArmed {
+                    id,
+                    ahead: n,
+                    at: Instant::now(),
+                });
+                *self.status.lock().unwrap() = Some(format!(
+                    "{n} commit(s) not merged into `{parent_branch}`; click Discard again to confirm.",
+                ));
+                egui_ctx.request_repaint();
+            }
+            Err(msg) => {
+                // The check itself failed (ref invalid, git error).
+                // Conservatively arm with 0 so the user sees the
+                // warning and has a second chance, plus surface the
+                // error on the status line.
+                self.discard_armed = Some(DiscardArmed {
+                    id,
+                    ahead: 0,
+                    at: Instant::now(),
+                });
+                *self.status.lock().unwrap() = Some(format!(
+                    "couldn't check unmerged commits against `{parent_branch}`: {msg}. \
+                     Click Discard again to proceed anyway.",
+                ));
+                egui_ctx.request_repaint();
+            }
+        }
+    }
+}
+
+fn kick_discard_check(
+    tokio_handle: &Handle,
+    egui_ctx: egui::Context,
+    slot: Arc<StdMutex<Option<DiscardCheckResult>>>,
+    sub_id: ExplorationId,
+    parent_branch: String,
+    sub_branch: String,
+    parent_worktree: PathBuf,
+) {
+    tokio_handle.spawn(async move {
+        let git = Git::at(&parent_worktree);
+        let ahead = match git.commits_ahead(&parent_branch, &sub_branch).await {
+            Ok(n) => Ok(n),
+            Err(e) => Err(e.to_string()),
+        };
+        *slot.lock().unwrap() = Some(DiscardCheckResult {
+            id: sub_id,
+            parent_branch,
+            ahead,
+        });
+        egui_ctx.request_repaint();
+    });
 }
 
 #[derive(Clone)]
@@ -279,6 +478,7 @@ fn spawn_sub(
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn merge_back_squash(
     state: Arc<StdMutex<SharedState>>,
     _workspace_root: PathBuf,
@@ -400,8 +600,7 @@ fn discard_sub(
         let sub = match s.explorations.get(&sub_id) {
             Some(e) => e,
             None => {
-                *status.lock().unwrap() =
-                    Some("discard failed: exploration not found".into());
+                *status.lock().unwrap() = Some("discard failed: exploration not found".into());
                 egui_ctx.request_repaint();
                 return;
             }

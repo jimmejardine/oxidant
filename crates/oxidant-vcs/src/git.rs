@@ -144,6 +144,21 @@ impl Git {
         Ok(parse_log_tabbed(&stdout))
     }
 
+    // ----- rev counting -----
+
+    /// Count of commits reachable from `head` but not from `base` —
+    /// i.e. the output of `git rev-list --count <base>..<head>`. Use
+    /// it to detect whether a sub-branch has unmerged commits before
+    /// destructive ops (worktree discard). Returns 0 when the ranges
+    /// resolve but no commits are ahead.
+    pub async fn commits_ahead(&self, base: &str, head: &str) -> Result<usize, GitError> {
+        validate_revspec(base)?;
+        validate_revspec(head)?;
+        let range = format!("{base}..{head}");
+        let stdout = self.run(&["rev-list", "--count", &range]).await?;
+        Ok(stdout.trim().parse().unwrap_or(0))
+    }
+
     // ----- show -----
 
     /// `git show <sha>:<repo-relative-path>` — return the file's contents at
@@ -322,13 +337,10 @@ impl Git {
                     // Squash leaves staged changes uncommitted. Finalise
                     // here so the caller gets back a real commit_sha,
                     // matching the no-ff outcome shape.
-                    let message = opts.message.unwrap_or_else(|| {
-                        format!("Squash merge of {branch}")
-                    });
-                    let commit_args = vec!["commit".to_string(), "-m".to_string(), message];
-                    let commit_refs: Vec<&str> =
-                        commit_args.iter().map(|s| s.as_str()).collect();
-                    self.run(&commit_refs).await?;
+                    let message = opts
+                        .message
+                        .unwrap_or_else(|| format!("Squash merge of {branch}"));
+                    self.run(&["commit", "-m", &message]).await?;
                 }
                 let sha = self.run(&["rev-parse", "HEAD"]).await?.trim().to_string();
                 Ok(MergeOutcome {
