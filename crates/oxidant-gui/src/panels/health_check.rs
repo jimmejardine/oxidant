@@ -207,10 +207,12 @@ fn glyph_for(st: &CheckState) -> (&'static str, Color32, bool) {
             if st.issues.is_empty() {
                 ("✔", Color32::from_rgb(120, 220, 140), false)
             } else {
-                ("✗", Color32::from_rgb(247, 118, 142), !st.user_toggled)
+                // U+00D7 (×), not U+2717 (✗): the latter is absent from
+                // egui's bundled fonts and renders as a tofu box.
+                ("×", Color32::from_rgb(247, 118, 142), !st.user_toggled)
             }
         }
-        CheckStatus::Failed(_) => ("✗", Color32::from_rgb(247, 118, 142), !st.user_toggled),
+        CheckStatus::Failed(_) => ("×", Color32::from_rgb(247, 118, 142), !st.user_toggled),
     }
 }
 
