@@ -171,10 +171,19 @@ where
             match event {
                 ChatEvent::TextDelta(s) => {
                     acc.text.push_str(&s);
-                    // Incremental envelope scan — dispatch text-extracted
-                    // tool calls eagerly the same way native ToolUseEnd
-                    // does. Loops until find_next reports NoOpen or
-                    // Incomplete; advances text_scan_cursor as we go.
+                    // Incremental envelope scan — accumulate text-extracted
+                    // tool calls and tokio::spawn them as soon as the
+                    // close tag lands. Mirror of the native ToolUseEnd
+                    // path. Note: since cut_stream breaks the outer loop
+                    // the instant Complete{Some(_)} fires, the spawn
+                    // currently only races the post-stream cleanup —
+                    // wall-clock benefit is microseconds. Kept for shape
+                    // symmetry with the native path (which IS load-bearing,
+                    // since Anthropic parallel tool use overlaps spawn with
+                    // the rest of the stream) and so a future relaxed
+                    // cut_stream rule needs no rewire. Loops until
+                    // find_next reports NoOpen or Incomplete; advances
+                    // text_scan_cursor as we go.
                     loop {
                         use text_tool_calls::FindResult;
                         match text_tool_calls::find_next(&acc.text, text_scan_cursor) {
