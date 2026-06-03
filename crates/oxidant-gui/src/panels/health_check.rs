@@ -11,14 +11,16 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::time::Instant;
 
-use egui::{Color32, RichText};
+use egui::{Color32, CursorIcon, RichText};
 use serde_json::Value;
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
-use oxidant_core::{ToolContext, ToolRegistry, ToolResult};
+use oxidant_core::{AgentMode, ToolContext, ToolRegistry, ToolResult};
 
-use crate::app::{CheckKind, CheckState, CheckStatus, HealthIssue, IssueSeverity, SharedState};
+use crate::app::{
+    CheckKind, CheckState, CheckStatus, HealthIssue, IssueSeverity, PendingChatPrompt, SharedState,
+};
 use crate::dock::{DockTab, FileSource};
 use crate::theme;
 
@@ -151,6 +153,11 @@ fn render_root(
     .default_open(default_open)
     .show(ui, |ui| render_subtree(ui, state, kind, st));
 
+    header_response
+        .header_response
+        .clone()
+        .on_hover_cursor(CursorIcon::PointingHand);
+
     // Detect user toggle. If the user collapsed/expanded a red root,
     // mark user_toggled so future runs don't fight them.
     if header_response.header_response.clicked() {
@@ -261,14 +268,19 @@ fn render_subtree(
             issues.len(),
             if issues.len() == 1 { "" } else { "s" }
         );
-        egui::CollapsingHeader::new(RichText::new(header).color(theme::muted_text()))
-            .id_salt(("health_group", group_key.clone()))
-            .default_open(group_has_error)
-            .show(ui, |ui| {
-                for issue in issues {
-                    render_issue(ui, state, issue);
-                }
-            });
+        let group_response = egui::CollapsingHeader::new(
+            RichText::new(header).color(theme::muted_text()),
+        )
+        .id_salt(("health_group", group_key.clone()))
+        .default_open(group_has_error)
+        .show(ui, |ui| {
+            for issue in issues {
+                render_issue(ui, state, issue);
+            }
+        });
+        group_response
+            .header_response
+            .on_hover_cursor(CursorIcon::PointingHand);
     }
 }
 
@@ -289,12 +301,60 @@ fn render_issue(ui: &mut egui::Ui, state: &Arc<StdMutex<SharedState>>, issue: &H
                 );
             }
         })
-        .response;
-    // Click anywhere on the row to open the file (if any).
-    if resp.interact(egui::Sense::click()).clicked()
+        .response
+        .interact(egui::Sense::click())
+        .on_hover_cursor(CursorIcon::PointingHand)
+        .on_hover_text("click to open · double-click to ask the agent in Plan mode");
+
+    // Double-click wins over single-click: a user double-clicking
+    // for the "ask the agent" gesture is briefly clicking once, and
+    // we don't want to flip-flop to the file-open action mid-gesture.
+    if resp.double_clicked() {
+        push_chat_prompt(state, build_issue_prompt(issue), AgentMode::Plan);
+    } else if resp.clicked()
         && let Some(file) = &issue.file
     {
         push_open(state, file);
+    }
+}
+
+/// Build the structured "address this issue" prompt the chat input
+/// is auto-filled with on a leaf double-click. Pure function — the
+/// HealthIssue value carries everything needed.
+pub(crate) fn build_issue_prompt(issue: &HealthIssue) -> String {
+    let severity = match issue.severity {
+        IssueSeverity::Error => "error",
+        IssueSeverity::Warning => "warning",
+        IssueSeverity::Note => "note",
+    };
+    let mut out = String::from(
+        "Help me address this Health Check issue. Investigate first, then describe (don't make) the fix you'd apply.\n\n",
+    );
+    out.push_str(&format!("Check:    {}\n", issue.check.display_name()));
+    out.push_str(&format!("Severity: {severity}\n"));
+    if let Some(file) = &issue.file {
+        out.push_str(&format!(
+            "File:     {}:{}:{}\n",
+            file, issue.line, issue.character
+        ));
+    }
+    // Drop Group when it just duplicates the file path (cargo / clippy
+    // groups by file, so group_key == file in that case).
+    let group_dup_of_file = issue
+        .file
+        .as_deref()
+        .map(|f| f == issue.group_key)
+        .unwrap_or(false);
+    if !group_dup_of_file {
+        out.push_str(&format!("Group:    {}\n", issue.group_key));
+    }
+    out.push_str(&format!("Message:  {}\n", issue.message));
+    out
+}
+
+fn push_chat_prompt(state: &Arc<StdMutex<SharedState>>, prompt: String, mode: AgentMode) {
+    if let Ok(mut s) = state.lock() {
+        s.pending_chat_prompt = Some(PendingChatPrompt { prompt, mode });
     }
 }
 
@@ -755,5 +815,81 @@ mod tests {
         let (f, l) = extract_panic_location("running 1 test\ntest foo::bar ... ok\n");
         assert!(f.is_none());
         assert_eq!(l, 0);
+    }
+
+    fn clippy_issue_with_file() -> HealthIssue {
+        HealthIssue {
+            check: CheckKind::Clippy,
+            severity: IssueSeverity::Warning,
+            group_key: "crates/oxidant-gui/src/panels/spec_graph.rs".into(),
+            message: "unused variable `near`".into(),
+            file: Some("crates/oxidant-gui/src/panels/spec_graph.rs".into()),
+            line: 765,
+            character: 13,
+        }
+    }
+
+    #[test]
+    fn build_issue_prompt_includes_check_severity_message() {
+        let issue = clippy_issue_with_file();
+        let p = build_issue_prompt(&issue);
+        assert!(p.contains("Check:    clippy"));
+        assert!(p.contains("Severity: warning"));
+        assert!(p.contains("unused variable `near`"));
+        assert!(
+            p.contains("File:     crates/oxidant-gui/src/panels/spec_graph.rs:765:13"),
+            "prompt missing file line: {p}"
+        );
+        // group_key == file → no Group: line at all
+        assert!(!p.contains("Group:"));
+    }
+
+    #[test]
+    fn build_issue_prompt_omits_file_when_none() {
+        let issue = HealthIssue {
+            check: CheckKind::SpecValidate,
+            severity: IssueSeverity::Warning,
+            group_key: "Orphan".into(),
+            message: "components/foo has no inbound refs".into(),
+            file: None,
+            line: 0,
+            character: 0,
+        };
+        let p = build_issue_prompt(&issue);
+        assert!(!p.contains("File:"));
+        // Group is still meaningful when there's no file to duplicate.
+        assert!(p.contains("Group:    Orphan"));
+        assert!(p.contains("Check:    spec validate"));
+    }
+
+    #[test]
+    fn build_issue_prompt_keeps_group_when_distinct_from_file() {
+        // Tests case: group_key is the test target (oxidant_core),
+        // file is the panic site path — they should NOT coincide.
+        let issue = HealthIssue {
+            check: CheckKind::Tests,
+            severity: IssueSeverity::Error,
+            group_key: "oxidant_core".into(),
+            message: "text_tool_calls::extract_qwen3_envelope".into(),
+            file: Some("crates/oxidant-core/src/text_tool_calls.rs".into()),
+            line: 301,
+            character: 9,
+        };
+        let p = build_issue_prompt(&issue);
+        assert!(p.contains("Group:    oxidant_core"));
+        assert!(p.contains("File:     crates/oxidant-core/src/text_tool_calls.rs:301:9"));
+    }
+
+    #[test]
+    fn build_issue_prompt_starts_with_a_plan_instruction() {
+        let p = build_issue_prompt(&clippy_issue_with_file());
+        assert!(
+            p.starts_with("Help me address this Health Check issue."),
+            "first line should be the instruction: {p}"
+        );
+        assert!(
+            p.contains("describe (don't make) the fix"),
+            "should explicitly tell the model not to mutate: {p}"
+        );
     }
 }

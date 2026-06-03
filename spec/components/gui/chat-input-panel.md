@@ -56,3 +56,29 @@ Hovering shows the tooltip "**Shift+Tab** to toggle." Clicking the chip toggles 
 ## Model picker
 
 Per-exploration override of the default model. Choices come from [[components/config/settings]]. Switching mid-conversation is allowed; the next turn uses the new model.
+
+## External prompt fill
+
+Other panels can replace the chat input's draft via a side channel on `SharedState`:
+
+```rust
+pub pending_chat_prompt: Option<PendingChatPrompt>,
+
+pub struct PendingChatPrompt {
+    pub prompt: String,
+    pub mode: AgentMode,
+}
+```
+
+The current caller is the [[components/gui/health-check-panel]] — double-clicking an issue queues a structured prompt with `mode = Plan`. The same channel is open to any future panel that wants to "start a conversation about this".
+
+At the top of `ChatInputPanel::render`, before any drawing, the panel drains the field:
+
+1. Replace `self.draft` with `prompt`.
+2. Set `self.mode` to the requested mode.
+3. Request focus on the multi-line `TextEdit` via `ui.memory_mut(|m| m.request_focus(text_edit_id))`, where `text_edit_id = ui.make_persistent_id("oxidant-chat-input")` — the same id the TextEdit already uses.
+4. Clear `pending_chat_prompt = None`.
+
+**No auto-send.** The panel never triggers the agent on the user's behalf — Ctrl+Enter remains the only path to send. Auto-sending from external context would be surprising; the user retains the final keystroke.
+
+Subsequent fills overwrite: only the most recent `Some(...)` value is honoured, since the panel drains every frame.

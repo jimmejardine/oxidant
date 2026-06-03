@@ -57,6 +57,20 @@ impl ChatInputPanel {
     ) {
         let streaming = state.lock().unwrap().live_turn.is_some();
 
+        // Drain pending_chat_prompt before drawing — another panel
+        // (the Health Check tree, for now) may have queued an
+        // "address this" prompt for us. We replace the draft, force
+        // the requested mode, and grab focus so the user can review
+        // and press Ctrl+Enter immediately. We never auto-send.
+        // See spec/components/gui/chat-input-panel.md "External prompt fill".
+        let text_edit_id = ui.make_persistent_id("oxidant-chat-input");
+        let pending = state.lock().unwrap().pending_chat_prompt.take();
+        if let Some(p) = pending {
+            self.draft = p.prompt;
+            self.mode = p.mode;
+            ui.memory_mut(|m| m.request_focus(text_edit_id));
+        }
+
         // Header row: mode chip · model · send/cancel.
         ui.horizontal(|ui| {
             let chip_clicked = render_mode_chip(ui, self.mode, streaming);

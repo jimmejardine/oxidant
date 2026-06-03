@@ -110,7 +110,30 @@ Each red root expands into a check-specific subtree. Grouping is keyed on `Healt
 - **SpecValidate** — `group_key = WarningKind`. Letting the user fix a whole class at once is more useful than per-spec grouping.
 - **SpecDiff** — `group_key = Drift::kind` discriminant (one of the four variants). One leaf per finding.
 
-Each leaf row shows `[severity] <message>` with the optional `file:line:character` rendered in muted text. Clicking a leaf with a file location pushes a `DockTab::File { path, source }` onto `pending_centre_tabs` — same flow the trees use.
+Each leaf row shows `[severity] <message>` with the optional `file:line:character` rendered in muted text.
+
+### Row interactions
+
+Every row in the tree (root, group header, leaf) shows a `CursorIcon::PointingHand` on hover. Leaf rows carry two distinct actions:
+
+- **Single-click** opens the issue's file in a centre tab (via `pending_centre_tabs` — same flow the trees use). No-op when `issue.file` is `None` (e.g. a `SpecValidate::Orphan` warning without a source location).
+- **Double-click** auto-fills the chat input with a structured "address this" prompt and switches the chat to `AgentMode::Plan`. The user reviews and presses Ctrl+Enter to send. The auto-fill flows through `SharedState::pending_chat_prompt`; see [[components/gui/chat-input-panel]].
+
+The prompt template (rendered by `build_issue_prompt`):
+
+```
+Help me address this Health Check issue. Investigate first, then describe (don't make) the fix you'd apply.
+
+Check:    clippy
+Severity: warning
+File:     crates/oxidant-gui/src/panels/spec_graph.rs:765:13
+Group:    src/foo.rs
+Message:  unused variable `near`
+```
+
+Fields are omitted when empty: `File:` is dropped when `issue.file` is `None`; `Group:` is dropped when `group_key` equals the file path (it would duplicate the `File:` line).
+
+Forcing Plan mode is deliberate — double-clicking an issue is a "help me think" gesture. If the user wants the agent to immediately fix it, they flip to Implement after reading the proposal.
 
 ### Failure isolation
 

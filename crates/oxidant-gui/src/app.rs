@@ -12,7 +12,7 @@ use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 
-use oxidant_core::{Exploration, ToolRegistry};
+use oxidant_core::{AgentMode, Exploration, ToolRegistry};
 use oxidant_providers::{ChatEvent, Provider, StopReason, Usage};
 
 use crate::dock::{
@@ -76,11 +76,22 @@ pub struct SharedState {
     /// (e.g. spec-tree double-click). Drained once per frame after
     /// `DockArea::show`; see spec/components/gui/spec-tree-panel.md.
     pub pending_centre_tabs: Vec<DockTab>,
+    /// Auto-fill request from any panel into the chat input. Drained
+    /// once per frame by `ChatInputPanel::render`: replace draft, set
+    /// mode, request focus, clear the field. No auto-send.
+    /// See spec/components/gui/chat-input-panel.md "External prompt fill".
+    pub pending_chat_prompt: Option<PendingChatPrompt>,
     /// Per-path edit buffers for File tabs. Keyed by absolute path so
     /// the same file in two tabs (which can't actually happen — dock
     /// tabs are unique) would share state. See
     /// spec/components/gui/file-tabs.md "Edit lifecycle for specs".
     pub editor_buffers: HashMap<PathBuf, EditorBuffer>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingChatPrompt {
+    pub prompt: String,
+    pub mode: AgentMode,
 }
 
 #[derive(Debug, Clone)]
@@ -266,6 +277,7 @@ impl App {
             cancellation: None,
             health: HealthReport::default(),
             pending_centre_tabs: Vec::new(),
+            pending_chat_prompt: None,
             editor_buffers: HashMap::new(),
         }));
         let (event_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
