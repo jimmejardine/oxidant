@@ -356,9 +356,20 @@ async fn drive_agent(
         // immediately so the transcript reflects in-flight tool results
         // without waiting for the whole loop to return. See
         // spec/components/core/agent-loop.md "Tool dispatch concurrency".
+        //
+        // We ALSO reset live_turn here. Whatever was streaming into it
+        // has just been incorporated into the committed conversation;
+        // leaving it populated makes the transcript render the same
+        // content twice — once as Message::Assistant, once as the
+        // live-turn preview. Reset to Some(LiveTurn::default()) (not
+        // None) so the "{n} messages · streaming" header indicator
+        // stays true across iterations; the transcript renderer guards
+        // an empty placeholder so no ghost spinner appears.
+        // See spec/components/gui/transcript-tab.md "Streaming".
         |conv: &Conversation| {
             if let Ok(mut s) = state_for_commit.lock() {
                 s.exploration.conversation = conv.clone();
+                s.live_turn = Some(crate::app::LiveTurn::default());
             }
             egui_ctx_for_commit.request_repaint();
         },

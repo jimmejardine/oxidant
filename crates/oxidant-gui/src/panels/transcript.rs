@@ -99,7 +99,17 @@ impl TranscriptPanel {
                     render_message(ui, msg_idx, msg, &ctx);
                     ui.add_space(8.0);
                 }
-                if let Some(turn) = &state.live_turn {
+                if let Some(turn) = &state.live_turn
+                    && (!turn.text.is_empty()
+                        || !turn.thinking.is_empty()
+                        || !turn.tool_calls.is_empty())
+                {
+                    // Skip the empty placeholder set by on_commit
+                    // between iterations — see spec/components/gui/
+                    // transcript-tab.md "Streaming". Without this
+                    // guard the just-committed assistant message and
+                    // an empty live-turn spinner would render
+                    // simultaneously, looking like a duplicate.
                     render_live_turn(ui, turn);
                 }
                 if let Some(o) = &state.last_outcome {
