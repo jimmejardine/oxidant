@@ -226,6 +226,10 @@ pub struct TurnOutcome {
     /// in the transcript — see spec/components/gui/chat-input-panel.md
     /// "Continue iterating".
     pub hit_max_iterations: bool,
+    /// `true` when the turn was cancelled by the user (ESC / Cancel). The
+    /// transcript shows a muted "⊘ turn cancelled" line. See
+    /// spec/components/gui/chat-input-panel.md "Cancel semantics".
+    pub cancelled: bool,
 }
 
 // ---------------------------------------------------------------- Health report

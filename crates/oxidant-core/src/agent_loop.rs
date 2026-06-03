@@ -103,6 +103,10 @@ pub struct AgentLoopOutcome {
     /// Number of times the configured post-edit check tool fired across
     /// this run (one per turn that contained any Mutating tool call).
     pub post_edit_checks_fired: usize,
+    /// True when the run stopped because `ctx.cancellation` was tripped
+    /// (user ESC / Cancel). See spec/components/core/agent-loop.md
+    /// "Cancellation".
+    pub cancelled: bool,
 }
 
 /// Run the agent loop until the model returns an end-of-turn response with
@@ -119,8 +123,12 @@ pub struct AgentLoopOutcome {
 /// loop returns. See spec/components/core/agent-loop.md
 /// "Tool dispatch concurrency".
 ///
-/// The function returns when the loop terminates; cancellation is
-/// implicit (drop the future) per the spec.
+/// Cancellation is cooperative via `ctx.cancellation`: the loop races the
+/// provider stream against the token and checks it between iterations and
+/// before awaiting each tool result, aborting in-flight tool tasks and
+/// returning `Ok(AgentLoopOutcome { cancelled: true, .. })` promptly.
+/// Dropping the future is still a valid hard stop. See
+/// spec/components/core/agent-loop.md "Cancellation".
 pub async fn run<F, G>(
     provider: &dyn Provider,
     registry: Arc<ToolRegistry>,
@@ -137,6 +145,12 @@ where
     let mut outcome = AgentLoopOutcome::default();
 
     for iteration in 0..config.max_iterations {
+        // Cooperative cancellation: bail before starting another request.
+        if ctx.cancellation.is_cancelled() {
+            outcome.cancelled = true;
+            return Ok(outcome);
+        }
+
         outcome.iterations = iteration + 1;
 
         let request = build_request(conv, &registry, config);
@@ -165,8 +179,25 @@ where
         // generating after </tool_call>; left running they emit
         // hallucinated tool output and speculative follow-on calls.
         let mut cut_stream = false;
+        // Set when `ctx.cancellation` trips mid-stream — we stop consuming
+        // and short-circuit the whole run below.
+        let mut cancelled = false;
 
-        while let Some(event) = stream.next().await {
+        loop {
+            // Race the next stream chunk against cancellation so an
+            // in-flight model response is interrupted promptly rather than
+            // running to completion. `StreamExt::next` is cancel-safe.
+            let event = tokio::select! {
+                biased;
+                _ = ctx.cancellation.cancelled() => {
+                    cancelled = true;
+                    break;
+                }
+                ev = stream.next() => match ev {
+                    Some(e) => e,
+                    None => break,
+                },
+            };
             on_event(&event);
             match event {
                 ChatEvent::TextDelta(s) => {
@@ -292,6 +323,17 @@ where
             }
         }
 
+        // Cancelled mid-stream: abort any tools already dispatched this
+        // turn and short-circuit without committing the partial assistant
+        // message. See spec/components/core/agent-loop.md "Cancellation".
+        if cancelled {
+            for (_, (_, handle)) in pending.drain() {
+                handle.abort();
+            }
+            outcome.cancelled = true;
+            return Ok(outcome);
+        }
+
         if let Some(e) = error_text {
             return Err(anyhow!("provider stream error: {e}"));
         }
@@ -340,6 +382,15 @@ where
         // weren't spawned during the loop — fall back to inline dispatch
         // for any id in acc.order without a pending handle.
         for id in &acc.order {
+            // Cooperative cancellation: stop awaiting/dispatching tools and
+            // abort any handles still in flight.
+            if ctx.cancellation.is_cancelled() {
+                for (_, (_, handle)) in pending.drain() {
+                    handle.abort();
+                }
+                outcome.cancelled = true;
+                return Ok(outcome);
+            }
             let (start, handle) = if let Some(entry) = pending.remove(id) {
                 entry
             } else {

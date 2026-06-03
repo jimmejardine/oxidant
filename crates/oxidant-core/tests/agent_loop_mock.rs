@@ -1054,3 +1054,103 @@ async fn on_commit_fires_after_every_conversation_push() {
     );
     assert_eq!(conv.messages.len(), 4);
 }
+
+/// A provider whose stream never yields and never ends — stands in for a
+/// model still generating, so we can test cancellation interrupting an
+/// in-flight stream.
+struct PendingProvider;
+
+#[async_trait]
+impl Provider for PendingProvider {
+    async fn chat(&self, _req: ChatRequest) -> anyhow::Result<BoxStream<'static, ChatEvent>> {
+        Ok(futures::stream::pending().boxed())
+    }
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities {
+            tool_use: true,
+            ..Default::default()
+        }
+    }
+    fn name(&self) -> &str {
+        "pending"
+    }
+}
+
+#[tokio::test]
+async fn cancel_before_run_short_circuits_without_calling_provider() {
+    let provider = MockProvider::new(vec![vec![ChatEvent::Finish {
+        stop_reason: StopReason::EndTurn,
+        usage: Usage::default(),
+    }]]);
+    let token = CancellationToken::new();
+    token.cancel(); // already cancelled before we start
+    let ctx = ToolContext {
+        workspace_root: camino::Utf8PathBuf::from("."),
+        exploration_id: "test".to_string(),
+        cancellation: token,
+    };
+    let mut conv = Conversation::new();
+    conv.push_user_text("hi");
+
+    let outcome = run(
+        &provider,
+        std::sync::Arc::new(ToolRegistry::new()),
+        ctx,
+        &mut conv,
+        &AgentLoopConfig::new("m"),
+        |_| {},
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    assert!(outcome.cancelled, "a pre-cancelled token must short-circuit");
+    assert_eq!(outcome.iterations, 0, "no iteration should have started");
+    assert!(
+        provider.captured_requests().is_empty(),
+        "the provider must not be called once cancelled"
+    );
+    // Only the original user message — no assistant message committed.
+    assert_eq!(conv.messages.len(), 1);
+}
+
+#[tokio::test]
+async fn cancel_during_stream_returns_promptly() {
+    let provider = std::sync::Arc::new(PendingProvider);
+    let token = CancellationToken::new();
+    let ctx = ToolContext {
+        workspace_root: camino::Utf8PathBuf::from("."),
+        exploration_id: "test".to_string(),
+        cancellation: token.clone(),
+    };
+    let mut conv = Conversation::new();
+    conv.push_user_text("hi");
+
+    // Trip the token shortly after run() starts awaiting the stream.
+    let canceller = token.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        canceller.cancel();
+    });
+
+    let outcome = tokio::time::timeout(
+        Duration::from_secs(5),
+        run(
+            provider.as_ref(),
+            std::sync::Arc::new(ToolRegistry::new()),
+            ctx,
+            &mut conv,
+            &AgentLoopConfig::new("m"),
+            |_| {},
+            |_| {},
+        ),
+    )
+    .await
+    .expect("run must return promptly after cancel, not hang on the stream")
+    .unwrap();
+
+    assert!(
+        outcome.cancelled,
+        "cancelling mid-stream must yield a cancelled outcome"
+    );
+}

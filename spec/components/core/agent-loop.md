@@ -87,7 +87,7 @@ The transcript ([[components/gui/transcript-tab]]) shows `⟳ pending dispatch�
 The loop returns when:
 - `Finish { stop_reason: EndTurn }` with no pending tool calls.
 - `Finish { stop_reason: StopSequence | MaxTokens }`.
-- The user cancels via the GUI (cancellation token in `ToolContext`).
+- The user cancels via the GUI — `ctx.cancellation` is tripped; the loop short-circuits at its next yield and returns `AgentLoopOutcome { cancelled: true, .. }` (see Cancellation).
 - A provider error event arrives.
 
 ## Post-edit hook
@@ -104,7 +104,13 @@ This is the agent-loop side of [[decisions/0008-spec-is-canonical]]: drift is de
 
 ## Cancellation
 
-Each loop runs on a tokio task spawned by `oxidant-core`. Cancellation: drop the task handle. Any in-flight tool call sees `ctx.is_cancelled()` and short-circuits.
+Cancellation is **cooperative** via `ctx.cancellation` (the `CancellationToken` carried in `ToolContext`). The GUI's ESC / Cancel trips that token; the loop is responsible for noticing and stopping promptly:
+
+- The stream-consumption phase `select!`s the provider stream against `cancellation.cancelled()`, so an in-flight model response is interrupted at the next chunk boundary rather than running to completion.
+- The loop also checks `is_cancelled()` at the top of each iteration and before awaiting each spawned tool result.
+- On cancel it **aborts any in-flight tool `JoinHandle`s** and returns `Ok(AgentLoopOutcome { cancelled: true, .. })` immediately — no partial assistant message is committed for the interrupted iteration.
+
+In-flight tool calls also receive a `ctx` clone owning the same token, so a long-running tool can short-circuit itself by checking `ctx.cancellation`. Dropping the loop future entirely still works as a hard stop (the spawned tasks are no longer polled and quiesce), but the cooperative path is what the GUI uses so the turn ends with a recorded `cancelled` outcome.
 
 ## Per-exploration isolation
 

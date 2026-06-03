@@ -50,9 +50,9 @@ Hovering shows the tooltip "**Shift+Tab** to toggle." Clicking the chip toggles 
 
 ## Cancel semantics
 
-- Calls `exploration.cancellation.cancel()`.
-- The agent loop short-circuits at the next yield. In-flight tool calls return cancellation results.
-- Cancellation is recorded as a system message in the transcript.
+- ESC (while a turn is streaming) or the **Cancel** button trips the per-turn `CancellationToken` held in `SharedState::cancellation` (`token.cancel()`).
+- The agent loop notices cooperatively and short-circuits at its next yield — a stream chunk or a tool boundary (see [[components/core/agent-loop]] "Cancellation"). In-flight tool tasks are aborted.
+- The turn ends with `TurnOutcome { cancelled: true, .. }`; the transcript shows a muted `⊘ turn cancelled` line for that turn.
 
 ## Model picker
 

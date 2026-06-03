@@ -134,6 +134,8 @@ impl TranscriptPanel {
                     ui.add_space(4.0);
                     let summary = if let Some(err) = &o.error {
                         RichText::new(format!("error: {err}")).color(Color32::RED)
+                    } else if o.cancelled {
+                        RichText::new("⊘ turn cancelled").color(theme::muted_text())
                     } else {
                         RichText::new(format!(
                             "done · {} iterations · {} tool calls · in {} / out {}",

@@ -436,6 +436,7 @@ async fn drive_agent(
             stop_reason,
             total_usage,
             tool_calls_dispatched,
+            cancelled,
             ..
         }) => TurnOutcome {
             stop_reason,
@@ -444,6 +445,7 @@ async fn drive_agent(
             tool_calls: tool_calls_dispatched,
             error: None,
             hit_max_iterations: false,
+            cancelled,
         },
         Err(e) => outcome_from_loop_err(e, max_iter),
     }
@@ -483,11 +485,12 @@ fn spawn_compact(
     model: String,
     egui_ctx: egui::Context,
 ) {
+    let cancellation = CancellationToken::new();
     let snapshot = {
         let mut s = state.lock().unwrap();
         s.live_turn = Some(crate::app::LiveTurn::default());
         s.last_outcome = None;
-        s.cancellation = Some(CancellationToken::new());
+        s.cancellation = Some(cancellation.clone());
         s.active().conversation.clone()
     };
 
@@ -503,6 +506,7 @@ fn spawn_compact(
             event_tx_for_turn,
             egui_ctx_for_turn,
             state_for_turn,
+            cancellation,
         )
         .await;
         let _ = event_tx.send(AgentEvent::Completed(outcome));
@@ -515,6 +519,7 @@ async fn run_compaction(
     event_tx: UnboundedSender<AgentEvent>,
     egui_ctx: egui::Context,
     state: Arc<StdMutex<SharedState>>,
+    cancellation: CancellationToken,
 ) -> TurnOutcome {
     let mut stream = match provider.chat(req).await {
         Ok(s) => s,
@@ -528,7 +533,19 @@ async fn run_compaction(
     let mut text = String::new();
     let mut usage = oxidant_providers::Usage::default();
     let mut stop_reason = None;
-    while let Some(event) = stream.next().await {
+    loop {
+        // Race the next chunk against cancellation so ESC interrupts a
+        // long compaction stream too.
+        let event = tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => {
+                return TurnOutcome { usage, cancelled: true, ..Default::default() };
+            }
+            ev = stream.next() => match ev {
+                Some(e) => e,
+                None => break,
+            },
+        };
         let _ = event_tx.send(AgentEvent::Chat(event.clone()));
         egui_ctx.request_repaint();
         match event {
