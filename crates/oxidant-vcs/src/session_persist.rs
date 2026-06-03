@@ -175,6 +175,18 @@ pub fn list_sessions(worktree: &Path) -> Vec<SessionSummary> {
     out
 }
 
+/// Resolve the user data-local directory. Honours `OXIDANT_DATA_LOCAL_DIR`
+/// so tests can isolate from the host's real archive directory; production
+/// code never sets the env var and falls through to `ProjectDirs`. See
+/// spec/components/vcs/session-persistence.md "Test override".
+fn data_local_dir() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("OXIDANT_DATA_LOCAL_DIR") {
+        return Some(PathBuf::from(p));
+    }
+    directories::ProjectDirs::from("ai", "oxidant", "oxidant")
+        .map(|d| d.data_local_dir().to_path_buf())
+}
+
 /// Archive the transcript to the user-level archive directory and
 /// remove the in-worktree copies. Returns the archive path.
 pub fn archive(worktree: &Path, id: &str) -> Result<PathBuf, SessionError> {
@@ -185,8 +197,8 @@ pub fn archive(worktree: &Path, id: &str) -> Result<PathBuf, SessionError> {
             message: "transcript not found".into(),
         });
     }
-    let archive_dir = match directories::ProjectDirs::from("ai", "oxidant", "oxidant") {
-        Some(d) => d.data_local_dir().join("archive"),
+    let archive_dir = match data_local_dir() {
+        Some(d) => d.join("archive"),
         None => worktree.join(".oxidant").join("archive-local"),
     };
     std::fs::create_dir_all(&archive_dir).map_err(|e| SessionError::Io {
@@ -224,6 +236,17 @@ mod tests {
 
     #[test]
     fn archive_moves_transcript_to_user_dir() {
+        // Redirect the data-local directory to a TempDir so the test
+        // doesn't write into the host's real archive. See
+        // spec/components/vcs/session-persistence.md "Test override".
+        let data_dir = TempDir::new().unwrap();
+        // SAFETY: nextest runs each test in its own process so the env
+        // var doesn't leak across tests; the project standard is
+        // nextest (CLAUDE.md).
+        unsafe {
+            std::env::set_var("OXIDANT_DATA_LOCAL_DIR", data_dir.path());
+        }
+
         let dir = TempDir::new().unwrap();
         let wt = dir.path();
         init_session(wt, "xyz", "feat/x").unwrap();
@@ -231,7 +254,14 @@ mod tests {
         let archived = archive(wt, "xyz").unwrap();
         assert!(archived.exists());
         assert!(!transcript_path(wt, "xyz").exists());
-        // cleanup the user archive so the test doesn't leak
-        let _ = std::fs::remove_file(&archived);
+        // The archive sits inside the TempDir so it gets cleaned up
+        // automatically when `data_dir` drops — no manual cleanup
+        // needed (and crucially, no writes to the user's real
+        // ProjectDirs::data_local_dir() anywhere).
+        assert!(
+            archived.starts_with(data_dir.path()),
+            "archive must live under our TempDir, got {}",
+            archived.display()
+        );
     }
 }

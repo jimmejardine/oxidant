@@ -168,6 +168,17 @@ pub enum SettingsError {
 /// Windows: %APPDATA%\oxidant\config.toml). None if the platform has no
 /// project dirs (CI, locked-down sandboxes).
 pub fn user_config_path() -> Option<PathBuf> {
+    // Test override — when `OXIDANT_CONFIG_PATH` is set, return it
+    // verbatim and skip the `directories::ProjectDirs` lookup.
+    // Production code never sets this; it exists so tests can isolate
+    // from the host's real user config. See
+    // spec/components/config/settings.md "Test override". Safe under
+    // cargo-nextest (process-per-test); racy under cargo test's
+    // parallel single-process runner — the project standard is
+    // nextest (CLAUDE.md).
+    if let Ok(p) = std::env::var("OXIDANT_CONFIG_PATH") {
+        return Some(PathBuf::from(p));
+    }
     directories::ProjectDirs::from("ai", "oxidant", "oxidant")
         .map(|d| d.config_dir().join("config.toml"))
 }
@@ -283,6 +294,20 @@ mod tests {
 
     #[test]
     fn load_per_repo_overrides_defaults() {
+        // Isolate from the host's real user config — point
+        // OXIDANT_CONFIG_PATH at a non-existent file under a TempDir
+        // so `load()` skips the "user wins over repo" branch. Safe
+        // under nextest's process-per-test isolation. See
+        // spec/components/config/settings.md "Test override".
+        let user_dir = TempDir::new().unwrap();
+        let stub_user_path = user_dir.path().join("does-not-exist.toml");
+        // SAFETY: nextest runs each test in its own process so the
+        // env var doesn't leak across tests; the project standard is
+        // nextest (CLAUDE.md).
+        unsafe {
+            std::env::set_var("OXIDANT_CONFIG_PATH", &stub_user_path);
+        }
+
         let dir = TempDir::new().unwrap();
         std::fs::create_dir_all(dir.path().join(".oxidant")).unwrap();
         std::fs::write(
@@ -331,6 +356,17 @@ mod tests {
 
     #[test]
     fn missing_files_use_defaults() {
+        // Isolate from the host's real user config — same pattern as
+        // load_per_repo_overrides_defaults. Without this, the test
+        // passes only when the user's real config also happens to
+        // have `default = "textgen"`.
+        let user_dir = TempDir::new().unwrap();
+        let stub_user_path = user_dir.path().join("does-not-exist.toml");
+        // SAFETY: nextest process-per-test isolation; see settings.md.
+        unsafe {
+            std::env::set_var("OXIDANT_CONFIG_PATH", &stub_user_path);
+        }
+
         let dir = TempDir::new().unwrap();
         let s = load(dir.path()).unwrap();
         assert_eq!(s.provider.default, "textgen");
@@ -338,6 +374,17 @@ mod tests {
 
     #[test]
     fn parse_error_surfaces_the_path() {
+        // Note: this test's repo TOML is invalid, so `load()` errors
+        // out before touching the user config. No isolation needed,
+        // but spelling out the env var keeps the pattern consistent
+        // and protects against future refactors of `load`.
+        let user_dir = TempDir::new().unwrap();
+        let stub_user_path = user_dir.path().join("does-not-exist.toml");
+        // SAFETY: nextest process-per-test isolation.
+        unsafe {
+            std::env::set_var("OXIDANT_CONFIG_PATH", &stub_user_path);
+        }
+
         let dir = TempDir::new().unwrap();
         std::fs::create_dir_all(dir.path().join(".oxidant")).unwrap();
         std::fs::write(

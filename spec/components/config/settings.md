@@ -57,3 +57,9 @@ The config file is watched (`notify`). On change, the settings struct is rebuilt
 ## Validation
 
 Schema validation on load with friendly error reporting; invalid settings fail loudly with the offending file + line.
+
+## Test override
+
+When `OXIDANT_CONFIG_PATH` is set, `user_config_path()` returns the env-var value verbatim and skips the `directories::ProjectDirs` lookup. Intended for tests that need to isolate from the host's real user config — `load()` will read (or fail to find) that file instead of the user's actual `~/.config/oxidant/config.toml`. Production code never sets this env var.
+
+Safe under `cargo nextest` (process-per-test); racy under `cargo test`'s parallel single-process runner because env-var mutations leak across tests in the same process. The project standard is nextest (see CLAUDE.md), and the env-var mutations in tests are marked `unsafe` to flag the Rust 2024 contract that the runtime makes no thread-safety guarantee.
