@@ -10,7 +10,7 @@ code:
   - crates/oxidant-gui/src/panels/file_tab.rs
 status: active
 responsibility: |
-  Render an opened code or spec file as a centre-area dock tab with syntax highlighting and live diagnostic markers.
+  Render an opened code or spec file as a centre-area dock tab — markdown files default to a rendered preview with a Preview/Source toggle, everything else as a syntax-highlighted editor — plus live diagnostic markers.
 ---
 
 Opened files dock as siblings of the [[components/gui/transcript-tab]] in the centre tab group.
@@ -18,7 +18,7 @@ Opened files dock as siblings of the [[components/gui/transcript-tab]] in the ce
 ## File sources
 
 - **Code**: `crates/**/*.rs`, `Cargo.toml`, and anything else opened from [[components/gui/file-tree-panel]]. **Editable** via the same flow as Spec. Letting the user hand-edit code while the agent is also editing it does risk contention with `expected_text` checks; the user accepts that trade-off in exchange for being able to make targeted manual fixes without round-tripping through the chat. v2 may add a soft lock against the agent while a code tab is dirty.
-- **Spec**: `spec/**/*.md`. **Editable** — opened via double-click from the spec tree. Rendered as a raw multi-line text editor with a Save button; the markdown preview toggle lands later. Edits are flushed to disk only when the user presses Save. While unsaved, the tab title carries a `●` marker.
+- **Spec**: `spec/**/*.md`. **Editable** — opened via double-click from the spec tree. Markdown files open in **rendered preview** by default (see "Render"); the Source view is a raw multi-line text editor with a Save button. Edits are flushed to disk only when the user presses Save. While unsaved, the tab title carries a `●` marker.
 
 Both sources share the edit-lifecycle, the on-disk-changed banner, and the same `SharedState::editor_buffers` map. The only difference is which syntax definition the highlighter loads.
 
@@ -33,7 +33,13 @@ The buffer survives a tab close+reopen — the user can dock-close a spec tab wi
 
 ## Render
 
-Both Code and Spec render through the same multi-line `egui::TextEdit` with a `layouter` callback that paints **syntect-driven syntax highlighting** in place. The highlighter lives in `crates/oxidant-gui/src/highlighter.rs` and:
+### Markdown preview toggle
+
+Any markdown file (`.md` / `.markdown`, regardless of Code or Spec source) carries a **Preview | Source** toggle in the tab header. It opens in **Preview** by default — the file rendered through [`egui_commonmark`](https://crates.io/crates/egui_commonmark) (headings, lists, code blocks, tables, links). Preview is **read-only**; to edit, the user flips to **Source**, which is the highlighted `egui::TextEdit` described below. The toggle's per-file state lives alongside the buffer in `SharedState::editor_buffers` (`EditorBuffer::view_mode`); the `egui_commonmark::CommonMarkCache` is held once on `App` and threaded into the tab so image/parse state survives across frames. Non-markdown files never show the toggle and always render the editor.
+
+### Source / non-markdown editor
+
+The Source view (and every non-markdown file) renders through a multi-line `egui::TextEdit` with a `layouter` callback that paints **syntect-driven syntax highlighting** in place. The highlighter lives in `crates/oxidant-gui/src/highlighter.rs` and:
 
 - Picks the syntect `SyntaxReference` by file extension (`.rs` → Rust, `.md` → Markdown, `.toml` → TOML, `.json` → JSON, `.yml` / `.yaml` → YAML, falling back to plain text on unknown extensions).
 - Dot-files (`.gitignore`, `.gitattributes`, `.dockerignore`, `.npmignore`) are routed by stripping the leading `.` and re-looking-up as an extension, so the bundled grammars match cleanly.
@@ -51,8 +57,6 @@ Both Code and Spec render through the same multi-line `egui::TextEdit` with a `l
 - Returns an `egui::text::LayoutJob` per visible line so the TextEdit lays out coloured spans without us shipping our own glyph cache.
 
 Line numbers and diagnostic markers (red squiggle / yellow underline overlaid from [[components/gui/diagnostic-panel]] data) land in a follow-up — the highlighter contract is already shaped for that.
-
-Markdown preview via `egui_commonmark` is a deferred toggle; for now spec files render as highlighted raw markdown, which is what the user double-clicks expecting to edit anyway.
 
 ## Navigation actions
 

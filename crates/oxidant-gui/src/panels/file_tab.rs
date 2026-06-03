@@ -12,8 +12,9 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::SystemTime;
 
 use egui::{Color32, FontId, RichText};
+use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 
-use crate::app::{EditorBuffer, SharedState};
+use crate::app::{EditorBuffer, SharedState, ViewMode};
 use crate::dock::FileSource;
 use crate::highlighter;
 use crate::theme;
@@ -28,6 +29,7 @@ impl FileTabPanel {
         source: FileSource,
         workspace_root: &PathBuf,
         state: &Arc<StdMutex<SharedState>>,
+        markdown_cache: &mut CommonMarkCache,
     ) {
         let absolute = if path.is_absolute() {
             path.to_path_buf()
@@ -39,8 +41,16 @@ impl FileTabPanel {
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .unwrap_or_else(|_| absolute.to_string_lossy().to_string());
 
-        render_editor(ui, &header_path, &absolute, source, state);
+        render_editor(ui, &header_path, &absolute, source, state, markdown_cache);
     }
+}
+
+/// True for files we render as markdown (`.md` / `.markdown`).
+fn is_markdown(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("md") || e.eq_ignore_ascii_case("markdown"))
+        .unwrap_or(false)
 }
 
 fn render_editor(
@@ -49,6 +59,7 @@ fn render_editor(
     absolute: &Path,
     source: FileSource,
     state: &Arc<StdMutex<SharedState>>,
+    markdown_cache: &mut CommonMarkCache,
 ) {
     // Load on first sight, or surface a load error.
     {
@@ -77,6 +88,11 @@ fn render_editor(
                         dirty: false,
                         mtime_at_load: mtime,
                         last_save_error: error,
+                        view_mode: if is_markdown(absolute) {
+                            ViewMode::Preview
+                        } else {
+                            ViewMode::Source
+                        },
                     },
                 );
             }
@@ -117,6 +133,13 @@ fn render_editor(
         ui.label(RichText::new(title).strong());
         ui.label(RichText::new(source_label(source)).color(theme::muted_text()));
 
+        // Preview | Source toggle — markdown files only.
+        if is_markdown(absolute) {
+            ui.separator();
+            ui.selectable_value(&mut buf.view_mode, ViewMode::Preview, "Preview");
+            ui.selectable_value(&mut buf.view_mode, ViewMode::Source, "Source");
+        }
+
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let save_resp = ui.add_enabled(buf.dirty, egui::Button::new("Save"));
             if save_resp.clicked() {
@@ -152,28 +175,37 @@ fn render_editor(
 
     ui.separator();
 
-    // Editor body with syntect-driven syntax highlighting through the
-    // TextEdit `layouter` callback.
-    let text_before = buf.text.clone();
-    let path_for_layout = absolute.to_path_buf();
-    let font_id = FontId::monospace(13.0);
-    let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
-        let job = highlighter::highlight(&path_for_layout, text, font_id.clone(), wrap_width);
-        ui.fonts(|f| f.layout_job(job))
-    };
-    egui::ScrollArea::both()
-        .auto_shrink([false; 2])
-        .show(ui, |ui| {
-            ui.add_sized(
-                [ui.available_width(), ui.available_height().max(120.0)],
-                egui::TextEdit::multiline(&mut buf.text)
-                    .code_editor()
-                    .desired_rows(20)
-                    .layouter(&mut layouter),
-            );
-        });
-    if buf.text != text_before {
-        buf.dirty = true;
+    if is_markdown(absolute) && buf.view_mode == ViewMode::Preview {
+        // Rendered markdown — read-only; edits happen in Source mode.
+        egui::ScrollArea::both()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| {
+                CommonMarkViewer::new().show(ui, markdown_cache, &buf.text);
+            });
+    } else {
+        // Editor body with syntect-driven syntax highlighting through the
+        // TextEdit `layouter` callback.
+        let text_before = buf.text.clone();
+        let path_for_layout = absolute.to_path_buf();
+        let font_id = FontId::monospace(13.0);
+        let mut layouter = |ui: &egui::Ui, text: &str, wrap_width: f32| {
+            let job = highlighter::highlight(&path_for_layout, text, font_id.clone(), wrap_width);
+            ui.fonts(|f| f.layout_job(job))
+        };
+        egui::ScrollArea::both()
+            .auto_shrink([false; 2])
+            .show(ui, |ui| {
+                ui.add_sized(
+                    [ui.available_width(), ui.available_height().max(120.0)],
+                    egui::TextEdit::multiline(&mut buf.text)
+                        .code_editor()
+                        .desired_rows(20)
+                        .layouter(&mut layouter),
+                );
+            });
+        if buf.text != text_before {
+            buf.dirty = true;
+        }
     }
 
     // Apply actions in this order: discard / reload (destructive) → save.
@@ -219,5 +251,25 @@ fn mtimes_differ(a: Option<SystemTime>, b: Option<SystemTime>) -> bool {
     match (a, b) {
         (Some(x), Some(y)) => x != y,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_markdown;
+    use std::path::Path;
+
+    #[test]
+    fn markdown_extensions_detected_case_insensitively() {
+        assert!(is_markdown(Path::new("spec/overview.md")));
+        assert!(is_markdown(Path::new("README.MD")));
+        assert!(is_markdown(Path::new("notes.markdown")));
+    }
+
+    #[test]
+    fn non_markdown_is_rejected() {
+        assert!(!is_markdown(Path::new("src/main.rs")));
+        assert!(!is_markdown(Path::new("Cargo.toml")));
+        assert!(!is_markdown(Path::new("LICENSE")));
     }
 }

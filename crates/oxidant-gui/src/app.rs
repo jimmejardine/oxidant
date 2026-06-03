@@ -53,6 +53,10 @@ pub struct App {
     /// kept here so the View → Theme submenu can render the radio
     /// state without a global lock.
     active_theme: Theme,
+    /// Persistent markdown render cache for file-tab Preview mode. Held
+    /// once here and threaded into each File tab so parse/image state
+    /// survives across frames. See spec/components/gui/file-tabs.md.
+    markdown_cache: egui_commonmark::CommonMarkCache,
 }
 
 /// The mutable bits shared between the GUI thread and the agent task.
@@ -94,10 +98,22 @@ pub struct PendingChatPrompt {
     pub mode: AgentMode,
 }
 
+/// Which view a (markdown) file tab is showing. Non-markdown files are
+/// always `Source`; markdown files default to `Preview`. See
+/// spec/components/gui/file-tabs.md "Markdown preview toggle".
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewMode {
+    Preview,
+    Source,
+}
+
 #[derive(Debug, Clone)]
 pub struct EditorBuffer {
     pub text: String,
     pub dirty: bool,
+    /// Preview (rendered markdown) vs Source (highlighted editor). Only
+    /// togglable for markdown files; ignored for everything else.
+    pub view_mode: ViewMode,
     /// Filesystem mtime at the moment we loaded `text`. Used to detect
     /// "the agent edited the file underneath this tab" — when the
     /// current mtime differs from this, a reload banner shows.
@@ -300,6 +316,7 @@ impl App {
             event_rx,
             event_tx,
             active_theme,
+            markdown_cache: egui_commonmark::CommonMarkCache::default(),
         }
     }
 }
@@ -359,6 +376,7 @@ impl eframe::App for App {
             diff_history_panels: &mut self.diff_history_panels,
             settings: self.config.settings.clone(),
             active_theme: &mut self.active_theme,
+            markdown_cache: &mut self.markdown_cache,
             event_tx: self.event_tx.clone(),
             tokio_handle: self.config.tokio_handle.clone(),
             workspace_root: self.config.workspace_root.clone(),
@@ -441,6 +459,7 @@ pub(crate) struct TabViewer<'a> {
     pub diff_history_panels: &'a mut HashMap<PathBuf, DiffHistoryPanel>,
     pub settings: Arc<StdMutex<oxidant_config::Settings>>,
     pub active_theme: &'a mut Theme,
+    pub markdown_cache: &'a mut egui_commonmark::CommonMarkCache,
     pub event_tx: UnboundedSender<AgentEvent>,
     pub tokio_handle: Handle,
     pub workspace_root: std::path::PathBuf,
@@ -508,7 +527,14 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                     .render(ui, &self.settings, self.active_theme);
             }
             DockTab::File { path, source } => {
-                FileTabPanel.render(ui, path, *source, &self.workspace_root, &self.state);
+                FileTabPanel.render(
+                    ui,
+                    path,
+                    *source,
+                    &self.workspace_root,
+                    &self.state,
+                    self.markdown_cache,
+                );
             }
             DockTab::DiffHistory { path, .. } => {
                 let absolute = if path.is_absolute() {
