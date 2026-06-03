@@ -20,6 +20,7 @@ use oxidant_core::{
 use oxidant_providers::{ChatEvent, ChatRequest, ContentPart, Provider, RequestMessage, Role};
 
 use crate::app::{AgentEvent, SharedState, TurnOutcome};
+use crate::dock::DockTab;
 use crate::theme;
 
 pub struct ChatInputPanel {
@@ -142,6 +143,13 @@ impl ChatInputPanel {
                                     self.mode,
                                     egui_ctx.clone(),
                                 );
+                                // Bring the Transcript to the front so the
+                                // streaming response is visible immediately.
+                                if let Ok(mut s) = state.lock()
+                                    && !s.pending_centre_tabs.contains(&DockTab::Transcript)
+                                {
+                                    s.pending_centre_tabs.push(DockTab::Transcript);
+                                }
                             }
                         }
                     }

@@ -45,6 +45,7 @@ Hovering shows the tooltip "**Shift+Tab** to toggle." Clicking the chip toggles 
 - Build a `User` message containing the text.
 - Append to the exploration's conversation.
 - Trigger the agent loop ([[components/core/agent-loop]]) for that exploration via its task handle.
+- Raise/focus the [[components/gui/dock-layout]] Transcript tab (push `DockTab::Transcript` onto `SharedState::pending_centre_tabs`, drained into `open_in_centre`) so the streaming response is immediately visible even if the centre was showing a file/preview tab. Regular prompts only — `/clear` and `/compact` don't steal focus.
 - Disable the Send button and show a spinner until the loop emits `Finish`.
 
 ## Cancel semantics
