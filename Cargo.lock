@@ -2871,6 +2871,7 @@ dependencies = [
  "egui_dock",
  "futures",
  "ignore",
+ "indexmap",
  "nvml-wrapper",
  "oxidant-config",
  "oxidant-core",

@@ -94,14 +94,14 @@ pub struct TranscriptPanel;
 
 impl TranscriptPanel {
     pub fn render(&self, ui: &mut egui::Ui, state: &SharedState) -> TranscriptAction {
-        let ctx = build_render_ctx(&state.exploration.conversation.messages);
-        let compaction_at = state.exploration.conversation.compaction_at;
+        let ctx = build_render_ctx(&state.active().conversation.messages);
+        let compaction_at = state.active().conversation.compaction_at;
         let mut action = TranscriptAction::None;
         ScrollArea::vertical()
             .auto_shrink([false; 2])
             .stick_to_bottom(true)
             .show(ui, |ui| {
-                for (msg_idx, msg) in state.exploration.conversation.messages.iter().enumerate() {
+                for (msg_idx, msg) in state.active().conversation.messages.iter().enumerate() {
                     // Compaction divider: drawn immediately BEFORE the
                     // first live message. Pre-divider messages are
                     // visible-but-not-sent (Conversation::live_messages
@@ -162,7 +162,7 @@ impl TranscriptPanel {
                         };
                     }
                 }
-                if state.exploration.conversation.is_empty() && state.live_turn.is_none() {
+                if state.active().conversation.is_empty() && state.live_turn.is_none() {
                     ui.add_space(80.0);
                     ui.vertical_centered(|ui| {
                         ui.label(

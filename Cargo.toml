@@ -94,6 +94,7 @@ directories    = "5"
 once_cell      = "1"
 parking_lot    = "0.12"
 camino         = "1"
+indexmap       = "2"
 
 [profile.dev]
 opt-level = 0

@@ -33,7 +33,7 @@ Note: agent tool calls **cannot** trigger this — see [[components/vcs/worktree
 5. **Initialise `.oxidant/`.** Create the per-worktree state directory; write a default `dock-layout.json`; append the worktree to git's `info/exclude`.
 6. **Build `Exploration` struct** — id, kind: `Sub { parent_id }`, paths, fresh conversation. LSP not yet spawned.
 7. **Persist** via [[components/vcs/session-persistence]].
-8. **Open viewport** — `ctx.show_viewport_deferred(...)` from the spawning OS window. The new window opens with the default dock layout. Title bar shows `[sub: <branch-slug>]`.
+8. **MVP: register and switch active.** Insert the new `Exploration` into `SharedState.explorations` (an `IndexMap<ExplorationId, Exploration>`) and set `SharedState.active_id = new.id`. The host window's panels (transcript, chat input, file tree, health check) re-read against `state.active()` on the next frame; no new OS window is opened. Multi-viewport-per-exploration windows (originally `ctx.show_viewport_deferred(...)`) is deferred to a follow-up — see [[components/gui/exploration-list]] "SharedState shape".
 9. **Seed conversation.** If a seed prompt was given, append it as the first `User` message and start the agent loop. Otherwise wait for user input.
 10. **Lazy LSP.** Rust-analyzer remains unspawned until the first LSP-using tool call.
 

@@ -459,7 +459,7 @@ fn spawn_check(
         entry.status = CheckStatus::Running;
         entry.issues.clear();
         entry.finished_in_ms = 0;
-        (s.registry.clone(), s.exploration.id.to_string())
+        (s.registry.clone(), s.active().id.to_string())
     };
     let state = state.clone();
     let workspace = workspace_root.to_path_buf();

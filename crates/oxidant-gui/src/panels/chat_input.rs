@@ -141,7 +141,7 @@ impl ChatInputPanel {
                         match crate::panels::slash_commands::parse(&prompt) {
                             crate::panels::slash_commands::ChatCommand::Clear => {
                                 if let Ok(mut s) = state.lock() {
-                                    s.exploration.conversation.clear();
+                                    s.active_mut().conversation.clear();
                                     s.last_outcome = None;
                                     s.live_turn = None;
                                 }
@@ -301,15 +301,15 @@ fn spawn_agent_inner(
     let (snapshot, registry, exploration_id) = {
         let mut s = state.lock().unwrap();
         if let Some(text) = prompt {
-            s.exploration.conversation.push_user_text(text);
+            s.active_mut().conversation.push_user_text(text);
         }
         s.live_turn = Some(crate::app::LiveTurn::default());
         s.last_outcome = None;
         s.cancellation = Some(cancellation.clone());
         (
-            s.exploration.conversation.clone(),
+            s.active().conversation.clone(),
             s.registry.clone(),
-            s.exploration.id.to_string(),
+            s.active().id.to_string(),
         )
     };
 
@@ -413,7 +413,7 @@ async fn drive_agent(
         // See spec/components/gui/transcript-tab.md "Streaming".
         |conv: &Conversation| {
             if let Ok(mut s) = state_for_commit.lock() {
-                s.exploration.conversation = conv.clone();
+                s.active_mut().conversation = conv.clone();
                 s.live_turn = Some(crate::app::LiveTurn::default());
             }
             egui_ctx_for_commit.request_repaint();
@@ -426,7 +426,7 @@ async fn drive_agent(
     // and the next user turn builds from the right history.
     {
         let mut s = state.lock().unwrap();
-        s.exploration.conversation = conv;
+        s.active_mut().conversation = conv;
     }
     egui_ctx.request_repaint();
 
@@ -488,7 +488,7 @@ fn spawn_compact(
         s.live_turn = Some(crate::app::LiveTurn::default());
         s.last_outcome = None;
         s.cancellation = Some(CancellationToken::new());
-        s.exploration.conversation.clone()
+        s.active().conversation.clone()
     };
 
     let req = build_compaction_request(&snapshot, model);
@@ -559,7 +559,7 @@ async fn run_compaction(
         };
     }
     if let Ok(mut s) = state.lock() {
-        s.exploration.conversation.install_compaction_summary(text);
+        s.active_mut().conversation.install_compaction_summary(text);
         s.live_turn = None;
     }
     egui_ctx.request_repaint();

@@ -12,7 +12,7 @@ use tokio::runtime::Handle;
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 
-use oxidant_core::{AgentMode, Exploration, ToolRegistry};
+use oxidant_core::{AgentMode, Exploration, ExplorationId, ToolRegistry};
 use oxidant_providers::{ChatEvent, Provider, StopReason, Usage};
 
 use crate::dock::{
@@ -44,6 +44,7 @@ pub struct App {
     spec_graph_panels: HashMap<String, SpecGraphPanel>,
     health_panel: HealthCheckPanel,
     settings_panel: SettingsPanel,
+    exploration_list_panel: ExplorationListPanel,
     /// One DiffHistory panel per open path. Lazily inserted when the tab
     /// first paints; entries leak across tab close in MVP (cheap state,
     /// at most a handful per session). See
@@ -66,15 +67,25 @@ pub struct App {
 /// Locks are held briefly; long async work happens on cloned data and
 /// streams results back via the AgentEvent channel.
 pub struct SharedState {
-    /// The Main exploration this window is bound to. Conversation, branch,
-    /// worktree, and (lazily) the LSP handle live here. Sub-exploration
-    /// windows will each own their own `Exploration`.
-    pub exploration: Exploration,
+    /// All explorations open in this window, keyed by id. Insertion-
+    /// ordered (IndexMap) so the exploration-list panel can render them
+    /// in spawn order — Main first, then subs by creation time. The
+    /// active one is `active_id`; every panel reads through
+    /// `state.active()` / `state.active_mut()`. See
+    /// spec/components/gui/exploration-list.md "SharedState shape".
+    pub explorations: indexmap::IndexMap<ExplorationId, Exploration>,
+    /// Pointer into `explorations` for the exploration whose conversation,
+    /// worktree, and LSP handle the rest of the GUI is currently
+    /// driving. Multi-viewport per exploration is a follow-up; under
+    /// MVP one window holds them all and switches via
+    /// [[components/gui/exploration-list]] row clicks.
+    pub active_id: ExplorationId,
     pub registry: Arc<ToolRegistry>,
     pub live_turn: Option<LiveTurn>,
     pub last_outcome: Option<TurnOutcome>,
     /// Per-turn cancellation token (Esc / Cancel button). Distinct from
-    /// `exploration.cancellation`, which tears down the whole window.
+    /// the active exploration's `cancellation`, which tears down the
+    /// whole exploration.
     pub cancellation: Option<CancellationToken>,
     /// CI-style health report. One entry per CheckKind. See
     /// spec/components/gui/health-check-panel.md.
@@ -103,6 +114,22 @@ pub struct SharedState {
     /// single-click in the spec/file tree; rendered by the Selected tab.
     /// See spec/components/gui/dock-layout.md "Selected preview tab".
     pub selected_preview: Option<SelectedPreview>,
+}
+
+impl SharedState {
+    /// Borrow the currently-active exploration.
+    pub fn active(&self) -> &Exploration {
+        self.explorations
+            .get(&self.active_id)
+            .expect("active_id must always point at an entry in `explorations`")
+    }
+
+    /// Mutably borrow the currently-active exploration.
+    pub fn active_mut(&mut self) -> &mut Exploration {
+        self.explorations
+            .get_mut(&self.active_id)
+            .expect("active_id must always point at an entry in `explorations`")
+    }
 }
 
 /// Snapshot of a file shown read-only in the `Selected` preview tab.
@@ -315,8 +342,12 @@ impl App {
         oxidant_vcs::register_standard_tools(&mut registry);
 
         let exploration = Exploration::new_main(config.workspace_root.clone(), "main");
+        let active_id = exploration.id;
+        let mut explorations = indexmap::IndexMap::new();
+        explorations.insert(active_id, exploration);
         let state = Arc::new(StdMutex::new(SharedState {
-            exploration,
+            explorations,
+            active_id,
             registry: Arc::new(registry),
             live_turn: None,
             last_outcome: None,
@@ -341,6 +372,7 @@ impl App {
             spec_graph_panels: HashMap::new(),
             health_panel: HealthCheckPanel::new(),
             settings_panel,
+            exploration_list_panel: ExplorationListPanel::new(),
             diff_history_panels: HashMap::new(),
             config,
             dock: default_layout(),
@@ -388,7 +420,7 @@ impl eframe::App for App {
                 self.render_window_menu(ui);
                 ui.separator();
                 let state = self.state.lock().unwrap();
-                let n = state.exploration.conversation.len();
+                let n = state.active().conversation.len();
                 let live = if state.live_turn.is_some() {
                     " · streaming"
                 } else {
@@ -418,6 +450,7 @@ impl eframe::App for App {
             spec_graph_panels: &mut self.spec_graph_panels,
             health_panel: &mut self.health_panel,
             settings_panel: &mut self.settings_panel,
+            exploration_list_panel: &mut self.exploration_list_panel,
             diff_history_panels: &mut self.diff_history_panels,
             settings: self.config.settings.clone(),
             active_theme: &mut self.active_theme,
@@ -501,6 +534,7 @@ pub(crate) struct TabViewer<'a> {
     pub spec_graph_panels: &'a mut HashMap<String, SpecGraphPanel>,
     pub health_panel: &'a mut HealthCheckPanel,
     pub settings_panel: &'a mut SettingsPanel,
+    pub exploration_list_panel: &'a mut ExplorationListPanel,
     pub diff_history_panels: &'a mut HashMap<PathBuf, DiffHistoryPanel>,
     pub settings: Arc<StdMutex<oxidant_config::Settings>>,
     pub active_theme: &'a mut Theme,
@@ -562,7 +596,13 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                 panel.render(ui, &self.state);
             }
             DockTab::ExplorationList => {
-                ExplorationListPanel.render(ui, &self.workspace_root);
+                self.exploration_list_panel.render(
+                    ui,
+                    &self.state,
+                    &self.workspace_root,
+                    &self.tokio_handle,
+                    &self.egui_ctx,
+                );
             }
             DockTab::HealthCheck => {
                 self.health_panel.render(

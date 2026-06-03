@@ -30,15 +30,34 @@ responsibility: |
 
 ## Actions
 
-- **Open**: open or focus the exploration's OS window.
-- **Spawn sub** (top of the list, prominent button): create a new sub-exploration off the current branch via [[flows/spawn-exploration]].
-- **Merge** (sub only): merge back into parent branch via [[flows/merge-back]].
+- **Spawn sub** (top of the list, prominent button): create a new sub-exploration off the active branch via [[flows/spawn-exploration]].
+- **Switch active** (row click on a non-active row): MVP — flip `SharedState.active_id` to the clicked exploration so the rest of the GUI (transcript, chat input, file tree, health check) operates on that exploration's conversation and worktree. The previously-active exploration's runtime stays in memory; the user can switch back.
+- **Merge (squash)** (sub only): merge back into parent branch via [[flows/merge-back]] with `MergeBackOpts { squash: true, … }`. On clean merge, cleans up the sub-worktree and switches the active back to the parent. On conflict, surfaces [[components/gui/merge-conflicts]] (Phase 3) for resolution.
 - **Discard** (sub only, confirm dialog): remove the worktree and archive the transcript.
 
 ## Sorting
 
 1. Main first.
 2. Then sub-explorations by last-activity (most recent first).
+
+## SharedState shape
+
+`SharedState` carries an ordered map of explorations plus a pointer to the active one:
+
+```rust
+pub struct SharedState {
+    pub explorations: indexmap::IndexMap<ExplorationId, Exploration>,
+    pub active_id: ExplorationId,
+    // …
+}
+
+impl SharedState {
+    pub fn active(&self) -> &Exploration { … }
+    pub fn active_mut(&mut self) -> &mut Exploration { … }
+}
+```
+
+Every panel that previously read `state.exploration.…` now reads `state.active().…`. The transcript, chat input, file tree, health check, and live-turn streaming all operate against the active exploration. `pending_centre_tabs`, `pending_chat_prompt`, `pending_continue`, `live_turn`, `health`, and the editor buffers are window-scoped (not per-exploration) — they belong to the host process, not to any single exploration's runtime state. **Multi-viewport per exploration is a follow-up**; under MVP one window holds all explorations and switches between them.
 
 ## Resource polling
 
