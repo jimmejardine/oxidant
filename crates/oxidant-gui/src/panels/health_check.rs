@@ -18,9 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 use oxidant_core::{ToolContext, ToolRegistry, ToolResult};
 
-use crate::app::{
-    CheckKind, CheckState, CheckStatus, HealthIssue, IssueSeverity, SharedState,
-};
+use crate::app::{CheckKind, CheckState, CheckStatus, HealthIssue, IssueSeverity, SharedState};
 use crate::dock::{DockTab, FileSource};
 use crate::theme;
 
@@ -58,12 +56,7 @@ impl HealthCheckPanel {
             let snapshots: Vec<(CheckKind, CheckState)> = ALL_CHECKS
                 .iter()
                 .map(|k| {
-                    let st = s
-                        .health
-                        .checks
-                        .get(k)
-                        .cloned()
-                        .unwrap_or_default();
+                    let st = s.health.checks.get(k).cloned().unwrap_or_default();
                     (*k, st)
                 })
                 .collect();
@@ -209,7 +202,10 @@ fn root_header_text(kind: CheckKind, st: &CheckState) -> String {
             } else {
                 let mut parts = Vec::new();
                 if errors > 0 {
-                    parts.push(format!("{errors} error{}", if errors == 1 { "" } else { "s" }));
+                    parts.push(format!(
+                        "{errors} error{}",
+                        if errors == 1 { "" } else { "s" }
+                    ));
                 }
                 if warnings > 0 {
                     parts.push(format!(
@@ -231,9 +227,7 @@ fn render_subtree(
     st: &CheckState,
 ) {
     if let CheckStatus::Failed(msg) = &st.status {
-        ui.label(
-            RichText::new(format!("tool failed: {msg}")).color(ui.visuals().error_fg_color),
-        );
+        ui.label(RichText::new(format!("tool failed: {msg}")).color(ui.visuals().error_fg_color));
         return;
     }
     if st.issues.is_empty() {
@@ -243,7 +237,10 @@ fn render_subtree(
     // Group by HealthIssue.group_key, sort each group by severity then file/line.
     let mut groups: BTreeMap<String, Vec<&HealthIssue>> = BTreeMap::new();
     for issue in &st.issues {
-        groups.entry(issue.group_key.clone()).or_default().push(issue);
+        groups
+            .entry(issue.group_key.clone())
+            .or_default()
+            .push(issue);
     }
     for (group_key, mut issues) in groups {
         issues.sort_by_key(|i| {
@@ -328,11 +325,7 @@ fn spawn_run_all(
         let mut s = state.lock().unwrap();
         s.health.last_run_at = Some(Instant::now());
         for kind in ALL_CHECKS {
-            let entry = s
-                .health
-                .checks
-                .entry(kind)
-                .or_insert_with(CheckState::default);
+            let entry = s.health.checks.entry(kind).or_default();
             entry.status = CheckStatus::Running;
             entry.issues.clear();
             entry.finished_in_ms = 0;
@@ -357,14 +350,11 @@ fn spawn_run_all(
                 Err(msg) => (CheckStatus::Failed(msg), Vec::new()),
             };
             if let Ok(mut s) = state.lock() {
-                let entry = s
-                    .health
-                    .checks
-                    .entry(kind)
-                    .or_insert_with(CheckState::default);
+                let entry = s.health.checks.entry(kind).or_default();
                 // Detect a new red transition so we can reset
                 // user_toggled if the user fixed and broke again.
-                let was_clean = matches!(entry.status, CheckStatus::Done) && entry.issues.is_empty();
+                let was_clean =
+                    matches!(entry.status, CheckStatus::Done) && entry.issues.is_empty();
                 let now_red = !matches!(status, CheckStatus::Done) || !issues.is_empty();
                 if was_clean && now_red {
                     entry.user_toggled = false;
@@ -394,7 +384,10 @@ async fn invoke_check(
         cancellation: CancellationToken::new(),
     };
     let tool_name = kind.tool_name();
-    match registry.invoke(tool_name, serde_json::json!({}), &ctx).await {
+    match registry
+        .invoke(tool_name, serde_json::json!({}), &ctx)
+        .await
+    {
         ToolResult::Ok(v) => Ok(v),
         ToolResult::Err(e) => Err(e),
     }

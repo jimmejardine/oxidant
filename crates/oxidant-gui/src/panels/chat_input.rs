@@ -102,30 +102,37 @@ impl ChatInputPanel {
         // Multi-line input.
         ui.add_space(2.0);
         let id = ui.make_persistent_id("oxidant-chat-input");
+
+        // Shift+Tab flips the mode while the text edit owns focus. We
+        // MUST consume the key BEFORE the TextEdit renders — otherwise
+        // egui's focus-traversal runs first during the TextEdit's
+        // interaction phase, moves focus to the previous widget, and by
+        // the time we'd check `edit_response.has_focus()` it's already
+        // false. We instead check egui memory (previous frame's focus
+        // state) for our persistent id, then remove the Shift+Tab event
+        // from the input queue so the TextEdit never sees it. Plain Tab
+        // (no Shift) is left alone — TextEdit handles it as a literal.
+        let chat_input_focused = ui.memory(|m| m.has_focus(id));
+        if chat_input_focused
+            && !streaming
+            && ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab))
+        {
+            self.mode = self.mode.flip();
+        }
+
         // Hoist the hint out before borrowing self.draft mutably.
         let hint: &str = if streaming {
             "streaming… cancel with Esc to type a new prompt"
         } else {
             self.mode_hint()
         };
-        let edit_response = ui.add_sized(
+        let _edit_response = ui.add_sized(
             [ui.available_width(), ui.available_height().max(60.0)],
             TextEdit::multiline(&mut self.draft)
                 .id(id)
                 .desired_rows(4)
                 .hint_text(hint),
         );
-
-        // Shift+Tab flips the mode while the text edit owns focus. We
-        // consume the key so Tab focus-traversal and a literal '\t'
-        // insert are both suppressed when Shift is held — plain Tab
-        // (no Shift) still behaves normally.
-        if edit_response.has_focus() && !streaming {
-            let toggled = ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab));
-            if toggled {
-                self.mode = self.mode.flip();
-            }
-        }
     }
 
     fn mode_hint(&self) -> &'static str {
