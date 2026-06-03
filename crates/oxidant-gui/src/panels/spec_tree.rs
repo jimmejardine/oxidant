@@ -189,18 +189,10 @@ fn render_leaf(
     let (leaf_color, strike) = match status {
         oxidant_spec_tools::SpecStatus::Deprecated => (theme::faint_text(), true),
         oxidant_spec_tools::SpecStatus::Draft => (Color32::from_rgb(255, 200, 100), false),
-        _ => (ui.visuals().text_color(), false),
+        _ => (kind_color, false),
     };
 
     let mut job = LayoutJob::default();
-    job.append(
-        &format!("[{kind}] "),
-        0.0,
-        TextFormat {
-            color: kind_color,
-            ..Default::default()
-        },
-    );
     let mut leaf_fmt = TextFormat {
         color: leaf_color,
         ..Default::default()
