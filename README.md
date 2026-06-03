@@ -71,3 +71,14 @@ oxidant spec resolve-links <ref> # inbound + outbound edges for impact analysis
 Add `--strict` to `validate` or `diff` to fail with exit 1 on any finding (this is what CI does), `--json` to any subcommand for the machine-readable envelope.
 
 We dogfood: the `spec` CI badge above is `oxidant spec validate --strict && oxidant spec diff --strict` running against this repo on every push. When it's red, oxidant just told us our own spec has drifted from our own code.
+
+## Licence
+
+oxidant is dual-licensed under either of
+
+- [MIT license](LICENSE-MIT) ([`https://opensource.org/licenses/MIT`](https://opensource.org/licenses/MIT))
+- [Apache License, Version 2.0](LICENSE-APACHE) ([`https://www.apache.org/licenses/LICENSE-2.0`](https://www.apache.org/licenses/LICENSE-2.0))
+
+at your option. This is the same dual-licence arrangement used by the Rust project itself, and by the majority of the Rust ecosystem.
+
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in oxidant by you, as defined in the Apache-2.0 licence, shall be dual-licensed as above, without any additional terms or conditions.
