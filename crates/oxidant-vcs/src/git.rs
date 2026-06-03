@@ -291,11 +291,25 @@ impl Git {
 
     pub async fn merge(&self, branch: &str, opts: MergeOpts) -> Result<MergeOutcome, GitError> {
         validate_branch_name(branch)?;
+        if opts.no_ff && opts.squash {
+            return Err(GitError::Invalid(
+                "MergeOpts: no_ff and squash are mutually exclusive".into(),
+            ));
+        }
         let mut args: Vec<String> = vec!["merge".into()];
         if opts.no_ff {
             args.push("--no-ff".into());
         }
-        if let Some(m) = &opts.message {
+        if opts.squash {
+            args.push("--squash".into());
+        }
+        // --squash stages without committing, so -m is ignored by git
+        // merge in that path — pass the message to the follow-up
+        // `git commit` instead. For no-ff/ff-only paths the -m is
+        // consumed by the merge commit itself.
+        if let Some(m) = &opts.message
+            && !opts.squash
+        {
             args.push("-m".into());
             args.push(m.clone());
         }
@@ -304,22 +318,45 @@ impl Git {
         let result = self.run(&refs).await;
         match result {
             Ok(_) => {
+                if opts.squash {
+                    // Squash leaves staged changes uncommitted. Finalise
+                    // here so the caller gets back a real commit_sha,
+                    // matching the no-ff outcome shape.
+                    let message = opts.message.unwrap_or_else(|| {
+                        format!("Squash merge of {branch}")
+                    });
+                    let commit_args = vec!["commit".to_string(), "-m".to_string(), message];
+                    let commit_refs: Vec<&str> =
+                        commit_args.iter().map(|s| s.as_str()).collect();
+                    self.run(&commit_refs).await?;
+                }
                 let sha = self.run(&["rev-parse", "HEAD"]).await?.trim().to_string();
                 Ok(MergeOutcome {
                     commit_sha: Some(sha),
                     conflicts: Vec::new(),
                 })
             }
-            Err(GitError::Failed { stderr, .. }) if stderr.contains("CONFLICT") => {
-                // Read the conflicted paths from status.
-                let status_out = self
+            Err(e @ GitError::Failed { .. }) => {
+                // CONFLICT messages from `git merge` go to stdout, not
+                // stderr, so we can't match on stderr text. Instead
+                // probe for unmerged paths via `diff --diff-filter=U`;
+                // a non-empty result is the only reliable conflict
+                // signal that survives both `--no-ff` and `--squash`
+                // failure modes. If there are none, this was a real
+                // error (bad branch, dirty tree, hook failure) and we
+                // propagate.
+                let probe = self
                     .run(&["diff", "--name-only", "--diff-filter=U"])
-                    .await?;
-                let conflicts: Vec<String> = status_out
+                    .await
+                    .unwrap_or_default();
+                let conflicts: Vec<String> = probe
                     .lines()
                     .filter(|l| !l.trim().is_empty())
                     .map(String::from)
                     .collect();
+                if conflicts.is_empty() {
+                    return Err(e);
+                }
                 Ok(MergeOutcome {
                     commit_sha: None,
                     conflicts,
@@ -469,6 +506,11 @@ pub struct Commit {
 #[derive(Debug, Clone, Default)]
 pub struct MergeOpts {
     pub no_ff: bool,
+    /// Stage the combined diff as a single change without committing,
+    /// then immediately commit with `message`. Mutually exclusive
+    /// with `no_ff` — `Git::merge` returns `GitError::Invalid`
+    /// if both are set. See spec/flows/merge-back.md "Merge".
+    pub squash: bool,
     pub message: Option<String>,
 }
 

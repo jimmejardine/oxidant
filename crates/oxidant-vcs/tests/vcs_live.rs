@@ -12,8 +12,8 @@ use tokio_util::sync::CancellationToken;
 
 use oxidant_core::{Tool, ToolContext, ToolResult};
 use oxidant_vcs::{
-    Git, GitError, LogOpts, VcsBranchCreate, VcsCommit, VcsDiff, VcsExplore, VcsLog, VcsStatus,
-    worktree,
+    Git, GitError, LogOpts, MergeBackOpts, VcsBranchCreate, VcsCommit, VcsDiff, VcsExplore, VcsLog,
+    VcsStatus, worktree,
 };
 
 fn run_git(repo: &Path, args: &[&str]) {
@@ -243,6 +243,140 @@ async fn show_file_returns_contents_at_revision() {
         .await
         .unwrap();
     assert_eq!(newer, "first\nsecond\n");
+}
+
+#[tokio::test]
+async fn merge_back_squashes_when_requested() {
+    // Set up a repo with two commits on main, spawn a sub-worktree, add
+    // two commits on the sub branch, then squash-merge back. The result
+    // on main should be ONE new commit carrying both file changes —
+    // not the two original commits + a merge commit (which is what
+    // --no-ff would produce).
+    let dir = make_repo(&[("a.txt", "1\n")]);
+    let repo = dunce::canonicalize(dir.path()).unwrap();
+    let main_git = Git::at(&repo);
+
+    let sub = worktree::spawn(
+        &repo,
+        worktree::SpawnOpts {
+            name: Some("squash-target".into()),
+            base: None,
+            branch_prefix: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Two distinct commits on the sub branch (so we can assert squash
+    // collapses them).
+    std::fs::write(sub.path.join("b.txt"), "first sub change\n").unwrap();
+    run_git(&sub.path, &["add", "b.txt"]);
+    run_git(&sub.path, &["commit", "-m", "sub: add b.txt", "--quiet"]);
+    std::fs::write(sub.path.join("c.txt"), "second sub change\n").unwrap();
+    run_git(&sub.path, &["add", "c.txt"]);
+    run_git(&sub.path, &["commit", "-m", "sub: add c.txt", "--quiet"]);
+
+    // Count main commits before the squash so we can compare.
+    let before = main_git
+        .log(LogOpts {
+            limit: Some(50),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    let before_count = before.len();
+
+    let outcome = worktree::merge_back(
+        &repo,
+        &sub,
+        "main",
+        MergeBackOpts {
+            squash: true,
+            message: Some("Squash sub work onto main".into()),
+        },
+    )
+    .await
+    .unwrap();
+    assert!(outcome.conflicts.is_empty(), "squash should be clean here");
+    assert!(outcome.commit_sha.is_some(), "squash should produce a commit_sha");
+
+    let after = main_git
+        .log(LogOpts {
+            limit: Some(50),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        after.len(),
+        before_count + 1,
+        "squash merge must add exactly ONE commit, not the two sub commits + a merge commit"
+    );
+    assert!(
+        after[0].subject.contains("Squash sub work onto main"),
+        "top commit on main should be our squash commit, got: {:?}",
+        after[0].subject
+    );
+
+    // Both files arrived in main's worktree.
+    assert!(repo.join("b.txt").exists());
+    assert!(repo.join("c.txt").exists());
+}
+
+#[tokio::test]
+async fn merge_back_squash_returns_conflicts_when_paths_overlap() {
+    // Set up a conflict: edit a.txt on both main and the sub branch in
+    // ways that can't auto-merge. Squash merge should return a
+    // MergeOutcome with the conflicted path listed and commit_sha None.
+    let dir = make_repo(&[("a.txt", "original\n")]);
+    let repo = dunce::canonicalize(dir.path()).unwrap();
+
+    let sub = worktree::spawn(
+        &repo,
+        worktree::SpawnOpts {
+            name: Some("conflict-target".into()),
+            base: None,
+            branch_prefix: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    // Sub edits a.txt one way.
+    std::fs::write(sub.path.join("a.txt"), "sub edit\n").unwrap();
+    run_git(&sub.path, &["add", "a.txt"]);
+    run_git(&sub.path, &["commit", "-m", "sub: edit a.txt", "--quiet"]);
+
+    // Main edits a.txt another way.
+    std::fs::write(repo.join("a.txt"), "main edit\n").unwrap();
+    run_git(&repo, &["add", "a.txt"]);
+    run_git(&repo, &["commit", "-m", "main: edit a.txt", "--quiet"]);
+
+    let outcome = worktree::merge_back(
+        &repo,
+        &sub,
+        "main",
+        MergeBackOpts {
+            squash: true,
+            message: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        outcome.commit_sha.is_none(),
+        "conflict path must not produce a commit_sha"
+    );
+    assert!(
+        outcome.conflicts.iter().any(|p| p == "a.txt"),
+        "expected a.txt in conflicts list, got {:?}",
+        outcome.conflicts
+    );
+
+    // Clean up the half-finished squash. Unlike a real merge,
+    // `--squash` doesn't set MERGE_HEAD, so `merge --abort` fails —
+    // reset hard to discard the conflict markers and unstaged index.
+    run_git(&repo, &["reset", "--hard", "HEAD"]);
 }
 
 #[tokio::test]

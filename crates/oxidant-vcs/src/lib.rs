@@ -27,7 +27,7 @@ pub use tools::{
     VcsBranchCheckout, VcsBranchCreate, VcsCommit, VcsDiff, VcsDiscard, VcsExplorationsList,
     VcsExplore, VcsLog, VcsMergeBack, VcsStatus,
 };
-pub use worktree::{SpawnOpts, WorktreeError, WorktreeHandle, WorktreeSummary};
+pub use worktree::{MergeBackOpts, SpawnOpts, WorktreeError, WorktreeHandle, WorktreeSummary};
 
 /// Register the seven agent-safe VCS tools (status, diff, log, commit,
 /// branch-create, branch-checkout, explorations-list). The three

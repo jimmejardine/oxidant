@@ -144,27 +144,43 @@ pub async fn discard(repo: &Path, path: &Path, force: bool) -> Result<(), Worktr
     Ok(())
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct MergeBackOpts {
+    /// `true` → `git merge --squash <sub-branch>` + a single `git commit`;
+    /// `false` → `git merge --no-ff <sub-branch>` (default).
+    /// See spec/flows/merge-back.md.
+    pub squash: bool,
+    /// Merge commit message. None → a default of the form
+    /// `"Merge exploration <dir-name>: branch <branch>"`.
+    pub message: Option<String>,
+}
+
 pub async fn merge_back(
     repo: &Path,
     sub: &WorktreeHandle,
     target_branch: &str,
+    opts: MergeBackOpts,
 ) -> Result<MergeOutcome, WorktreeError> {
     let parent_git = Git::at(repo);
     // The merge happens in the *parent* worktree, not the sub.
     parent_git.checkout(target_branch, false).await?;
+    let message = opts.message.unwrap_or_else(|| {
+        format!(
+            "Merge exploration {}: branch {}",
+            sub.path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            sub.branch
+        )
+    });
     let outcome = parent_git
         .merge(
             &sub.branch,
             MergeOpts {
-                no_ff: true,
-                message: Some(format!(
-                    "Merge exploration {}: branch {}",
-                    sub.path
-                        .file_name()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_default(),
-                    sub.branch
-                )),
+                no_ff: !opts.squash,
+                squash: opts.squash,
+                message: Some(message),
             },
         )
         .await?;

@@ -32,10 +32,15 @@ In the **parent** worktree (not the sub):
 
 ```
 git checkout <parent-branch>            # if not already there
-git merge --no-ff <sub-branch>
+git merge --no-ff <sub-branch>          # default
+   OR
+git merge --squash <sub-branch>         # squash variant
+git commit -m "<message>"               # squash needs an explicit commit
 ```
 
-- `--no-ff` so the exploration boundary is visible in history.
+- `--no-ff` preserves the exploration boundary in history as an explicit merge commit referencing both parents.
+- `--squash` collapses the sub's commits into one staged change on the parent; the caller finalises with `git commit`. Use when the exploration's incremental commit history adds no value to the parent — e.g. a noisy back-and-forth where only the final state matters.
+- The two modes are mutually exclusive. Picked at call time via `MergeBackOpts { squash, message }`; see [[components/vcs/worktree-mgmt]].
 - Default merge commit message: `"Merge exploration <slug>: <seed-or-summary>"`.
 
 ## Conflict handling

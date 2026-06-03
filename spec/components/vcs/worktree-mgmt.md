@@ -47,7 +47,24 @@ pub struct WorktreeSummary {
 pub async fn spawn(repo: &Path, opts: SpawnOpts) -> Result<WorktreeHandle>;
 pub async fn list(repo: &Path) -> Result<Vec<WorktreeSummary>>;
 pub async fn discard(repo: &Path, path: &Path, force: bool) -> Result<()>;
-pub async fn merge_back(repo: &Path, sub: &WorktreeHandle, target_branch: &str) -> Result<MergeOutcome>;
+pub async fn merge_back(
+    repo: &Path,
+    sub: &WorktreeHandle,
+    target_branch: &str,
+    opts: MergeBackOpts,
+) -> Result<MergeOutcome>;
+
+pub struct MergeBackOpts {
+    /// When true, run `git merge --squash`: stage the combined diff
+    /// as a single change without committing, then immediately commit
+    /// with `message`. When false, run `git merge --no-ff`: preserve
+    /// an explicit merge commit referencing both parent and sub history.
+    /// Mutually exclusive — `--squash` and `--no-ff` cannot combine.
+    pub squash: bool,
+    /// Merge commit message. Falls back to a default of the form
+    /// "Merge exploration <dir-name>: branch <branch>" when None.
+    pub message: Option<String>,
+}
 ```
 
 The API talks in terms of paths and branches, not Explorations. Wrapping a `WorktreeHandle` into a full `Exploration` (with its `Conversation`, `LspHandle`, cancellation token, etc.) happens in [[flows/spawn-exploration]] — that's where the layering crosses from VCS plumbing into runtime aggregates.
