@@ -8,7 +8,7 @@
 //   spec/components/gui/spec-tree-panel.md
 //   spec/components/gui/file-tree-panel.md
 //   spec/components/gui/spec-graph-panel.md
-//   spec/components/gui/diagnostic-panel.md
+//   spec/components/gui/health-check-panel.md
 //   spec/components/gui/file-tabs.md
 //   spec/components/gui/exploration-list.md
 //   spec/components/gui/theme.md

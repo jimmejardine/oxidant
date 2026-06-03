@@ -20,7 +20,8 @@ use crate::dock::{
     singleton_tabs,
 };
 use crate::panels::{
-    chat_input::ChatInputPanel, diagnostic::DiagnosticPanel, diff_history::DiffHistoryPanel,
+    chat_input::ChatInputPanel, diff_history::DiffHistoryPanel,
+    health_check::HealthCheckPanel,
     exploration_list::ExplorationListPanel, file_tab::FileTabPanel, file_tree::FileTreePanel,
     settings::SettingsPanel, spec_graph::SpecGraphPanel, spec_tree::SpecTreePanel,
     transcript::TranscriptPanel,
@@ -42,7 +43,7 @@ pub struct App {
     /// close so re-opening the same seed preserves expansion state —
     /// same shape as `diff_history_panels`.
     spec_graph_panels: HashMap<String, SpecGraphPanel>,
-    diag_panel: DiagnosticPanel,
+    health_panel: HealthCheckPanel,
     settings_panel: SettingsPanel,
     /// One DiffHistory panel per open path. Lazily inserted when the tab
     /// first paints; entries leak across tab close in MVP (cheap state,
@@ -69,7 +70,9 @@ pub struct SharedState {
     /// Per-turn cancellation token (Esc / Cancel button). Distinct from
     /// `exploration.cancellation`, which tears down the whole window.
     pub cancellation: Option<CancellationToken>,
-    pub diagnostics: Vec<DiagnosticEntry>,
+    /// CI-style health report. One entry per CheckKind. See
+    /// spec/components/gui/health-check-panel.md.
+    pub health: HealthReport,
     /// Centre-tab opens requested by a panel that doesn't own the dock
     /// (e.g. spec-tree double-click). Drained once per frame after
     /// `DockArea::show`; see spec/components/gui/spec-tree-panel.md.
@@ -117,13 +120,95 @@ pub struct TurnOutcome {
     pub error: Option<String>,
 }
 
+// ---------------------------------------------------------------- Health report
+//
+// Per spec/components/gui/health-check-panel.md.
+
+use std::collections::BTreeMap;
+
+#[derive(Debug, Clone, Default)]
+pub struct HealthReport {
+    pub checks: BTreeMap<CheckKind, CheckState>,
+    pub last_run_at: Option<std::time::Instant>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum CheckKind {
+    CargoCheck,
+    Clippy,
+    Tests,
+    SpecValidate,
+    SpecDiff,
+}
+
+impl CheckKind {
+    pub fn display_name(self) -> &'static str {
+        match self {
+            CheckKind::CargoCheck => "cargo check",
+            CheckKind::Clippy => "clippy",
+            CheckKind::Tests => "tests",
+            CheckKind::SpecValidate => "spec validate",
+            CheckKind::SpecDiff => "spec diff",
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CheckKind::CargoCheck => "cargo_check",
+            CheckKind::Clippy => "clippy",
+            CheckKind::Tests => "tests",
+            CheckKind::SpecValidate => "spec_validate",
+            CheckKind::SpecDiff => "spec_diff",
+        }
+    }
+
+    pub fn tool_name(self) -> &'static str {
+        match self {
+            CheckKind::CargoCheck => "cargo_check",
+            CheckKind::Clippy => "cargo_clippy",
+            CheckKind::Tests => "cargo_test",
+            CheckKind::SpecValidate => "spec_validate",
+            CheckKind::SpecDiff => "spec_diff",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CheckState {
+    pub status: CheckStatus,
+    pub issues: Vec<HealthIssue>,
+    pub finished_in_ms: u64,
+    /// True once the user has clicked the root header. Suppresses
+    /// auto-expand on the next red transition so we don't fight them.
+    pub user_toggled: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub enum CheckStatus {
+    #[default]
+    Idle,
+    Running,
+    Done,
+    Failed(String),
+}
+
 #[derive(Debug, Clone)]
-pub struct DiagnosticEntry {
-    pub file: String,
+pub struct HealthIssue {
+    pub check: CheckKind,
+    pub severity: IssueSeverity,
+    /// Subtree group: file path / WarningKind / drift kind / test target.
+    pub group_key: String,
+    pub message: String,
+    pub file: Option<String>,
     pub line: u32,
     pub character: u32,
-    pub message: String,
-    pub severity: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IssueSeverity {
+    Error,
+    Warning,
+    Note,
 }
 
 /// Messages flowing from the agent task back to the GUI thread.
@@ -180,7 +265,7 @@ impl App {
             live_turn: None,
             last_outcome: None,
             cancellation: None,
-            diagnostics: Vec::new(),
+            health: HealthReport::default(),
             pending_centre_tabs: Vec::new(),
             editor_buffers: HashMap::new(),
         }));
@@ -195,7 +280,7 @@ impl App {
             spec_panel,
             file_tree_panel,
             spec_graph_panels: HashMap::new(),
-            diag_panel: DiagnosticPanel::new(),
+            health_panel: HealthCheckPanel::new(),
             settings_panel,
             diff_history_panels: HashMap::new(),
             config,
@@ -258,7 +343,7 @@ impl eframe::App for App {
             spec_panel: &mut self.spec_panel,
             file_tree_panel: &mut self.file_tree_panel,
             spec_graph_panels: &mut self.spec_graph_panels,
-            diag_panel: &mut self.diag_panel,
+            health_panel: &mut self.health_panel,
             settings_panel: &mut self.settings_panel,
             diff_history_panels: &mut self.diff_history_panels,
             settings: self.config.settings.clone(),
@@ -340,7 +425,7 @@ pub(crate) struct TabViewer<'a> {
     pub spec_panel: &'a mut SpecTreePanel,
     pub file_tree_panel: &'a mut FileTreePanel,
     pub spec_graph_panels: &'a mut HashMap<String, SpecGraphPanel>,
-    pub diag_panel: &'a mut DiagnosticPanel,
+    pub health_panel: &'a mut HealthCheckPanel,
     pub settings_panel: &'a mut SettingsPanel,
     pub diff_history_panels: &'a mut HashMap<PathBuf, DiffHistoryPanel>,
     pub settings: Arc<StdMutex<oxidant_config::Settings>>,
@@ -385,8 +470,8 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
             DockTab::ExplorationList => {
                 ExplorationListPanel.render(ui, &self.workspace_root);
             }
-            DockTab::DiagnosticPreview => {
-                self.diag_panel.render(
+            DockTab::HealthCheck => {
+                self.health_panel.render(
                     ui,
                     &self.state,
                     &self.tokio_handle,

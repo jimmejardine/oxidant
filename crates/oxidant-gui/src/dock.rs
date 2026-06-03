@@ -17,7 +17,7 @@ pub enum DockTab {
     SpecTree,
     FileTree,
     ExplorationList,
-    DiagnosticPreview,
+    HealthCheck,
     ChatInput,
     Settings,
     File {
@@ -49,7 +49,7 @@ impl DockTab {
             DockTab::SpecTree => "Specs".into(),
             DockTab::FileTree => "Files".into(),
             DockTab::ExplorationList => "Explorations".into(),
-            DockTab::DiagnosticPreview => "Diagnostics".into(),
+            DockTab::HealthCheck => "Health Check".into(),
             DockTab::ChatInput => "Chat".into(),
             DockTab::Settings => "Settings".into(),
             DockTab::File { path, .. } => path
@@ -96,7 +96,7 @@ pub fn default_layout() -> DockState<DockTab> {
     let [_centre, _right] = surface.split_right(
         NodeIndex::root(),
         0.78,
-        vec![DockTab::DiagnosticPreview, DockTab::Settings],
+        vec![DockTab::HealthCheck, DockTab::Settings],
     );
     let [_centre, _bottom] = surface.split_below(NodeIndex::root(), 0.75, vec![DockTab::ChatInput]);
     let _ = left;
@@ -112,7 +112,7 @@ pub fn singleton_tabs() -> [DockTab; 7] {
         DockTab::SpecTree,
         DockTab::FileTree,
         DockTab::ExplorationList,
-        DockTab::DiagnosticPreview,
+        DockTab::HealthCheck,
         DockTab::ChatInput,
         DockTab::Settings,
     ]

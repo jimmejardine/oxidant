@@ -1,5 +1,5 @@
 pub mod chat_input;
-pub mod diagnostic;
+pub mod health_check;
 pub mod diff_history;
 pub mod exploration_list;
 pub mod file_tab;

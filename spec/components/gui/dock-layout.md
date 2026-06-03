@@ -32,7 +32,7 @@ pub enum DockTab {
     FileTree,
     ExplorationList,
     ValidateWarnings,
-    DiagnosticPreview,
+    HealthCheck,
     ChatInput,
     File { path: PathBuf, source: FileSource },          // opened code or spec file
     DiffHistory { path: PathBuf, source: FileSource },   // read-only history viewer
@@ -54,7 +54,7 @@ pub enum DockTab {
 
 The viewport's top menu bar carries a **Window** menu so a user can recover from closing a panel they later want back. Contents:
 
-- One entry per **singleton** tab — `Transcript`, `Specs`, `Explorations`, `Diagnostics`, `Chat`. Each shows a checkmark when the tab is already open and is disabled in that state; clicking an unchecked entry re-inserts the tab into the focused leaf (or the first leaf if nothing is focused).
+- One entry per **singleton** tab — `Transcript`, `Specs`, `Explorations`, `Health Check`, `Chat`. Each shows a checkmark when the tab is already open and is disabled in that state; clicking an unchecked entry re-inserts the tab into the focused leaf (or the first leaf if nothing is focused).
 - **Reset layout** at the bottom of the menu rebuilds the default layout (see below). File tabs that are currently open are preserved as centre tabs — closing a file is still done via the `×` on the tab itself.
 
 File tabs (`DockTab::File { … }`) are not listed in the Window menu — they are opened from the spec tree or by following a navigation result. A recent-files history is out of scope for the MVP.
@@ -75,7 +75,7 @@ Each `DockTab` variant's render is delegated to its panel component:
 - `FileTree` → [[components/gui/file-tree-panel]]
 - `ExplorationList` → [[components/gui/exploration-list]]
 - `ValidateWarnings` → handled inline (small surface)
-- `DiagnosticPreview` → [[components/gui/diagnostic-panel]]
+- `HealthCheck` → [[components/gui/health-check-panel]]
 - `ChatInput` → [[components/gui/chat-input-panel]]
 - `File` → [[components/gui/file-tabs]]
 - `DiffHistory` → [[components/gui/diff-history-panel]]
