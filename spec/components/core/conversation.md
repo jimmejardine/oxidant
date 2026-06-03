@@ -24,7 +24,7 @@ pub struct Conversation {
 pub enum Message {
     User { content: Vec<ContentBlock> },
     Assistant { content: Vec<ContentBlock>, stop_reason: Option<StopReason>, usage: Option<Usage> },
-    ToolResult { call_id: String, content: ToolResultContent, is_error: bool },
+    ToolResult { call_id: String, content: ToolResultContent, is_error: bool, elapsed_ms: u64 },
 }
 
 pub enum ContentBlock {
@@ -34,6 +34,10 @@ pub enum ContentBlock {
     ToolUse { id: String, name: String, input: serde_json::Value },
 }
 ```
+
+## Tool-call timing
+
+`Message::ToolResult.elapsed_ms` is the wall-clock duration between [[components/core/agent-loop]] entering `registry.invoke(name, input, ctx)` and that future resolving. The agent loop measures with `Instant::now()` and passes the result through to `Conversation::push_tool_result`. The field is `#[serde(default)]` so older persisted `.jsonl` lines load with `elapsed_ms = 0`. Surfaced by [[components/gui/transcript-tab]] in the tool_result header alongside the rendered byte count (which is computed at render time, not persisted).
 
 ## Append-only
 

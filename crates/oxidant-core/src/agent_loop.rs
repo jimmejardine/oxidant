@@ -8,6 +8,7 @@
 // caller, matching the spec's "loop runs on a tokio task" model.
 
 use std::collections::HashMap;
+use std::time::Instant;
 
 use anyhow::anyhow;
 use futures::StreamExt;
@@ -170,13 +171,15 @@ where
             if tool_is_mutating(registry, &tc.name) {
                 any_mutating = true;
             }
+            let start = Instant::now();
             let result = registry.invoke(&tc.name, input, ctx).await;
+            let elapsed_ms = start.elapsed().as_millis() as u64;
             outcome.tool_calls_dispatched += 1;
             let (content, is_error) = match result {
                 ToolResult::Ok(v) => (ToolResultContent::Json(v), false),
                 ToolResult::Err(e) => (ToolResultContent::Text(e), true),
             };
-            conv.push_tool_result(id, content, is_error);
+            conv.push_tool_result(id, content, is_error, elapsed_ms);
         }
 
         // Post-edit hook — see spec/components/core/agent-loop.md.
@@ -231,7 +234,14 @@ fn absorb_text_tool_calls(acc: &mut TurnAccumulator) {
         return;
     }
     acc.text = result.stripped_text;
-    for (i, ExtractedToolCall { name, arguments_json }) in result.calls.into_iter().enumerate() {
+    for (
+        i,
+        ExtractedToolCall {
+            name,
+            arguments_json,
+        },
+    ) in result.calls.into_iter().enumerate()
+    {
         let id = format!("text_extracted_{i}");
         acc.order.push(id.clone());
         acc.tool_calls.insert(
@@ -338,6 +348,7 @@ pub fn build_request(
                 call_id,
                 content,
                 is_error,
+                elapsed_ms: _,
             } => {
                 tool_result_buf.push(ContentPart::ToolResult {
                     call_id: call_id.clone(),
@@ -427,8 +438,8 @@ mod tests {
             None,
             None,
         );
-        conv.push_tool_result("t1", ToolResultContent::Text("a".into()), false);
-        conv.push_tool_result("t2", ToolResultContent::Text("b".into()), false);
+        conv.push_tool_result("t1", ToolResultContent::Text("a".into()), false, 0);
+        conv.push_tool_result("t2", ToolResultContent::Text("b".into()), false, 0);
 
         let registry = ToolRegistry::new();
         let req = build_request(&conv, &registry, &AgentLoopConfig::new("test-model"));

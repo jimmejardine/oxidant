@@ -26,6 +26,12 @@ pub enum Message {
         content: ToolResultContent,
         #[serde(default)]
         is_error: bool,
+        /// Wall-clock duration between agent_loop entering registry.invoke
+        /// and that future resolving. `#[serde(default)]` keeps old
+        /// persisted `.jsonl` lines loadable (they get `0`). Surfaced by
+        /// the transcript renderer in the tool_result header.
+        #[serde(default)]
+        elapsed_ms: u64,
     },
 }
 

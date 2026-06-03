@@ -4,12 +4,69 @@
 // assistant turn (text, thinking, tool calls) in place. Markdown
 // rendering via egui_commonmark; rich tool-call cards.
 
+use std::collections::{HashMap, HashSet};
+
 use egui::{Color32, CursorIcon, Id, RichText, ScrollArea, Sense};
 
 use oxidant_core::{ContentBlock, Message, ToolResultContent};
 
 use crate::app::{LiveTurn, SharedState};
 use crate::theme;
+
+/// Per-render lookup for inlining `Message::ToolResult` underneath the
+/// `ContentBlock::ToolUse` that produced it. See
+/// spec/components/gui/transcript-tab.md "Render structure".
+struct RenderCtx<'a> {
+    /// call_id → the matching ToolResult body. Built once per frame from
+    /// a single pass over `conversation.messages`.
+    tool_results: HashMap<&'a str, ToolResultRef<'a>>,
+    /// Every call_id that appears as a `ContentBlock::ToolUse` somewhere
+    /// in the conversation. A top-level `Message::ToolResult` whose
+    /// call_id is NOT in this set is rendered as an "unmatched" orphan
+    /// fallback so it can't silently vanish.
+    tool_use_ids: HashSet<&'a str>,
+}
+
+struct ToolResultRef<'a> {
+    content: &'a ToolResultContent,
+    is_error: bool,
+    elapsed_ms: u64,
+}
+
+fn build_render_ctx(messages: &[Message]) -> RenderCtx<'_> {
+    let mut tool_results = HashMap::new();
+    let mut tool_use_ids = HashSet::new();
+    for msg in messages {
+        match msg {
+            Message::Assistant { content, .. } | Message::User { content } => {
+                for block in content {
+                    if let ContentBlock::ToolUse { id, .. } = block {
+                        tool_use_ids.insert(id.as_str());
+                    }
+                }
+            }
+            Message::ToolResult {
+                call_id,
+                content,
+                is_error,
+                elapsed_ms,
+            } => {
+                tool_results.insert(
+                    call_id.as_str(),
+                    ToolResultRef {
+                        content,
+                        is_error: *is_error,
+                        elapsed_ms: *elapsed_ms,
+                    },
+                );
+            }
+        }
+    }
+    RenderCtx {
+        tool_results,
+        tool_use_ids,
+    }
+}
 
 /// Anything longer than this collapses by default. Sized to roughly the
 /// width of a typical chat input — short user prompts and one-liner
@@ -20,12 +77,13 @@ pub struct TranscriptPanel;
 
 impl TranscriptPanel {
     pub fn render(&self, ui: &mut egui::Ui, state: &SharedState) {
+        let ctx = build_render_ctx(&state.exploration.conversation.messages);
         ScrollArea::vertical()
             .auto_shrink([false; 2])
             .stick_to_bottom(true)
             .show(ui, |ui| {
                 for (msg_idx, msg) in state.exploration.conversation.messages.iter().enumerate() {
-                    render_message(ui, msg_idx, msg);
+                    render_message(ui, msg_idx, msg, &ctx);
                     ui.add_space(8.0);
                 }
                 if let Some(turn) = &state.live_turn {
@@ -62,12 +120,12 @@ impl TranscriptPanel {
     }
 }
 
-fn render_message(ui: &mut egui::Ui, msg_idx: usize, msg: &Message) {
+fn render_message(ui: &mut egui::Ui, msg_idx: usize, msg: &Message, ctx: &RenderCtx<'_>) {
     match msg {
         Message::User { content } => {
             ui.label(RichText::new("user").color(Color32::LIGHT_BLUE).strong());
             for (b_idx, block) in content.iter().enumerate() {
-                render_block(ui, msg_idx, b_idx, block);
+                render_block(ui, msg_idx, b_idx, block, ctx);
             }
         }
         Message::Assistant {
@@ -91,34 +149,50 @@ fn render_message(ui: &mut egui::Ui, msg_idx: usize, msg: &Message) {
                     );
                 }
             });
+            // Content blocks render in emit order — text, thinking, and
+            // tool_use cards interleave as the model produced them. The
+            // tool_use card now nests its matching tool_result underneath
+            // (see render_block), so the transcript reads chronologically.
             for (b_idx, block) in content.iter().enumerate() {
-                render_block(ui, msg_idx, b_idx, block);
+                render_block(ui, msg_idx, b_idx, block, ctx);
             }
         }
         Message::ToolResult {
             call_id,
             content,
             is_error,
+            elapsed_ms,
         } => {
+            // Inlined under its parent tool_use by render_block. Only
+            // render here as a top-level fallback if the call_id has no
+            // matching tool_use in the conversation — a desync we don't
+            // want to silently swallow.
+            if ctx.tool_use_ids.contains(call_id.as_str()) {
+                return;
+            }
             let header_color = if *is_error {
                 Color32::RED
             } else {
                 Color32::YELLOW
             };
-            ui.label(RichText::new(format!("tool_result ({call_id})")).color(header_color));
-            let body = match content {
-                ToolResultContent::Text(s) => s.clone(),
-                ToolResultContent::Json(v) => {
-                    serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string())
-                }
-            };
+            ui.label(
+                RichText::new(format!("unmatched tool_result ({call_id})")).color(header_color),
+            );
+            let body = body_string(content);
             let id = Id::new(("tool_result", msg_idx));
+            let _ = elapsed_ms;
             collapsible_code(ui, id, &body);
         }
     }
 }
 
-fn render_block(ui: &mut egui::Ui, msg_idx: usize, block_idx: usize, block: &ContentBlock) {
+fn render_block(
+    ui: &mut egui::Ui,
+    msg_idx: usize,
+    block_idx: usize,
+    block: &ContentBlock,
+    ctx: &RenderCtx<'_>,
+) {
     let id = Id::new(("block", msg_idx, block_idx));
     match block {
         ContentBlock::Text(s) => {
@@ -133,16 +207,60 @@ fn render_block(ui: &mut egui::Ui, msg_idx: usize, block_idx: usize, block: &Con
             input,
         } => {
             let pretty = serde_json::to_string_pretty(input).unwrap_or_else(|_| input.to_string());
+            let result = ctx.tool_results.get(tool_id.as_str());
             egui::CollapsingHeader::new(
                 RichText::new(format!("tool_use · {name} ({tool_id})")).color(Color32::YELLOW),
             )
             .id_salt(id)
             .show(ui, |ui| {
                 ui.code(&pretty);
+                if let Some(r) = result {
+                    render_tool_result_nested(ui, id.with("result"), r);
+                }
             });
         }
         ContentBlock::Image { .. } => {
             ui.label(RichText::new("[image — not rendered in MVP]").color(theme::muted_text()));
+        }
+    }
+}
+
+/// Render a tool_result as a collapsible card *inside* its parent
+/// tool_use's `CollapsingHeader`. Header shows `result · {elapsed} ms ·
+/// {bytes} B` (or `error · …` in red). See
+/// spec/components/gui/transcript-tab.md "Tool-result header".
+fn render_tool_result_nested(ui: &mut egui::Ui, id: Id, r: &ToolResultRef<'_>) {
+    let body = body_string(r.content);
+    let bytes = body.len();
+    let (label, color) = if r.is_error {
+        (
+            format!("error · {} ms · {} B", r.elapsed_ms, bytes),
+            Color32::LIGHT_RED,
+        )
+    } else {
+        (
+            format!("result · {} ms · {} B", r.elapsed_ms, bytes),
+            theme::muted_text(),
+        )
+    };
+    egui::CollapsingHeader::new(RichText::new(label).color(color))
+        .id_salt(id)
+        .show(ui, |ui| {
+            ScrollArea::vertical()
+                .max_height(360.0)
+                .auto_shrink([false; 2])
+                .id_salt(id.with("scroll"))
+                .show(ui, |ui| {
+                    ui.code(&body);
+                });
+        });
+}
+
+fn body_string(content: &ToolResultContent) -> String {
+    match content {
+        ToolResultContent::Text(s) => s.clone(),
+        ToolResultContent::Json(v) => {
+            serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string())
         }
     }
 }

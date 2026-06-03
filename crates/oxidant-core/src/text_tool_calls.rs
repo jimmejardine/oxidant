@@ -139,11 +139,7 @@ fn find_envelope_open(text: &str) -> Option<OpenMatch> {
     }
 }
 
-fn find_envelope_close(
-    text: &str,
-    open_abs: usize,
-    kind: EnvelopeKind,
-) -> Option<CloseMatch> {
+fn find_envelope_close(text: &str, open_abs: usize, kind: EnvelopeKind) -> Option<CloseMatch> {
     let close_tag = match kind {
         EnvelopeKind::ToolCall => "</tool_call>",
         EnvelopeKind::Function => "</function>",

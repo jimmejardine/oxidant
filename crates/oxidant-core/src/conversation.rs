@@ -60,11 +60,13 @@ impl Conversation {
         call_id: impl Into<String>,
         content: ToolResultContent,
         is_error: bool,
+        elapsed_ms: u64,
     ) {
         self.messages.push(Message::ToolResult {
             call_id: call_id.into(),
             content,
             is_error,
+            elapsed_ms,
         });
     }
 

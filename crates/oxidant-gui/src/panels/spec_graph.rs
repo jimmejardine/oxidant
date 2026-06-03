@@ -1208,10 +1208,7 @@ mod tests {
     /// Build a tiny fake Universe for tests, bypassing walk_specs.
     /// Edges are stored as a flat Vec; neighbour buckets get both
     /// directions like the real builder does for the `specs` bucket.
-    fn fake_universe(
-        node_ids: &[&str],
-        spec_edges: &[(&str, &str, EdgeKindUi)],
-    ) -> Universe {
+    fn fake_universe(node_ids: &[&str], spec_edges: &[(&str, &str, EdgeKindUi)]) -> Universe {
         let mut nodes: HashMap<NodeId, UniverseNode> = HashMap::new();
         for id in node_ids {
             nodes.insert(

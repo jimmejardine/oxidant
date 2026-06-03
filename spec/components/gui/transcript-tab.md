@@ -22,8 +22,14 @@ A vertical scroll area, scroll-anchored at the bottom (auto-follow during stream
 
 Each turn:
 - **User**: text with markdown rendering.
-- **Assistant**: streaming text, thinking block (collapsed by default), and tool-use blocks rendered as expandable cards.
-- **Tool result**: a card under its tool-use header, with structured JSON (`json` syntect highlight) or a custom renderer per tool type (e.g. diff view for `apply_edits` results).
+- **Assistant**: streaming text, thinking blocks, and tool_use cards rendered **in the order the provider emitted them** — interleaved as in the conversation. If the model thinks → calls tool A → thinks again → calls tool B → emits a final paragraph, the transcript shows that exact sequence top-to-bottom. Thinking and text blocks are NOT pulled above the tool cards.
+- **Tool result**: rendered as a collapsible *child* of its parent tool_use card, not at the top level of the conversation. The renderer builds a `call_id → Message::ToolResult index` map at the start of each frame and skips top-level `Message::ToolResult` messages — they're inlined into the tree instead.
+
+### Tool-result header
+
+Collapsed view of a nested tool_result shows: `result · {elapsed_ms} ms · {N} B` (or `error · {elapsed_ms} ms · {N} B` in red when `is_error` is set). `elapsed_ms` is taken from the persisted `Message::ToolResult.elapsed_ms`; `N` is the byte length of the rendered body (computed at render time, never stored). The header surfaces the cost of the call without forcing the user to expand a potentially fat body.
+
+A `Message::ToolResult` whose `call_id` doesn't match any tool_use in the conversation (a desync — should not happen in practice) renders at the top level under a "unmatched tool_result" heading so it isn't silently lost.
 
 ## Streaming integration
 
