@@ -20,7 +20,9 @@
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, TextStyle, Visuals, style::Selection};
+use egui::{
+    Color32, FontData, FontDefinitions, FontFamily, FontId, TextStyle, Visuals, style::Selection,
+};
 use serde::{Deserialize, Serialize};
 
 /// Single point size used for every `TextStyle`. The user can scale the
@@ -203,20 +205,21 @@ pub fn install_fonts(ctx: &egui::Context) {
     let mut fonts = FontDefinitions::default();
     fonts.font_data.insert(
         "noto_sans".into(),
-        FontData::from_static(include_bytes!("../assets/fonts/NotoSans-Regular.ttf")).into(),
+        FontData::from_static(include_bytes!("../assets/fonts/NotoSans-Regular.ttf")),
     );
     fonts.font_data.insert(
         "noto_sans_mono".into(),
-        FontData::from_static(include_bytes!("../assets/fonts/NotoSansMono-Regular.ttf")).into(),
+        FontData::from_static(include_bytes!("../assets/fonts/NotoSansMono-Regular.ttf")),
     );
     fonts.font_data.insert(
         "dejavu_sans".into(),
-        FontData::from_static(include_bytes!("../assets/fonts/DejaVuSans.ttf")).into(),
+        FontData::from_static(include_bytes!("../assets/fonts/DejaVuSans.ttf")),
     );
     fonts.font_data.insert(
         "noto_symbols2".into(),
-        FontData::from_static(include_bytes!("../assets/fonts/NotoSansSymbols2-Regular.ttf"))
-            .into(),
+        FontData::from_static(include_bytes!(
+            "../assets/fonts/NotoSansSymbols2-Regular.ttf"
+        )),
     );
     // Symbol fallbacks, in priority order, for both families.
     let prop = fonts.families.entry(FontFamily::Proportional).or_default();
@@ -470,12 +473,15 @@ mod tests {
     fn fonts_cover_all_used_glyphs() {
         use ab_glyph::{Font, FontRef};
         let faces = [
-            FontRef::try_from_slice(include_bytes!("../assets/fonts/NotoSans-Regular.ttf")).unwrap(),
+            FontRef::try_from_slice(include_bytes!("../assets/fonts/NotoSans-Regular.ttf"))
+                .unwrap(),
             FontRef::try_from_slice(include_bytes!("../assets/fonts/NotoSansMono-Regular.ttf"))
                 .unwrap(),
             FontRef::try_from_slice(include_bytes!("../assets/fonts/DejaVuSans.ttf")).unwrap(),
-            FontRef::try_from_slice(include_bytes!("../assets/fonts/NotoSansSymbols2-Regular.ttf"))
-                .unwrap(),
+            FontRef::try_from_slice(include_bytes!(
+                "../assets/fonts/NotoSansSymbols2-Regular.ttf"
+            ))
+            .unwrap(),
         ];
         let missing: Vec<char> = USED_GLYPHS
             .iter()

@@ -22,9 +22,8 @@ use crate::dock::{
 use crate::panels::{
     chat_input::ChatInputPanel, diff_history::DiffHistoryPanel,
     exploration_list::ExplorationListPanel, file_tab::FileTabPanel, file_tree::FileTreePanel,
-    health_check::HealthCheckPanel, merge_conflicts::MergeConflictsPanel,
-    settings::SettingsPanel, spec_graph::SpecGraphPanel, spec_tree::SpecTreePanel,
-    transcript::TranscriptPanel,
+    health_check::HealthCheckPanel, merge_conflicts::MergeConflictsPanel, settings::SettingsPanel,
+    spec_graph::SpecGraphPanel, spec_tree::SpecTreePanel, transcript::TranscriptPanel,
 };
 use crate::theme::Theme;
 use crate::viewport::ViewportConfig;

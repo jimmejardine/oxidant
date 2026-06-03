@@ -1104,7 +1104,10 @@ async fn cancel_before_run_short_circuits_without_calling_provider() {
     .await
     .unwrap();
 
-    assert!(outcome.cancelled, "a pre-cancelled token must short-circuit");
+    assert!(
+        outcome.cancelled,
+        "a pre-cancelled token must short-circuit"
+    );
     assert_eq!(outcome.iterations, 0, "no iteration should have started");
     assert!(
         provider.captured_requests().is_empty(),

@@ -167,9 +167,7 @@ impl TranscriptPanel {
                 if state.active().conversation.is_empty() && state.live_turn.is_none() {
                     ui.add_space(80.0);
                     ui.vertical_centered(|ui| {
-                        ui.label(
-                            RichText::new("oxidant").color(theme::faint_text()),
-                        );
+                        ui.label(RichText::new("oxidant").color(theme::faint_text()));
                         ui.label(
                             RichText::new("Type a prompt below and press Ctrl+Enter to send.")
                                 .color(theme::muted_text()),

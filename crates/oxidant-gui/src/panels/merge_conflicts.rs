@@ -51,15 +51,10 @@ impl MergeConflictsPanel {
         let Some(conflicts) = snapshot else {
             ui.add_space(20.0);
             ui.vertical_centered(|ui| {
+                ui.label(RichText::new("No merge in progress.").color(theme::muted_text()));
                 ui.label(
-                    RichText::new("No merge in progress.")
-                        .color(theme::muted_text()),
-                );
-                ui.label(
-                    RichText::new(
-                        "This tab opens automatically when a merge-back hits conflicts.",
-                    )
-                    .color(theme::faint_text()),
+                    RichText::new("This tab opens automatically when a merge-back hits conflicts.")
+                        .color(theme::faint_text()),
                 );
             });
             return;
@@ -75,8 +70,11 @@ impl MergeConflictsPanel {
             .strong(),
         );
         ui.label(
-            RichText::new(format!("parent worktree: {}", conflicts.parent_worktree.display()))
-                .color(theme::muted_text()),
+            RichText::new(format!(
+                "parent worktree: {}",
+                conflicts.parent_worktree.display()
+            ))
+            .color(theme::muted_text()),
         );
         ui.separator();
 
@@ -91,53 +89,50 @@ impl MergeConflictsPanel {
                 };
                 ui.label(RichText::new(marker).color(colour).strong());
                 ui.label(file);
-                ui.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),
-                    |ui| {
-                        if ui
-                            .add_enabled(!is_resolved, egui::Button::new("Mark resolved"))
-                            .on_hover_text("git add <file> — confirms the conflict is fixed.")
-                            .clicked()
-                        {
-                            mark_resolved(
-                                state.clone(),
-                                tokio_handle,
-                                egui_ctx.clone(),
-                                self.status.clone(),
-                                conflicts.parent_worktree.clone(),
-                                file.clone(),
-                            );
-                        }
-                        if ui
-                            .button("Open in mergetool")
-                            .on_hover_text(
-                                "Shells out to `git mergetool` — launches your configured \
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .add_enabled(!is_resolved, egui::Button::new("Mark resolved"))
+                        .on_hover_text("git add <file> — confirms the conflict is fixed.")
+                        .clicked()
+                    {
+                        mark_resolved(
+                            state.clone(),
+                            tokio_handle,
+                            egui_ctx.clone(),
+                            self.status.clone(),
+                            conflicts.parent_worktree.clone(),
+                            file.clone(),
+                        );
+                    }
+                    if ui
+                        .button("Open in mergetool")
+                        .on_hover_text(
+                            "Shells out to `git mergetool` — launches your configured \
                                  external merge tool (kdiff3, meld, VS Code, vimdiff…).",
-                            )
-                            .clicked()
-                        {
-                            open_in_mergetool(
-                                tokio_handle,
-                                egui_ctx.clone(),
-                                self.status.clone(),
-                                conflicts.parent_worktree.clone(),
-                                file.clone(),
-                            );
-                        }
-                        if ui
-                            .button("Open in editor")
-                            .on_hover_text(
-                                "Open the file with its conflict markers in a centre tab. \
+                        )
+                        .clicked()
+                    {
+                        open_in_mergetool(
+                            tokio_handle,
+                            egui_ctx.clone(),
+                            self.status.clone(),
+                            conflicts.parent_worktree.clone(),
+                            file.clone(),
+                        );
+                    }
+                    if ui
+                        .button("Open in editor")
+                        .on_hover_text(
+                            "Open the file with its conflict markers in a centre tab. \
                                  Edit out the <<<<<<< / ======= / >>>>>>> regions, save, \
                                  then click 'Mark resolved'.",
-                            )
-                            .clicked()
-                        {
-                            open_in_editor(state, &conflicts, file);
-                            egui_ctx.request_repaint();
-                        }
-                    },
-                );
+                        )
+                        .clicked()
+                    {
+                        open_in_editor(state, &conflicts, file);
+                        egui_ctx.request_repaint();
+                    }
+                });
             });
         }
 
@@ -187,11 +182,7 @@ impl MergeConflictsPanel {
     }
 }
 
-fn open_in_editor(
-    state: &Arc<StdMutex<SharedState>>,
-    conflicts: &MergeConflictsState,
-    file: &str,
-) {
+fn open_in_editor(state: &Arc<StdMutex<SharedState>>, conflicts: &MergeConflictsState, file: &str) {
     let abs = conflicts.parent_worktree.join(file);
     let tab = DockTab::File {
         path: abs,
@@ -217,8 +208,9 @@ fn open_in_mergetool(
             .await;
         match result {
             Ok(s) if s.success() => {
-                *status.lock().unwrap() =
-                    Some(format!("mergetool exited cleanly for `{file}` — click Mark resolved to confirm"));
+                *status.lock().unwrap() = Some(format!(
+                    "mergetool exited cleanly for `{file}` — click Mark resolved to confirm"
+                ));
             }
             Ok(s) => {
                 *status.lock().unwrap() = Some(format!(
@@ -350,8 +342,7 @@ fn abort(
                 if let Ok(mut s) = state.lock() {
                     s.merge_conflicts = None;
                 }
-                *status.lock().unwrap() =
-                    Some("merge aborted; sub-exploration kept intact".into());
+                *status.lock().unwrap() = Some("merge aborted; sub-exploration kept intact".into());
             }
             Err(e) => {
                 tracing::error!(?e, "merge abort failed");
