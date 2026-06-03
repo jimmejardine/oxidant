@@ -19,8 +19,10 @@ One OS window = one exploration. The viewport component is the eframe-side glue.
 ## Multi-viewport implementation
 
 - Main exploration opens with `eframe::run_native(...)` on the primary viewport.
-- Each sub-exploration: `ctx.show_viewport_deferred(...)` from any open viewport. The deferred variant runs the update closure in parallel with the spawner — non-blocking.
-- Viewport ID = exploration ID (typed as `egui::ViewportId`).
+- Each sub-exploration: `ctx.show_viewport_deferred(...)` from the main viewport's `App::update`. The deferred variant runs the update closure when egui needs to redraw the sub-viewport — non-blocking.
+- Viewport ID = `egui::ViewportId::from_hash_of(exploration_id)`.
+- The double-click flow: exploration-list pushes the id onto `SharedState.pending_open_windows`; `App::update` drains and inserts an `Arc<Mutex<SubWindow>>` into `App.sub_windows`; the per-frame iteration re-registers each entry with `show_viewport_deferred`. Duplicate opens are no-ops (entry already present).
+- Sub-viewport close: the closure checks `viewport_ctx.input(|i| i.viewport().close_requested())` and pushes the id onto `SharedState.pending_close_windows`. The next `App::update` drains and removes the matching entry from `sub_windows`.
 
 ## Title bar
 

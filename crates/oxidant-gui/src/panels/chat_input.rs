@@ -19,6 +19,8 @@ use oxidant_core::{
 };
 use oxidant_providers::{ChatEvent, ChatRequest, ContentPart, Provider, RequestMessage, Role};
 
+use oxidant_core::ExplorationId;
+
 use crate::app::{AgentEvent, SharedState, TurnOutcome};
 use crate::dock::DockTab;
 use crate::theme;
@@ -64,6 +66,7 @@ impl ChatInputPanel {
         &mut self,
         ui: &mut egui::Ui,
         state: &Arc<StdMutex<SharedState>>,
+        view_id: ExplorationId,
         event_tx: &UnboundedSender<AgentEvent>,
         tokio_handle: &Handle,
         workspace_root: &Path,
@@ -78,11 +81,20 @@ impl ChatInputPanel {
         // `streaming` (computed below) reflects the new in-flight
         // turn. No new user message is appended. See
         // spec/components/gui/chat-input-panel.md "Continue iterating".
-        let pending_continue = state.lock().unwrap().pending_continue.take();
+        // Note: pending_continue is window-scoped — sub-windows have
+        // their own `Continue iterating` affordances. The shared
+        // SharedState.pending_continue is the MAIN window's; for now
+        // sub-windows only read it when they're the active.
+        let pending_continue = if state.lock().unwrap().active_id == view_id {
+            state.lock().unwrap().pending_continue.take()
+        } else {
+            None
+        };
         if let Some(new_max) = pending_continue {
             spawn_agent_inner(
                 None,
                 new_max,
+                view_id,
                 state.clone(),
                 event_tx.clone(),
                 tokio_handle,
@@ -95,16 +107,21 @@ impl ChatInputPanel {
             );
         }
 
-        let streaming = state.lock().unwrap().live_turn.is_some();
+        let streaming = state
+            .lock()
+            .unwrap()
+            .window(view_id)
+            .is_some_and(|w| w.live_turn.is_some());
 
-        // Drain pending_chat_prompt before drawing — another panel
-        // (the Health Check tree, for now) may have queued an
-        // "address this" prompt for us. We replace the draft, force
-        // the requested mode, and grab focus so the user can review
-        // and press Ctrl+Enter immediately. We never auto-send.
-        // See spec/components/gui/chat-input-panel.md "External prompt fill".
+        // Drain pending_chat_prompt before drawing — only the MAIN
+        // window's chat input consumes this (the health-check panel
+        // only signals to the main). Sub windows ignore it.
         let text_edit_id = ui.make_persistent_id("oxidant-chat-input");
-        let pending = state.lock().unwrap().pending_chat_prompt.take();
+        let pending = if state.lock().unwrap().active_id == view_id {
+            state.lock().unwrap().pending_chat_prompt.take()
+        } else {
+            None
+        };
         if let Some(p) = pending {
             self.draft = p.prompt;
             self.mode = p.mode;
@@ -124,7 +141,8 @@ impl ChatInputPanel {
                         || ui.input(|i| i.key_pressed(egui::Key::Escape))
                     {
                         let s = state.lock().unwrap();
-                        if let Some(token) = &s.cancellation {
+                        if let Some(token) = s.window(view_id).and_then(|w| w.cancellation.as_ref())
+                        {
                             token.cancel();
                         }
                     }
@@ -141,14 +159,16 @@ impl ChatInputPanel {
                         match crate::panels::slash_commands::parse(&prompt) {
                             crate::panels::slash_commands::ChatCommand::Clear => {
                                 if let Ok(mut s) = state.lock() {
-                                    s.active_mut().conversation.clear();
-                                    s.last_outcome = None;
-                                    s.live_turn = None;
+                                    s.exploration_mut(view_id).conversation.clear();
+                                    let w = s.window_mut(view_id);
+                                    w.last_outcome = None;
+                                    w.live_turn = None;
                                 }
                                 egui_ctx.request_repaint();
                             }
                             crate::panels::slash_commands::ChatCommand::Compact => {
                                 spawn_compact(
+                                    view_id,
                                     state.clone(),
                                     event_tx.clone(),
                                     tokio_handle,
@@ -166,6 +186,7 @@ impl ChatInputPanel {
                                 spawn_agent_inner(
                                     Some(text.to_string()),
                                     DEFAULT_TURN_MAX_ITERATIONS,
+                                    view_id,
                                     state.clone(),
                                     event_tx.clone(),
                                     tokio_handle,
@@ -177,8 +198,11 @@ impl ChatInputPanel {
                                     egui_ctx.clone(),
                                 );
                                 // Bring the Transcript to the front so the
-                                // streaming response is visible immediately.
+                                // streaming response is visible immediately
+                                // (main window only — sub windows already
+                                // show the transcript by default).
                                 if let Ok(mut s) = state.lock()
+                                    && s.active_id == view_id
                                     && !s.pending_centre_tabs.contains(&DockTab::Transcript)
                                 {
                                     s.pending_centre_tabs.push(DockTab::Transcript);
@@ -287,6 +311,7 @@ fn render_mode_chip(ui: &mut egui::Ui, mode: AgentMode, streaming: bool) -> bool
 fn spawn_agent_inner(
     prompt: Option<String>,
     max_iter: usize,
+    view_id: ExplorationId,
     state: Arc<StdMutex<SharedState>>,
     event_tx: UnboundedSender<AgentEvent>,
     tokio_handle: &Handle,
@@ -301,21 +326,23 @@ fn spawn_agent_inner(
     let (snapshot, registry, exploration_id) = {
         let mut s = state.lock().unwrap();
         if let Some(text) = prompt {
-            s.active_mut().conversation.push_user_text(text);
+            s.exploration_mut(view_id).conversation.push_user_text(text);
         }
-        s.live_turn = Some(crate::app::LiveTurn::default());
-        s.last_outcome = None;
-        s.cancellation = Some(cancellation.clone());
+        let w = s.window_mut(view_id);
+        w.live_turn = Some(crate::app::LiveTurn::default());
+        w.last_outcome = None;
+        w.cancellation = Some(cancellation.clone());
         (
-            s.active().conversation.clone(),
+            s.exploration(view_id).conversation.clone(),
             s.registry.clone(),
-            s.active().id.to_string(),
+            s.exploration(view_id).id.to_string(),
         )
     };
 
     tokio_handle.spawn(async move {
         let outcome = drive_agent(
             snapshot,
+            view_id,
             registry,
             workspace_root,
             provider,
@@ -330,13 +357,17 @@ fn spawn_agent_inner(
             state.clone(),
         )
         .await;
-        let _ = event_tx.send(AgentEvent::Completed(outcome));
+        let _ = event_tx.send(AgentEvent::Completed {
+            viewport_id: view_id,
+            outcome,
+        });
     });
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn drive_agent(
     snapshot: Conversation,
+    view_id: ExplorationId,
     registry: Arc<ToolRegistry>,
     workspace_root: PathBuf,
     provider: Arc<dyn Provider>,
@@ -393,7 +424,10 @@ async fn drive_agent(
         &mut conv,
         &config,
         |ev: &ChatEvent| {
-            let _ = event_tx_for_loop.send(AgentEvent::Chat(ev.clone()));
+            let _ = event_tx_for_loop.send(AgentEvent::Chat {
+                viewport_id: view_id,
+                event: ev.clone(),
+            });
             egui_ctx_for_loop.request_repaint();
         },
         // Conversation commit observer: publish each push_assistant /
@@ -413,8 +447,8 @@ async fn drive_agent(
         // See spec/components/gui/transcript-tab.md "Streaming".
         |conv: &Conversation| {
             if let Ok(mut s) = state_for_commit.lock() {
-                s.active_mut().conversation = conv.clone();
-                s.live_turn = Some(crate::app::LiveTurn::default());
+                s.exploration_mut(view_id).conversation = conv.clone();
+                s.window_mut(view_id).live_turn = Some(crate::app::LiveTurn::default());
             }
             egui_ctx_for_commit.request_repaint();
         },
@@ -426,7 +460,7 @@ async fn drive_agent(
     // and the next user turn builds from the right history.
     {
         let mut s = state.lock().unwrap();
-        s.active_mut().conversation = conv;
+        s.exploration_mut(view_id).conversation = conv;
     }
     egui_ctx.request_repaint();
 
@@ -477,7 +511,9 @@ const COMPACTION_SYSTEM_PROMPT: &str = "You are summarising the conversation so 
 /// that streams a summary, then calls
 /// `Conversation::install_compaction_summary` to advance the divider.
 /// See spec/components/gui/chat-input-panel.md "Slash commands".
+#[allow(clippy::too_many_arguments)]
 fn spawn_compact(
+    view_id: ExplorationId,
     state: Arc<StdMutex<SharedState>>,
     event_tx: UnboundedSender<AgentEvent>,
     tokio_handle: &Handle,
@@ -488,10 +524,12 @@ fn spawn_compact(
     let cancellation = CancellationToken::new();
     let snapshot = {
         let mut s = state.lock().unwrap();
-        s.live_turn = Some(crate::app::LiveTurn::default());
-        s.last_outcome = None;
-        s.cancellation = Some(cancellation.clone());
-        s.active().conversation.clone()
+        let snap = s.exploration(view_id).conversation.clone();
+        let w = s.window_mut(view_id);
+        w.live_turn = Some(crate::app::LiveTurn::default());
+        w.last_outcome = None;
+        w.cancellation = Some(cancellation.clone());
+        snap
     };
 
     let req = build_compaction_request(&snapshot, model);
@@ -502,6 +540,7 @@ fn spawn_compact(
     tokio_handle.spawn(async move {
         let outcome = run_compaction(
             req,
+            view_id,
             provider,
             event_tx_for_turn,
             egui_ctx_for_turn,
@@ -509,12 +548,17 @@ fn spawn_compact(
             cancellation,
         )
         .await;
-        let _ = event_tx.send(AgentEvent::Completed(outcome));
+        let _ = event_tx.send(AgentEvent::Completed {
+            viewport_id: view_id,
+            outcome,
+        });
     });
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_compaction(
     req: ChatRequest,
+    view_id: ExplorationId,
     provider: Arc<dyn Provider>,
     event_tx: UnboundedSender<AgentEvent>,
     egui_ctx: egui::Context,
@@ -546,7 +590,10 @@ async fn run_compaction(
                 None => break,
             },
         };
-        let _ = event_tx.send(AgentEvent::Chat(event.clone()));
+        let _ = event_tx.send(AgentEvent::Chat {
+            viewport_id: view_id,
+            event: event.clone(),
+        });
         egui_ctx.request_repaint();
         match event {
             ChatEvent::TextDelta(s) => text.push_str(&s),
@@ -576,8 +623,10 @@ async fn run_compaction(
         };
     }
     if let Ok(mut s) = state.lock() {
-        s.active_mut().conversation.install_compaction_summary(text);
-        s.live_turn = None;
+        s.exploration_mut(view_id)
+            .conversation
+            .install_compaction_summary(text);
+        s.window_mut(view_id).live_turn = None;
     }
     egui_ctx.request_repaint();
     TurnOutcome {

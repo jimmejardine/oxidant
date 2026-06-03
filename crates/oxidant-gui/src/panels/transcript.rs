@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 
 use egui::{Color32, CursorIcon, Id, RichText, ScrollArea, Sense};
 
-use oxidant_core::{ContentBlock, Message, ToolResultContent};
+use oxidant_core::{ContentBlock, ExplorationId, Message, ToolResultContent};
 
 use crate::app::{LiveTurn, SharedState};
 use crate::panels::chat_input::CONTINUE_ITERATIONS_INCREMENT;
@@ -93,15 +93,22 @@ const SUMMARY_LIMIT: usize = 120;
 pub struct TranscriptPanel;
 
 impl TranscriptPanel {
-    pub fn render(&self, ui: &mut egui::Ui, state: &SharedState) -> TranscriptAction {
-        let ctx = build_render_ctx(&state.active().conversation.messages);
-        let compaction_at = state.active().conversation.compaction_at;
+    pub fn render(
+        &self,
+        ui: &mut egui::Ui,
+        state: &SharedState,
+        view_id: ExplorationId,
+    ) -> TranscriptAction {
+        let conv = &state.exploration(view_id).conversation;
+        let ctx = build_render_ctx(&conv.messages);
+        let compaction_at = conv.compaction_at;
+        let window = state.window(view_id);
         let mut action = TranscriptAction::None;
         ScrollArea::vertical()
             .auto_shrink([false; 2])
             .stick_to_bottom(true)
             .show(ui, |ui| {
-                for (msg_idx, msg) in state.active().conversation.messages.iter().enumerate() {
+                for (msg_idx, msg) in conv.messages.iter().enumerate() {
                     // Compaction divider: drawn immediately BEFORE the
                     // first live message. Pre-divider messages are
                     // visible-but-not-sent (Conversation::live_messages
@@ -117,7 +124,7 @@ impl TranscriptPanel {
                     render_message(ui, msg_idx, msg, &ctx);
                     ui.add_space(8.0);
                 }
-                if let Some(turn) = &state.live_turn
+                if let Some(turn) = window.and_then(|w| w.live_turn.as_ref())
                     && (!turn.text.is_empty()
                         || !turn.thinking.is_empty()
                         || !turn.tool_calls.is_empty())
@@ -130,7 +137,7 @@ impl TranscriptPanel {
                     // simultaneously, looking like a duplicate.
                     render_live_turn(ui, turn);
                 }
-                if let Some(o) = &state.last_outcome {
+                if let Some(o) = window.and_then(|w| w.last_outcome.as_ref()) {
                     ui.add_space(4.0);
                     let summary = if let Some(err) = &o.error {
                         RichText::new(format!("error: {err}")).color(Color32::RED)
@@ -164,7 +171,7 @@ impl TranscriptPanel {
                         };
                     }
                 }
-                if state.active().conversation.is_empty() && state.live_turn.is_none() {
+                if conv.is_empty() && window.is_none_or(|w| w.live_turn.is_none()) {
                     ui.add_space(80.0);
                     ui.vertical_centered(|ui| {
                         ui.label(RichText::new("oxidant").color(theme::faint_text()));

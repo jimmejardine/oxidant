@@ -26,6 +26,14 @@ use crate::theme;
 /// hanging around indefinitely after the user walks away.
 const DISCARD_ARM_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How long to wait for a possible second click before committing a
+/// single-click switch-active. Mirrors egui's stock multi-click
+/// interval — see Input::multi_click_max_interval. Held conservatively
+/// at 400 ms; a real double-click on consumer hardware lands well
+/// inside this. See spec/components/gui/exploration-list.md
+/// "Double-click to open in a new window".
+const DOUBLE_CLICK_DEFER: Duration = Duration::from_millis(400);
+
 pub struct ExplorationListPanel {
     /// Form-field text for the spawn-new dialog. Drained on submit.
     new_name: String,
@@ -43,6 +51,17 @@ pub struct ExplorationListPanel {
     /// top of the next frame and either fires the discard immediately
     /// (ahead == 0) or arms the warning (ahead > 0).
     discard_check: Arc<StdMutex<Option<DiscardCheckResult>>>,
+    /// A row click pending egui's double-click interval. If a second
+    /// click lands on the same row within that window the switch is
+    /// cancelled and a new window opens instead. If the timer expires
+    /// the switch is committed to `state.active_id`.
+    pending_switch: Option<PendingSwitch>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PendingSwitch {
+    id: ExplorationId,
+    at: Instant,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -78,6 +97,7 @@ impl ExplorationListPanel {
             status: Arc::new(StdMutex::new(None)),
             discard_armed: None,
             discard_check: Arc::new(StdMutex::new(None)),
+            pending_switch: None,
         }
     }
 
@@ -100,6 +120,24 @@ impl ExplorationListPanel {
             && armed.at.elapsed() >= DISCARD_ARM_TIMEOUT
         {
             self.discard_armed = None;
+        }
+
+        // Commit a deferred single-click row switch once egui's
+        // double-click window has elapsed. A double-click that landed
+        // in the meantime cleared `pending_switch` before reaching
+        // here, so any switch we commit is genuinely single-click.
+        if let Some(p) = self.pending_switch
+            && p.at.elapsed() >= DOUBLE_CLICK_DEFER
+        {
+            if let Ok(mut s) = state.lock() {
+                s.active_id = p.id;
+            }
+            self.pending_switch = None;
+            egui_ctx.request_repaint();
+        } else if self.pending_switch.is_some() {
+            // Keep ticking so the defer expires even if nothing else
+            // is provoking redraws.
+            egui_ctx.request_repaint_after(DOUBLE_CLICK_DEFER);
         }
 
         ui.label(RichText::new("explorations").strong());
@@ -187,11 +225,29 @@ impl ExplorationListPanel {
                     egui::Label::new(RichText::new(&row.branch).strong()).sense(Sense::click()),
                 );
                 let branch_label = branch_label.on_hover_cursor(CursorIcon::PointingHand);
-                if (row_resp.clicked() || branch_label.clicked()) && !is_active {
-                    if let Ok(mut s) = state.lock() {
-                        s.active_id = row.id;
+                // Double-click on a row opens the exploration in a new
+                // window (locked to that id). Single-click switches
+                // the ORIGINATING window's active. To keep the
+                // originating window's view on a double-click, the
+                // single-click switch is deferred by one frame —
+                // committed only after egui's double-click interval
+                // has passed without a second click. See
+                // spec/components/gui/exploration-list.md "Switch
+                // active" and "Double-click to open in a new window".
+                if (row_resp.double_clicked() || branch_label.double_clicked()) && !is_active {
+                    if let Ok(mut s) = state.lock()
+                        && !s.pending_open_windows.contains(&row.id)
+                    {
+                        s.pending_open_windows.push(row.id);
                     }
+                    // Cancel any pending single-click switch.
+                    self.pending_switch = None;
                     egui_ctx.request_repaint();
+                } else if (row_resp.clicked() || branch_label.clicked()) && !is_active {
+                    self.pending_switch = Some(PendingSwitch {
+                        id: row.id,
+                        at: Instant::now(),
+                    });
                 }
 
                 // Per-Sub actions: Merge (squash), Discard.

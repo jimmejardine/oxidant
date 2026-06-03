@@ -34,6 +34,12 @@ pub struct App {
     state: Arc<StdMutex<SharedState>>,
     event_rx: UnboundedReceiver<AgentEvent>,
     event_tx: UnboundedSender<AgentEvent>,
+    /// Sub-viewports the user has opened on a non-main exploration.
+    /// One per exploration_id; double-click on a row pushes onto
+    /// `SharedState.pending_open_windows`, App drains and inserts a
+    /// `SubWindow` here. Closing the sub-viewport tells us to remove
+    /// the entry. See spec/components/gui/viewport.md.
+    sub_windows: HashMap<ExplorationId, Arc<StdMutex<SubWindow>>>,
     chat_panel: ChatInputPanel,
     spec_panel: SpecTreePanel,
     file_tree_panel: FileTreePanel,
@@ -68,26 +74,24 @@ pub struct App {
 /// Locks are held briefly; long async work happens on cloned data and
 /// streams results back via the AgentEvent channel.
 pub struct SharedState {
-    /// All explorations open in this window, keyed by id. Insertion-
-    /// ordered (IndexMap) so the exploration-list panel can render them
-    /// in spawn order — Main first, then subs by creation time. The
-    /// active one is `active_id`; every panel reads through
-    /// `state.active()` / `state.active_mut()`. See
-    /// spec/components/gui/exploration-list.md "SharedState shape".
+    /// All explorations open across every window in this process,
+    /// keyed by id. Insertion-ordered (IndexMap) so the exploration-
+    /// list panel can render them in spawn order — Main first, then
+    /// subs by creation time.
     pub explorations: indexmap::IndexMap<ExplorationId, Exploration>,
-    /// Pointer into `explorations` for the exploration whose conversation,
-    /// worktree, and LSP handle the rest of the GUI is currently
-    /// driving. Multi-viewport per exploration is a follow-up; under
-    /// MVP one window holds them all and switches via
-    /// [[components/gui/exploration-list]] row clicks.
+    /// Pointer into `explorations` for the exploration whose
+    /// conversation, worktree, and LSP handle the **main window** is
+    /// driving. Sub-window view ids live on the App's sub_windows
+    /// table — `state.active_id` is specifically the main window's.
+    /// Updated by the exploration-list panel on single-click.
     pub active_id: ExplorationId,
     pub registry: Arc<ToolRegistry>,
-    pub live_turn: Option<LiveTurn>,
-    pub last_outcome: Option<TurnOutcome>,
-    /// Per-turn cancellation token (Esc / Cancel button). Distinct from
-    /// the active exploration's `cancellation`, which tears down the
-    /// whole exploration.
-    pub cancellation: Option<CancellationToken>,
+    /// Per-window runtime state — live turn, last outcome, cancellation
+    /// — keyed by the window's view id. Streamed events from a turn
+    /// route into the right entry via `AgentEvent.viewport_id`. The
+    /// main window's entry lives at `active_id`; sub windows at their
+    /// locked id. Auto-inserted on demand via `window_mut`.
+    pub windows: HashMap<ExplorationId, PerWindowState>,
     /// CI-style health report. One entry per CheckKind. See
     /// spec/components/gui/health-check-panel.md.
     pub health: HealthReport,
@@ -119,6 +123,49 @@ pub struct SharedState {
     /// conflicts; consumed by the MergeConflicts panel. None means
     /// no merge is in progress. See spec/components/gui/merge-conflicts.md.
     pub merge_conflicts: Option<MergeConflictsState>,
+    /// Double-click on an exploration-list row enqueues the id here;
+    /// App::update drains and opens a sub-viewport for each. See
+    /// spec/components/gui/viewport.md.
+    pub pending_open_windows: Vec<ExplorationId>,
+    /// Sub-window close requests — populated from inside the
+    /// sub-window's viewport closure when egui reports
+    /// `close_requested()`; drained by App::update which removes the
+    /// matching `sub_windows` entry. Channel exists because the
+    /// closure runs under a different `egui::Context` and can't
+    /// directly mutate App's state.
+    pub pending_close_windows: Vec<ExplorationId>,
+}
+
+/// Per-sub-window UI state. Lives in `App.sub_windows` behind an
+/// `Arc<Mutex<>>` so the egui sub-viewport closure (which captures it
+/// by clone) can lock-and-mutate across frames.
+pub struct SubWindow {
+    pub view_id: ExplorationId,
+    pub chat_panel: ChatInputPanel,
+}
+
+impl SubWindow {
+    pub fn new(view_id: ExplorationId) -> Self {
+        Self {
+            view_id,
+            chat_panel: ChatInputPanel::new(),
+        }
+    }
+}
+
+/// Per-window runtime state. The shape that used to live directly on
+/// `SharedState` for the three fields the agent loop drives — moving
+/// them per-window means two windows can stream independent turns
+/// against different explorations without their state colliding.
+/// Routed by `AgentEvent.viewport_id`.
+#[derive(Debug, Default)]
+pub struct PerWindowState {
+    pub live_turn: Option<LiveTurn>,
+    pub last_outcome: Option<TurnOutcome>,
+    /// Per-turn cancellation token (Esc / Cancel button). Distinct
+    /// from the exploration's own `cancellation`, which tears down
+    /// the whole exploration.
+    pub cancellation: Option<CancellationToken>,
 }
 
 #[derive(Debug, Clone)]
@@ -141,18 +188,42 @@ pub struct MergeConflictsState {
 }
 
 impl SharedState {
-    /// Borrow the currently-active exploration.
+    /// Borrow the main window's currently-viewed exploration.
     pub fn active(&self) -> &Exploration {
-        self.explorations
-            .get(&self.active_id)
-            .expect("active_id must always point at an entry in `explorations`")
+        self.exploration(self.active_id)
     }
 
-    /// Mutably borrow the currently-active exploration.
+    /// Mutably borrow the main window's currently-viewed exploration.
     pub fn active_mut(&mut self) -> &mut Exploration {
+        self.exploration_mut(self.active_id)
+    }
+
+    /// Borrow the exploration identified by `id`. Panics if missing —
+    /// every Window's `view_id` is required by invariant to point at
+    /// a live exploration; closing a sub-window or discarding the
+    /// exploration removes the corresponding entry first.
+    pub fn exploration(&self, id: ExplorationId) -> &Exploration {
         self.explorations
-            .get_mut(&self.active_id)
-            .expect("active_id must always point at an entry in `explorations`")
+            .get(&id)
+            .expect("view_id must always point at an entry in `explorations`")
+    }
+
+    /// Mutably borrow the exploration identified by `id`.
+    pub fn exploration_mut(&mut self, id: ExplorationId) -> &mut Exploration {
+        self.explorations
+            .get_mut(&id)
+            .expect("view_id must always point at an entry in `explorations`")
+    }
+
+    /// Get-or-default the per-window runtime state for `view_id`.
+    pub fn window_mut(&mut self, view_id: ExplorationId) -> &mut PerWindowState {
+        self.windows.entry(view_id).or_default()
+    }
+
+    /// Read-only access; returns `None` if no turn has been driven
+    /// for this view yet (the entry is lazily inserted).
+    pub fn window(&self, view_id: ExplorationId) -> Option<&PerWindowState> {
+        self.windows.get(&view_id)
     }
 }
 
@@ -322,15 +393,24 @@ pub enum IssueSeverity {
     Note,
 }
 
-/// Messages flowing from the agent task back to the GUI thread.
+/// Messages flowing from the agent task back to the GUI thread. Each
+/// event carries the `viewport_id` (= the window's `view_id`) so the
+/// dispatcher routes streaming output to the correct window's
+/// `PerWindowState.live_turn` rather than blending two windows.
 pub enum AgentEvent {
-    /// A raw streaming event from the provider; the GUI accumulates these
-    /// into LiveTurn.
-    Chat(ChatEvent),
-    /// The agent loop finished. Whether successful or not, the live turn
-    /// is committed into the conversation by the time this fires (the
-    /// agent task did that before sending).
-    Completed(TurnOutcome),
+    /// A raw streaming event from the provider; the GUI accumulates
+    /// these into the matching window's LiveTurn.
+    Chat {
+        viewport_id: ExplorationId,
+        event: ChatEvent,
+    },
+    /// The agent loop finished for this window. Whether successful or
+    /// not, the live turn is committed into the conversation by the
+    /// time this fires (the agent task did that before sending).
+    Completed {
+        viewport_id: ExplorationId,
+        outcome: TurnOutcome,
+    },
 }
 
 impl App {
@@ -377,9 +457,7 @@ impl App {
             explorations,
             active_id,
             registry: Arc::new(registry),
-            live_turn: None,
-            last_outcome: None,
-            cancellation: None,
+            windows: HashMap::from([(active_id, PerWindowState::default())]),
             health: HealthReport::default(),
             pending_centre_tabs: Vec::new(),
             pending_chat_prompt: None,
@@ -387,6 +465,8 @@ impl App {
             editor_buffers: HashMap::new(),
             selected_preview: None,
             merge_conflicts: None,
+            pending_open_windows: Vec::new(),
+            pending_close_windows: Vec::new(),
         }));
         let (event_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
 
@@ -395,6 +475,7 @@ impl App {
         let active_theme = config.theme;
         let settings_panel = SettingsPanel::new(&config.settings);
         Self {
+            sub_windows: HashMap::new(),
             chat_panel: ChatInputPanel::new(),
             spec_panel,
             file_tree_panel,
@@ -428,9 +509,18 @@ impl eframe::App for App {
         }
         if any_event {
             ctx.request_repaint();
-        } else if self.state.lock().unwrap().live_turn.is_some() {
-            // Keep redrawing while a turn is in flight even between events,
-            // so the spinner stays animated.
+        } else if self
+            .state
+            .lock()
+            .unwrap()
+            .windows
+            .values()
+            .any(|w| w.live_turn.is_some())
+        {
+            // Keep redrawing while ANY window has a turn in flight so
+            // the spinner stays animated. Multi-window note: any
+            // window's stream warrants a paint tick — they all share
+            // the main update loop.
             ctx.request_repaint_after(std::time::Duration::from_millis(50));
         }
 
@@ -484,7 +574,10 @@ impl eframe::App for App {
                 ui.separator();
                 let state = self.state.lock().unwrap();
                 let n = state.active().conversation.len();
-                let live = if state.live_turn.is_some() {
+                let live = if state
+                    .window(state.active_id)
+                    .is_some_and(|w| w.live_turn.is_some())
+                {
                     " · streaming"
                 } else {
                     ""
@@ -504,9 +597,11 @@ impl eframe::App for App {
             });
         });
 
-        // Dock area.
+        // Dock area. The main viewport's view_id mirrors active_id.
+        let main_view_id = self.state.lock().unwrap().active_id;
         let mut viewer = TabViewer {
             state: self.state.clone(),
+            view_id: main_view_id,
             chat_panel: &mut self.chat_panel,
             spec_panel: &mut self.spec_panel,
             file_tree_panel: &mut self.file_tree_panel,
@@ -549,14 +644,143 @@ impl eframe::App for App {
             }
             ctx.request_repaint();
         }
+
+        // Drain pending_open_windows + pending_close_windows into our
+        // sub_windows table. Then re-register every live sub-window
+        // with egui as a deferred viewport. See
+        // spec/components/gui/viewport.md.
+        let (to_open, to_close) = {
+            let mut s = self.state.lock().unwrap();
+            (
+                std::mem::take(&mut s.pending_open_windows),
+                std::mem::take(&mut s.pending_close_windows),
+            )
+        };
+        for id in to_close {
+            self.sub_windows.remove(&id);
+        }
+        for id in to_open {
+            // Refuse to open a duplicate viewport on an exploration
+            // that already has one — egui would dedupe by ViewportId
+            // anyway, but tracking it here makes the intent explicit
+            // and lets us focus the existing window in a follow-up.
+            self.sub_windows
+                .entry(id)
+                .or_insert_with(|| Arc::new(StdMutex::new(SubWindow::new(id))));
+        }
+
+        for (id, sub) in &self.sub_windows {
+            let id = *id;
+            let sub = sub.clone();
+            let state = self.state.clone();
+            let event_tx = self.event_tx.clone();
+            let tokio_handle = self.config.tokio_handle.clone();
+            let workspace_root = self.config.workspace_root.clone();
+            let provider = self.config.provider.clone();
+            let model = self.config.model.clone();
+            let system_prompt = self.config.system_prompt.clone();
+            let title = format_sub_title(&self.state, id);
+            ctx.show_viewport_deferred(
+                egui::ViewportId::from_hash_of(id),
+                egui::ViewportBuilder::default()
+                    .with_title(title)
+                    .with_inner_size([900.0, 700.0]),
+                move |viewport_ctx, _class| {
+                    render_sub_window(
+                        viewport_ctx,
+                        &sub,
+                        &state,
+                        &event_tx,
+                        &tokio_handle,
+                        &workspace_root,
+                        &provider,
+                        &model,
+                        system_prompt.as_deref(),
+                    );
+                    if viewport_ctx.input(|i| i.viewport().close_requested())
+                        && let Ok(mut s) = state.lock()
+                        && !s.pending_close_windows.contains(&id)
+                    {
+                        s.pending_close_windows.push(id);
+                    }
+                },
+            );
+        }
     }
+}
+
+fn format_sub_title(state: &Arc<StdMutex<SharedState>>, id: ExplorationId) -> String {
+    let branch = state
+        .lock()
+        .ok()
+        .and_then(|s| s.explorations.get(&id).map(|e| e.branch.clone()))
+        .unwrap_or_else(|| id.to_string());
+    format!("oxidant — [sub: {branch}]")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_sub_window(
+    ctx: &egui::Context,
+    sub: &Arc<StdMutex<SubWindow>>,
+    state: &Arc<StdMutex<SharedState>>,
+    event_tx: &UnboundedSender<AgentEvent>,
+    tokio_handle: &Handle,
+    workspace_root: &std::path::Path,
+    provider: &Arc<dyn Provider>,
+    model: &str,
+    system_prompt: Option<&str>,
+) {
+    let view_id = sub.lock().unwrap().view_id;
+    // Top label: which exploration this window is locked to.
+    egui::TopBottomPanel::top("oxidant-sub-top").show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            let branch = state
+                .lock()
+                .ok()
+                .and_then(|s| s.explorations.get(&view_id).map(|e| e.branch.clone()))
+                .unwrap_or_else(|| "—".into());
+            ui.label(egui::RichText::new(format!("[sub] {branch}")).strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(egui::RichText::new(model).color(crate::theme::muted_text()));
+            });
+        });
+    });
+    // Bottom: chat input.
+    egui::TopBottomPanel::bottom("oxidant-sub-chat").show(ctx, |ui| {
+        let mut sub_locked = sub.lock().unwrap();
+        sub_locked.chat_panel.render(
+            ui,
+            state,
+            view_id,
+            event_tx,
+            tokio_handle,
+            workspace_root,
+            provider,
+            model,
+            system_prompt,
+            ctx,
+        );
+    });
+    // Centre: transcript.
+    egui::CentralPanel::default().show(ctx, |ui| {
+        let mut s = state.lock().unwrap();
+        let action = TranscriptPanel.render(ui, &s, view_id);
+        if let crate::panels::transcript::TranscriptAction::ContinueIterating { new_max } = action {
+            // For now sub-windows piggy-back on the shared
+            // pending_continue side-channel — the main-window chat
+            // panel will route correctly only when it's also the
+            // active view. A future cleanup is to route per-window.
+            s.pending_continue = Some(new_max);
+        }
+    });
 }
 
 fn apply_event(state: &mut SharedState, ev: AgentEvent) {
     match ev {
-        AgentEvent::Chat(c) => {
-            let turn = state.live_turn.get_or_insert_with(LiveTurn::default);
-            match c {
+        AgentEvent::Chat { viewport_id, event } => {
+            let window = state.window_mut(viewport_id);
+            let turn = window.live_turn.get_or_insert_with(LiveTurn::default);
+            match event {
                 ChatEvent::TextDelta(s) => turn.text.push_str(&s),
                 ChatEvent::ThinkingDelta(s) => turn.thinking.push_str(&s),
                 ChatEvent::ToolUseStart { id, name } => {
@@ -582,16 +806,25 @@ fn apply_event(state: &mut SharedState, ev: AgentEvent) {
                 }
             }
         }
-        AgentEvent::Completed(outcome) => {
-            state.live_turn = None;
-            state.last_outcome = Some(outcome);
-            state.cancellation = None;
+        AgentEvent::Completed {
+            viewport_id,
+            outcome,
+        } => {
+            let window = state.window_mut(viewport_id);
+            window.live_turn = None;
+            window.last_outcome = Some(outcome);
+            window.cancellation = None;
         }
     }
 }
 
 pub(crate) struct TabViewer<'a> {
     pub state: Arc<StdMutex<SharedState>>,
+    /// The exploration this window is bound to. For the main viewport
+    /// this mirrors `state.active_id`; for sub-viewports it's the
+    /// locked id. Panels that drive turns (chat input, transcript)
+    /// route through this rather than `state.active_id`.
+    pub view_id: ExplorationId,
     pub chat_panel: &'a mut ChatInputPanel,
     pub spec_panel: &'a mut SpecTreePanel,
     pub file_tree_panel: &'a mut FileTreePanel,
@@ -624,7 +857,7 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
         match tab {
             DockTab::Transcript => {
                 let mut state = self.state.lock().unwrap();
-                let action = TranscriptPanel.render(ui, &state);
+                let action = TranscriptPanel.render(ui, &state, self.view_id);
                 match action {
                     crate::panels::transcript::TranscriptAction::None => {}
                     crate::panels::transcript::TranscriptAction::ContinueIterating { new_max } => {
@@ -690,6 +923,7 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                 self.chat_panel.render(
                     ui,
                     &self.state,
+                    self.view_id,
                     &self.event_tx,
                     &self.tokio_handle,
                     &self.workspace_root,
