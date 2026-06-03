@@ -78,11 +78,24 @@ pub struct TranscriptPanel;
 impl TranscriptPanel {
     pub fn render(&self, ui: &mut egui::Ui, state: &SharedState) {
         let ctx = build_render_ctx(&state.exploration.conversation.messages);
+        let compaction_at = state.exploration.conversation.compaction_at;
         ScrollArea::vertical()
             .auto_shrink([false; 2])
             .stick_to_bottom(true)
             .show(ui, |ui| {
                 for (msg_idx, msg) in state.exploration.conversation.messages.iter().enumerate() {
+                    // Compaction divider: drawn immediately BEFORE the
+                    // first live message. Pre-divider messages are
+                    // visible-but-not-sent (Conversation::live_messages
+                    // skips them). See spec/components/gui/chat-input-
+                    // panel.md "Slash commands".
+                    if compaction_at > 0 && msg_idx == compaction_at {
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new("── context compacted ──").color(theme::muted_text()),
+                        );
+                        ui.add_space(4.0);
+                    }
                     render_message(ui, msg_idx, msg, &ctx);
                     ui.add_space(8.0);
                 }

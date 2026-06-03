@@ -507,7 +507,10 @@ pub fn build_request(
     let mut messages = Vec::<RequestMessage>::new();
     let mut tool_result_buf = Vec::<ContentPart>::new();
 
-    for msg in &conv.messages {
+    // Walk only the live tail — see Conversation::compaction_at and
+    // spec/components/core/conversation.md. Messages before the divider
+    // are display-only and not sent to the provider.
+    for msg in conv.live_messages() {
         match msg {
             Message::User { content } => {
                 flush_tool_results(&mut tool_result_buf, &mut messages);

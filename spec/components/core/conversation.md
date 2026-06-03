@@ -19,6 +19,14 @@ responsibility: |
 pub struct Conversation {
     pub id: Uuid,
     pub messages: Vec<Message>,
+    /// Compaction divider. Messages at indices [0, compaction_at) are
+    /// historical — rendered for the human in the transcript but NOT
+    /// included when [[components/core/agent-loop]] builds the next
+    /// provider request. Messages at [compaction_at, len) are the
+    /// "live" context. 0 = no compaction. Driven by the chat panel's
+    /// `/compact` command, see [[components/gui/chat-input-panel]].
+    /// `#[serde(default)]` keeps older `.jsonl` lines loadable.
+    pub compaction_at: usize,
 }
 
 pub enum Message {

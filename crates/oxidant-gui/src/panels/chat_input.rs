@@ -12,10 +12,12 @@ use tokio::runtime::Handle;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_util::sync::CancellationToken;
 
+use futures::StreamExt;
 use oxidant_core::{
-    AgentLoopConfig, AgentLoopOutcome, AgentMode, Conversation, ToolContext, ToolRegistry, run,
+    AgentLoopConfig, AgentLoopOutcome, AgentMode, ContentBlock, Conversation, Message, ToolContext,
+    ToolRegistry, run,
 };
-use oxidant_providers::{ChatEvent, Provider};
+use oxidant_providers::{ChatEvent, ChatRequest, ContentPart, Provider, RequestMessage, Role};
 
 use crate::app::{AgentEvent, SharedState, TurnOutcome};
 use crate::theme;
@@ -26,6 +28,10 @@ pub struct ChatInputPanel {
     /// spec/components/core/agent-mode.md. Flipped by Shift+Tab while
     /// the text edit is focused, or by clicking the header chip.
     mode: AgentMode,
+    /// Inline feedback for slash commands (e.g. "unknown command: /foo").
+    /// Cleared on the next keystroke that mutates `draft`. See
+    /// spec/components/gui/chat-input-panel.md "Slash commands".
+    command_feedback: Option<String>,
 }
 
 impl Default for ChatInputPanel {
@@ -39,6 +45,7 @@ impl ChatInputPanel {
         Self {
             draft: String::new(),
             mode: AgentMode::default(),
+            command_feedback: None,
         }
     }
 
@@ -96,18 +103,47 @@ impl ChatInputPanel {
                         });
                     if pressed_send && !self.draft.trim().is_empty() {
                         let prompt = std::mem::take(&mut self.draft);
-                        spawn_agent(
-                            prompt,
-                            state.clone(),
-                            event_tx.clone(),
-                            tokio_handle,
-                            workspace_root.to_path_buf(),
-                            provider.clone(),
-                            model.to_string(),
-                            system_prompt.map(String::from),
-                            self.mode,
-                            egui_ctx.clone(),
-                        );
+                        // Clear any prior command feedback as we re-submit.
+                        self.command_feedback = None;
+                        match crate::panels::slash_commands::parse(&prompt) {
+                            crate::panels::slash_commands::ChatCommand::Clear => {
+                                if let Ok(mut s) = state.lock() {
+                                    s.exploration.conversation.clear();
+                                    s.last_outcome = None;
+                                    s.live_turn = None;
+                                }
+                                egui_ctx.request_repaint();
+                            }
+                            crate::panels::slash_commands::ChatCommand::Compact => {
+                                spawn_compact(
+                                    state.clone(),
+                                    event_tx.clone(),
+                                    tokio_handle,
+                                    provider.clone(),
+                                    model.to_string(),
+                                    egui_ctx.clone(),
+                                );
+                            }
+                            crate::panels::slash_commands::ChatCommand::Unknown(name) => {
+                                self.command_feedback = Some(format!("unknown command: /{name}"));
+                                // Restore the draft so the user can fix the typo.
+                                self.draft = prompt;
+                            }
+                            crate::panels::slash_commands::ChatCommand::Prompt(text) => {
+                                spawn_agent(
+                                    text.to_string(),
+                                    state.clone(),
+                                    event_tx.clone(),
+                                    tokio_handle,
+                                    workspace_root.to_path_buf(),
+                                    provider.clone(),
+                                    model.to_string(),
+                                    system_prompt.map(String::from),
+                                    self.mode,
+                                    egui_ctx.clone(),
+                                );
+                            }
+                        }
                     }
                 }
             });
@@ -147,6 +183,7 @@ impl ChatInputPanel {
         // the widget has registered focus). Side-effect: plain Tab now
         // inserts a literal '\t' inside the chat input — useful for
         // pasted snippets, harmless otherwise.
+        let draft_before = self.draft.clone();
         let _edit_response = ui.add_sized(
             [ui.available_width(), ui.available_height().max(60.0)],
             TextEdit::multiline(&mut self.draft)
@@ -155,6 +192,14 @@ impl ChatInputPanel {
                 .lock_focus(true)
                 .hint_text(hint),
         );
+        // Clear the slash-command feedback as soon as the user edits
+        // the draft so a stale "unknown command" hint doesn't linger.
+        if self.command_feedback.is_some() && self.draft != draft_before {
+            self.command_feedback = None;
+        }
+        if let Some(msg) = &self.command_feedback {
+            ui.label(RichText::new(msg).color(theme::muted_text()));
+        }
     }
 
     fn mode_hint(&self) -> &'static str {
@@ -342,5 +387,171 @@ async fn drive_agent(
             tool_calls: 0,
             error: Some(e.to_string()),
         },
+    }
+}
+
+// ---------------------------------------------------------------- /compact
+
+const COMPACTION_SYSTEM_PROMPT: &str = "You are summarising the conversation so far into a compact handover note for a future session. Preserve: the user's current goal, decisions made, key file paths discovered, open questions. Drop: verbose tool output, redundant reasoning. Output as plain prose, ~500 words max. Begin with a short heading.";
+
+/// Dispatch `/compact`. One-shot provider call (no agent loop, no tools)
+/// that streams a summary, then calls
+/// `Conversation::install_compaction_summary` to advance the divider.
+/// See spec/components/gui/chat-input-panel.md "Slash commands".
+fn spawn_compact(
+    state: Arc<StdMutex<SharedState>>,
+    event_tx: UnboundedSender<AgentEvent>,
+    tokio_handle: &Handle,
+    provider: Arc<dyn Provider>,
+    model: String,
+    egui_ctx: egui::Context,
+) {
+    let snapshot = {
+        let mut s = state.lock().unwrap();
+        s.live_turn = Some(crate::app::LiveTurn::default());
+        s.last_outcome = None;
+        s.cancellation = Some(CancellationToken::new());
+        s.exploration.conversation.clone()
+    };
+
+    let req = build_compaction_request(&snapshot, model);
+    let event_tx_for_turn = event_tx.clone();
+    let egui_ctx_for_turn = egui_ctx.clone();
+    let state_for_turn = state.clone();
+
+    tokio_handle.spawn(async move {
+        let outcome = run_compaction(
+            req,
+            provider,
+            event_tx_for_turn,
+            egui_ctx_for_turn,
+            state_for_turn,
+        )
+        .await;
+        let _ = event_tx.send(AgentEvent::Completed(outcome));
+    });
+}
+
+async fn run_compaction(
+    req: ChatRequest,
+    provider: Arc<dyn Provider>,
+    event_tx: UnboundedSender<AgentEvent>,
+    egui_ctx: egui::Context,
+    state: Arc<StdMutex<SharedState>>,
+) -> TurnOutcome {
+    let mut stream = match provider.chat(req).await {
+        Ok(s) => s,
+        Err(e) => {
+            return TurnOutcome {
+                stop_reason: None,
+                usage: Default::default(),
+                iterations: 0,
+                tool_calls: 0,
+                error: Some(format!("compaction request failed: {e}")),
+            };
+        }
+    };
+    let mut text = String::new();
+    let mut usage = oxidant_providers::Usage::default();
+    let mut stop_reason = None;
+    while let Some(event) = stream.next().await {
+        let _ = event_tx.send(AgentEvent::Chat(event.clone()));
+        egui_ctx.request_repaint();
+        match event {
+            ChatEvent::TextDelta(s) => text.push_str(&s),
+            ChatEvent::Finish {
+                stop_reason: sr,
+                usage: u,
+            } => {
+                stop_reason = Some(sr);
+                usage = u;
+            }
+            ChatEvent::Error(e) => {
+                return TurnOutcome {
+                    stop_reason: None,
+                    usage,
+                    iterations: 0,
+                    tool_calls: 0,
+                    error: Some(e),
+                };
+            }
+            _ => {}
+        }
+    }
+    if text.trim().is_empty() {
+        return TurnOutcome {
+            stop_reason,
+            usage,
+            iterations: 0,
+            tool_calls: 0,
+            error: Some("compaction returned an empty summary".to_string()),
+        };
+    }
+    if let Ok(mut s) = state.lock() {
+        s.exploration.conversation.install_compaction_summary(text);
+        s.live_turn = None;
+    }
+    egui_ctx.request_repaint();
+    TurnOutcome {
+        stop_reason,
+        usage,
+        iterations: 0,
+        tool_calls: 0,
+        error: None,
+    }
+}
+
+fn build_compaction_request(conv: &Conversation, model: String) -> ChatRequest {
+    let mut messages = Vec::<RequestMessage>::new();
+    for msg in conv.live_messages() {
+        match msg {
+            Message::User { content } => {
+                let parts: Vec<ContentPart> = content
+                    .iter()
+                    .filter_map(|b| match b {
+                        ContentBlock::Text(t) => Some(ContentPart::Text(t.clone())),
+                        _ => None,
+                    })
+                    .collect();
+                if !parts.is_empty() {
+                    messages.push(RequestMessage {
+                        role: Role::User,
+                        content: parts,
+                    });
+                }
+            }
+            Message::Assistant { content, .. } => {
+                let parts: Vec<ContentPart> = content
+                    .iter()
+                    .filter_map(|b| match b {
+                        ContentBlock::Text(t) => Some(ContentPart::Text(t.clone())),
+                        _ => None,
+                    })
+                    .collect();
+                if !parts.is_empty() {
+                    messages.push(RequestMessage {
+                        role: Role::Assistant,
+                        content: parts,
+                    });
+                }
+            }
+            // Tool results carry raw blobs; the summary doesn't need them.
+            Message::ToolResult { .. } => {}
+        }
+    }
+    messages.push(RequestMessage {
+        role: Role::User,
+        content: vec![ContentPart::Text(
+            "Please summarise the conversation above into a compact handover note.".to_string(),
+        )],
+    });
+    ChatRequest {
+        model,
+        system: Some(COMPACTION_SYSTEM_PROMPT.to_string()),
+        messages,
+        tools: Vec::new(),
+        max_tokens: 1024,
+        temperature: Some(0.3),
+        thinking: None,
     }
 }

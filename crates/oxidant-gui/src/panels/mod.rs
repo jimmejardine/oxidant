@@ -6,6 +6,7 @@ pub mod file_tree;
 pub mod health_check;
 pub mod new_item_dialog;
 pub mod settings;
+pub mod slash_commands;
 pub mod spec_graph;
 pub mod spec_tree;
 pub mod transcript;
