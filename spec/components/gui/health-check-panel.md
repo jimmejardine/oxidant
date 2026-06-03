@@ -75,7 +75,13 @@ The Refresh button becomes **Run all**. On click:
 3. Each task is independent — they run in parallel. Each calls `egui_ctx.request_repaint()` when done so the panel updates live.
 4. `last_run_at = Some(Instant::now())` is set at the start of the spawn so the header can render elapsed.
 
-Run-all is disabled while any check is `Running`. Per-check refresh buttons are a v2 affordance.
+Run-all is disabled while any check is `Running`.
+
+## Per-row run
+
+Each root carries a leading `▶` button (immediately to the left of the status glyph) that kicks off only that check. While the check is `Running` the button switches to a disabled `⟳` so the user can't double-fire. The dispatch helper is shared with Run-all: a private `spawn_check(state, tokio_handle, workspace_root, egui_ctx, kind)` marks the single `checks[kind]` entry as `Running`, then spawns the same `invoke → parse → write-back → request_repaint` future Run-all uses. Run-all loops over `ALL_CHECKS` calling `spawn_check`.
+
+`last_run_at` (the "last run Xs ago" header) only updates on Run-all — it refers to the most recent *batch* run. Per-row runs don't touch it.
 
 ## UI — tree
 

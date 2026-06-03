@@ -97,7 +97,7 @@ impl HealthCheckPanel {
             .auto_shrink([false; 2])
             .show(ui, |ui| {
                 for (kind, st) in snapshots {
-                    render_root(ui, state, kind, &st);
+                    render_root(ui, state, tokio_handle, workspace_root, egui_ctx, kind, &st);
                     ui.add_space(2.0);
                 }
             });
@@ -134,9 +134,13 @@ fn roll_up_totals(report: &crate::app::HealthReport) -> Totals {
 
 // ---------------------------------------------------------------- root rendering
 
+#[allow(clippy::too_many_arguments)]
 fn render_root(
     ui: &mut egui::Ui,
     state: &Arc<StdMutex<SharedState>>,
+    tokio_handle: &Handle,
+    workspace_root: &Path,
+    egui_ctx: &egui::Context,
     kind: CheckKind,
     st: &CheckState,
 ) {
@@ -145,28 +149,54 @@ fn render_root(
 
     let id = ui.make_persistent_id(("health_root", kind.as_str()));
 
-    // Auto-expand on first red transition. Once the user toggles, the
-    // CheckState carries user_toggled=true and we respect it.
-    let header_response = egui::CollapsingHeader::new(
-        RichText::new(format!("{glyph}  {header_text}")).color(glyph_colour),
-    )
-    .id_salt(id)
-    .default_open(default_open)
-    .show(ui, |ui| render_subtree(ui, state, kind, st));
+    // Drive the collapsing tree manually so we can put a per-row ▶
+    // button before the chevron, on the same row as the header. See
+    // spec/components/gui/health-check-panel.md "Per-row run".
+    let mut collapsing = egui::collapsing_header::CollapsingState::load_with_default_open(
+        ui.ctx(),
+        id,
+        default_open,
+    );
 
-    header_response
-        .header_response
-        .clone()
-        .on_hover_cursor(CursorIcon::PointingHand);
-
-    // Detect user toggle. If the user collapsed/expanded a red root,
-    // mark user_toggled so future runs don't fight them.
-    if header_response.header_response.clicked() {
-        let mut s = state.lock().unwrap();
-        if let Some(entry) = s.health.checks.get_mut(&kind) {
-            entry.user_toggled = true;
+    let row = ui.horizontal(|ui| {
+        let is_running = matches!(st.status, CheckStatus::Running);
+        let button_text = if is_running { "⟳" } else { "▶" };
+        let btn = ui.add_enabled(
+            !is_running,
+            egui::Button::new(RichText::new(button_text).monospace()).small(),
+        );
+        let btn = btn.on_hover_text(format!("Run {}", kind.display_name()));
+        if btn.clicked() {
+            spawn_check(state, tokio_handle, workspace_root, egui_ctx, kind);
         }
-    }
+        let toggle = collapsing.show_toggle_button(ui, egui::collapsing_header::paint_default_icon);
+        let label_resp =
+            ui.label(RichText::new(format!("{glyph}  {header_text}")).color(glyph_colour));
+        // Treat a click on the label (not just the chevron) as a toggle
+        // so the user can hit either to open/close — matches the
+        // affordance the previous CollapsingHeader gave for free.
+        if label_resp
+            .interact(egui::Sense::click())
+            .on_hover_cursor(CursorIcon::PointingHand)
+            .clicked()
+        {
+            collapsing.toggle(ui);
+            let mut s = state.lock().unwrap();
+            if let Some(entry) = s.health.checks.get_mut(&kind) {
+                entry.user_toggled = true;
+            }
+        }
+        if toggle.clicked() {
+            let mut s = state.lock().unwrap();
+            if let Some(entry) = s.health.checks.get_mut(&kind) {
+                entry.user_toggled = true;
+            }
+        }
+    });
+
+    collapsing.show_body_indented(&row.response, ui, |ui| {
+        render_subtree(ui, state, kind, st);
+    });
 }
 
 fn glyph_for(st: &CheckState) -> (&'static str, Color32, bool) {
@@ -406,53 +436,57 @@ fn spawn_run_all(
     workspace_root: &Path,
     egui_ctx: &egui::Context,
 ) {
-    // Snapshot what we'll need from shared state. Mark every check as
-    // Running on the GUI thread before crossing into tokio.
+    // last_run_at refers to the most recent batch run — per-row runs
+    // (via spawn_check below) don't touch it.
+    state.lock().unwrap().health.last_run_at = Some(Instant::now());
+    for kind in ALL_CHECKS {
+        spawn_check(state, tokio_handle, workspace_root, egui_ctx, kind);
+    }
+}
+
+/// Fire a single check. Shared by Run-all and the per-row ▶ buttons.
+/// See spec/components/gui/health-check-panel.md "Per-row run".
+fn spawn_check(
+    state: &Arc<StdMutex<SharedState>>,
+    tokio_handle: &Handle,
+    workspace_root: &Path,
+    egui_ctx: &egui::Context,
+    kind: CheckKind,
+) {
     let (registry, exploration_id) = {
         let mut s = state.lock().unwrap();
-        s.health.last_run_at = Some(Instant::now());
-        for kind in ALL_CHECKS {
-            let entry = s.health.checks.entry(kind).or_default();
-            entry.status = CheckStatus::Running;
-            entry.issues.clear();
-            entry.finished_in_ms = 0;
-        }
+        let entry = s.health.checks.entry(kind).or_default();
+        entry.status = CheckStatus::Running;
+        entry.issues.clear();
+        entry.finished_in_ms = 0;
         (s.registry.clone(), s.exploration.id.to_string())
     };
+    let state = state.clone();
     let workspace = workspace_root.to_path_buf();
     let egui_ctx = egui_ctx.clone();
-
-    for kind in ALL_CHECKS {
-        let state = state.clone();
-        let registry = registry.clone();
-        let workspace = workspace.clone();
-        let exploration_id = exploration_id.clone();
-        let egui_ctx = egui_ctx.clone();
-        tokio_handle.spawn(async move {
-            let started = Instant::now();
-            let result = invoke_check(&registry, &workspace, &exploration_id, kind).await;
-            let elapsed_ms = started.elapsed().as_millis() as u64;
-            let (status, issues): (CheckStatus, Vec<HealthIssue>) = match result {
-                Ok(value) => (CheckStatus::Done, parse_for(kind, &value)),
-                Err(msg) => (CheckStatus::Failed(msg), Vec::new()),
-            };
-            if let Ok(mut s) = state.lock() {
-                let entry = s.health.checks.entry(kind).or_default();
-                // Detect a new red transition so we can reset
-                // user_toggled if the user fixed and broke again.
-                let was_clean =
-                    matches!(entry.status, CheckStatus::Done) && entry.issues.is_empty();
-                let now_red = !matches!(status, CheckStatus::Done) || !issues.is_empty();
-                if was_clean && now_red {
-                    entry.user_toggled = false;
-                }
-                entry.status = status;
-                entry.issues = issues;
-                entry.finished_in_ms = elapsed_ms;
+    tokio_handle.spawn(async move {
+        let started = Instant::now();
+        let result = invoke_check(&registry, &workspace, &exploration_id, kind).await;
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        let (status, issues): (CheckStatus, Vec<HealthIssue>) = match result {
+            Ok(value) => (CheckStatus::Done, parse_for(kind, &value)),
+            Err(msg) => (CheckStatus::Failed(msg), Vec::new()),
+        };
+        if let Ok(mut s) = state.lock() {
+            let entry = s.health.checks.entry(kind).or_default();
+            // Detect a new red transition so we can reset
+            // user_toggled if the user fixed and broke again.
+            let was_clean = matches!(entry.status, CheckStatus::Done) && entry.issues.is_empty();
+            let now_red = !matches!(status, CheckStatus::Done) || !issues.is_empty();
+            if was_clean && now_red {
+                entry.user_toggled = false;
             }
-            egui_ctx.request_repaint();
-        });
-    }
+            entry.status = status;
+            entry.issues = issues;
+            entry.finished_in_ms = elapsed_ms;
+        }
+        egui_ctx.request_repaint();
+    });
 }
 
 async fn invoke_check(
