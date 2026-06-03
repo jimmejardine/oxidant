@@ -32,10 +32,10 @@ spec/
 ## Ordering
 
 Within each directory:
-1. Specs with explicit `order:` ascending.
-2. Then alphabetical.
+1. Direct child specs (leaves) first, sorted by `order:` ascending then alphabetical.
+2. Sub-directories after, sorted alphabetically (BTreeMap iteration).
 
-Directory groups follow the same convention.
+Why files-before-dirs: at `spec/` root this floats `overview` and `glossary` to the top — the natural "start here" reading order. The rule applies at every level so users don't have to learn one heuristic for the root and another for sub-directories.
 
 ## Badges
 

@@ -157,6 +157,12 @@ fn render_node(
     let header = egui::CollapsingHeader::new(RichText::new(label).strong())
         .default_open(label == "spec")
         .show(ui, |ui| {
+            // Leaves before sub-directories at every level so `overview`
+            // and `glossary` sit at the top of the root expander.
+            // See spec/components/gui/spec-tree-panel.md "Ordering".
+            for rec in &node.files {
+                render_leaf(ui, rec, workspace_root, state, graph);
+            }
             for (name, child) in &node.dirs {
                 render_node(
                     ui,
@@ -168,9 +174,6 @@ fn render_node(
                     new_item,
                     graph,
                 );
-            }
-            for rec in &node.files {
-                render_leaf(ui, rec, workspace_root, state, graph);
             }
         });
     header.header_response.context_menu(|ui| {
