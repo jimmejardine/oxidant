@@ -346,22 +346,179 @@ fn render_code_with_gutter(ui: &mut egui::Ui, path: &Path, text: &mut String, in
                     )
                     .wrap_mode(egui::TextWrapMode::Extend),
                 );
-                ui.add(
-                    egui::TextEdit::multiline(text)
-                        .code_editor()
-                        .interactive(interactive)
-                        .frame(false)
-                        .desired_rows(20)
-                        .layouter(&mut layouter),
-                );
+                let mut output = egui::TextEdit::multiline(text)
+                    .code_editor()
+                    .interactive(interactive)
+                    .frame(false)
+                    .desired_rows(20)
+                    .layouter(&mut layouter)
+                    .show(ui);
+                if interactive {
+                    handle_goto(ui, path, &mut output, line_count);
+                }
             });
         });
 }
 
+/// Transient state for the Ctrl+G "go to line" dialog. Stored in egui
+/// temp memory keyed by the editor path — the editor panel is stateless.
+#[derive(Clone, Default)]
+struct GotoLine {
+    input: String,
+    error: Option<String>,
+    focus_next_frame: bool,
+}
+
+fn goto_id(path: &Path) -> egui::Id {
+    egui::Id::new(("goto-line", path))
+}
+
+/// Char offset of the start of `line` (1-based), counting each preceding
+/// line plus its `\n`. Clamped so an out-of-range line lands at the last
+/// line start (never past the end).
+fn line_start_char(text: &str, line_1based: usize) -> usize {
+    if line_1based <= 1 {
+        return 0;
+    }
+    let target = line_1based - 1; // newlines to skip
+    let mut seen = 0usize;
+    let mut chars = 0usize;
+    for ch in text.chars() {
+        chars += 1;
+        if ch == '\n' {
+            seen += 1;
+            if seen == target {
+                return chars; // position just after this newline
+            }
+        }
+    }
+    chars // fewer lines than requested → clamp to end
+}
+
+/// Ctrl+G go-to-line: open on the shortcut, render the modal, and on OK
+/// move the caret to the chosen line and scroll it into view. See
+/// spec/components/gui/file-tabs.md "Go to line".
+fn handle_goto(
+    ui: &mut egui::Ui,
+    path: &Path,
+    output: &mut egui::text_edit::TextEditOutput,
+    line_count: usize,
+) {
+    let id = goto_id(path);
+
+    // Open on Ctrl+G (Cmd+G on macOS) while the editor owns focus.
+    if output.response.has_focus()
+        && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::G))
+    {
+        ui.memory_mut(|m| {
+            m.data.insert_temp(
+                id,
+                GotoLine {
+                    focus_next_frame: true,
+                    ..Default::default()
+                },
+            )
+        });
+    }
+
+    let Some(mut goto) = ui.memory(|m| m.data.get_temp::<GotoLine>(id)) else {
+        return;
+    };
+
+    let mut want_ok = false;
+    let mut close = false;
+
+    egui::Window::new("Go to line")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ui.ctx(), |ui| {
+            ui.label(RichText::new(format!("line (1–{line_count})")).color(theme::muted_text()));
+            let resp = ui.add(
+                egui::TextEdit::singleline(&mut goto.input)
+                    .hint_text("e.g. 42")
+                    .desired_width(120.0),
+            );
+            if goto.focus_next_frame {
+                resp.request_focus();
+                goto.focus_next_frame = false;
+            }
+            // Keep digits only — the field is a line number.
+            goto.input.retain(|c| c.is_ascii_digit());
+            if resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                want_ok = true;
+            }
+            if let Some(err) = &goto.error {
+                ui.label(RichText::new(err).color(ui.visuals().error_fg_color));
+            }
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Go").clicked() {
+                        want_ok = true;
+                    }
+                    if ui.button("Cancel").clicked()
+                        || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    {
+                        close = true;
+                    }
+                });
+            });
+        });
+
+    if want_ok {
+        match goto.input.trim().parse::<usize>() {
+            Ok(n) if n >= 1 => {
+                let line = n.min(line_count);
+                let cidx = line_start_char(output.galley.text(), line);
+                let ccursor = egui::text::CCursor::new(cidx);
+                output
+                    .state
+                    .cursor
+                    .set_char_range(Some(egui::text::CCursorRange::two(ccursor, ccursor)));
+                output.state.clone().store(ui.ctx(), output.response.id);
+                output.response.request_focus();
+                // Scroll the chosen line into view.
+                let rect = output
+                    .galley
+                    .pos_from_ccursor(ccursor)
+                    .translate(output.galley_pos.to_vec2());
+                ui.scroll_to_rect(rect, Some(egui::Align::Center));
+                close = true;
+            }
+            _ => {
+                goto.error = Some("enter a line number".to_string());
+            }
+        }
+    }
+
+    if close {
+        ui.memory_mut(|m| m.data.remove::<GotoLine>(id));
+    } else {
+        ui.memory_mut(|m| m.data.insert_temp(id, goto));
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{gutter_text, is_markdown};
+    use super::{gutter_text, is_markdown, line_start_char};
     use std::path::Path;
+
+    #[test]
+    fn line_start_char_maps_lines_to_offsets() {
+        let t = "a\nbb\nccc";
+        assert_eq!(line_start_char(t, 1), 0); // 'a'
+        assert_eq!(line_start_char(t, 2), 2); // 'bb'  (after "a\n")
+        assert_eq!(line_start_char(t, 3), 5); // 'ccc' (after "a\nbb\n")
+    }
+
+    #[test]
+    fn line_start_char_clamps_and_handles_edges() {
+        let t = "a\nbb\nccc";
+        assert_eq!(line_start_char(t, 0), 0); // 0/1 → start
+        assert_eq!(line_start_char(t, 99), t.chars().count()); // beyond → end
+        assert_eq!(line_start_char("", 5), 0);
+    }
 
     #[test]
     fn gutter_text_single_digit_unpadded() {

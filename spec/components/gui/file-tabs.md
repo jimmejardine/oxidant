@@ -56,6 +56,8 @@ The Source view (and every non-markdown file) renders through a multi-line `egui
   - Classic Dark → `base16-eighties.dark`
 - Returns an `egui::text::LayoutJob` per visible line so the TextEdit lays out coloured spans without us shipping our own glyph cache.
 
+**Go to line**: in the editable Source view, **Ctrl+G** (while the editor has focus) opens a small modal dialog that accepts a line number; on OK the caret moves to the start of that line and the view scrolls it into focus. Out-of-range input is clamped to `[1, line count]`. The read-only Selected preview has no caret and ignores Ctrl+G.
+
 **Line numbers** render in a left gutter alongside the highlighted text (muted, monospace, right-aligned), for both the editable Source view and the read-only Selected preview. To keep the gutter aligned 1:1 with logical lines, the code views are **no-wrap with horizontal scroll** (the layouter is invoked with `wrap_width = f32::INFINITY`). The markdown Preview has no gutter. Diagnostic markers (red squiggle / yellow underline overlaid from [[components/gui/diagnostic-panel]] data) land in a follow-up — the highlighter contract is already shaped for that.
 
 ## Navigation actions
