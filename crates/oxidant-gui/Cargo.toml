@@ -39,6 +39,9 @@ indexmap.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Font backend (also used transitively by epaint) — lets the font-coverage
+# test inspect the bundled TTFs' cmaps. See theme::install_fonts.
+ab_glyph = "0.2"
 
 # winit (pulled in transitively by eframe) ships its Linux backends behind
 # the x11 / wayland features. eframe 0.29 doesn't propagate them, so Linux

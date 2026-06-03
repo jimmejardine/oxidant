@@ -181,11 +181,20 @@ fn apply_uniform_text_styles(ctx: &egui::Context) {
     ctx.set_style(style);
 }
 
-/// Install the bundled Noto fonts as the primary Proportional and
-/// Monospace families. Noto's "no tofu" coverage means the symbols we
-/// use across the GUI (✗ ✓ ⟳ ↩ ⊕ ⌖ ⚠ ⏎) render rather than missing-
-/// glyph boxes. Egui's existing fallback chain (emoji, etc.) is left
-/// in place after our entries.
+/// Install the bundled fonts. `NotoSans` / `NotoSansMono` are the primary
+/// Proportional / Monospace faces, but they don't carry the symbol,
+/// arrow, math, box-drawing, geometric, and dingbat glyphs the GUI uses
+/// (`→ ✗ ✔ ⟳ ⌖ ⊕ ⊘ ⚠ ⏎ ──` …). Two fallback faces fill those in:
+///
+/// - **DejaVu Sans** — broad symbol/arrow/math/box/geometric/dingbat
+///   coverage (everything we use except `⌖` and the two emoji).
+/// - **Noto Sans Symbols 2** — covers `⌖` (U+2316) and the `👁`/`🔒`
+///   emoji, plus more dingbats/technical glyphs.
+///
+/// They're inserted right after the primary face in both families, so a
+/// glyph missing from Noto Sans falls through to DejaVu, then Symbols 2,
+/// before egui's own defaults (Ubuntu, emoji). Coverage of the exact
+/// codepoint set is asserted by `fonts_cover_all_used_glyphs` in tests.
 ///
 /// Call **once** at app startup from `viewport.rs::run_viewport`. Do
 /// not call from `apply` — egui re-uploads the font atlas to the GPU
@@ -200,16 +209,24 @@ pub fn install_fonts(ctx: &egui::Context) {
         "noto_sans_mono".into(),
         FontData::from_static(include_bytes!("../assets/fonts/NotoSansMono-Regular.ttf")).into(),
     );
-    fonts
-        .families
-        .entry(FontFamily::Proportional)
-        .or_default()
-        .insert(0, "noto_sans".into());
-    fonts
-        .families
-        .entry(FontFamily::Monospace)
-        .or_default()
-        .insert(0, "noto_sans_mono".into());
+    fonts.font_data.insert(
+        "dejavu_sans".into(),
+        FontData::from_static(include_bytes!("../assets/fonts/DejaVuSans.ttf")).into(),
+    );
+    fonts.font_data.insert(
+        "noto_symbols2".into(),
+        FontData::from_static(include_bytes!("../assets/fonts/NotoSansSymbols2-Regular.ttf"))
+            .into(),
+    );
+    // Symbol fallbacks, in priority order, for both families.
+    let prop = fonts.families.entry(FontFamily::Proportional).or_default();
+    prop.insert(0, "noto_sans".into());
+    prop.insert(1, "dejavu_sans".into());
+    prop.insert(2, "noto_symbols2".into());
+    let mono = fonts.families.entry(FontFamily::Monospace).or_default();
+    mono.insert(0, "noto_sans_mono".into());
+    mono.insert(1, "dejavu_sans".into());
+    mono.insert(2, "noto_symbols2".into());
     ctx.set_fonts(fonts);
 }
 
@@ -439,6 +456,37 @@ fn classic_dark() -> Palette {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every non-ASCII glyph the GUI actually renders. Keep in sync when
+    /// adding a new symbol to the UI — `fonts_cover_all_used_glyphs`
+    /// guards that at least one bundled font carries it (else it would
+    /// render as a tofu box). See `install_fonts`.
+    const USED_GLYPHS: &[char] = &[
+        '²', '·', '×', 'α', '–', '—', '…', '→', '↩', '⇄', '−', '≤', '⊕', '⊘', '⌖', '⏎', '─', '│',
+        '└', '┘', '▶', '▸', '▾', '●', '⚠', '✓', '✔', '✗', '⟳', '👁', '🔒',
+    ];
+
+    #[test]
+    fn fonts_cover_all_used_glyphs() {
+        use ab_glyph::{Font, FontRef};
+        let faces = [
+            FontRef::try_from_slice(include_bytes!("../assets/fonts/NotoSans-Regular.ttf")).unwrap(),
+            FontRef::try_from_slice(include_bytes!("../assets/fonts/NotoSansMono-Regular.ttf"))
+                .unwrap(),
+            FontRef::try_from_slice(include_bytes!("../assets/fonts/DejaVuSans.ttf")).unwrap(),
+            FontRef::try_from_slice(include_bytes!("../assets/fonts/NotoSansSymbols2-Regular.ttf"))
+                .unwrap(),
+        ];
+        let missing: Vec<char> = USED_GLYPHS
+            .iter()
+            .copied()
+            .filter(|&c| faces.iter().all(|f| f.glyph_id(c).0 == 0))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "no bundled font carries these glyphs (would render as tofu): {missing:?}"
+        );
+    }
 
     #[test]
     fn slug_roundtrip() {
