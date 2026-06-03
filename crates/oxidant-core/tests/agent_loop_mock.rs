@@ -721,13 +721,42 @@ async fn tool_dispatches_eagerly_during_stream_so_elapsed_reflects_real_wait() {
 /// then Finish. Verifies the incremental scanner in agent_loop dispatches
 /// the extracted call eagerly during the stream rather than waiting
 /// until after Finish.
-struct DelayedFinishTextEnvelopeProvider {
+/// A ReadOnly tool that sleeps for `delay` before returning. Lets tests
+/// observe `elapsed_ms` without relying on stream-side timing — which
+/// matters because the agent loop now cuts the stream the moment a
+/// text-extracted envelope closes. See
+/// spec/components/core/agent-loop.md "Tool dispatch concurrency".
+struct SlowCurrentTimeStub {
+    fixed: String,
     delay: Duration,
+}
+
+#[async_trait]
+impl Tool for SlowCurrentTimeStub {
+    fn name(&self) -> &str {
+        "current_time"
+    }
+    fn description(&self) -> &str {
+        "Return the current UTC time after an artificial delay"
+    }
+    fn schema(&self) -> serde_json::Value {
+        json!({ "type": "object", "properties": {}, "additionalProperties": false })
+    }
+    fn category(&self) -> ToolCategory {
+        ToolCategory::ReadOnly
+    }
+    async fn invoke(&self, _args: serde_json::Value, _ctx: &ToolContext) -> ToolResult {
+        tokio::time::sleep(self.delay).await;
+        ToolResult::Ok(json!({ "now_utc": self.fixed }))
+    }
+}
+
+struct TextEnvelopeThenFinishProvider {
     calls: Mutex<u32>,
 }
 
 #[async_trait]
-impl Provider for DelayedFinishTextEnvelopeProvider {
+impl Provider for TextEnvelopeThenFinishProvider {
     async fn chat(&self, _req: ChatRequest) -> anyhow::Result<BoxStream<'static, ChatEvent>> {
         let n = {
             let mut g = self.calls.lock().unwrap();
@@ -745,7 +774,9 @@ impl Provider for DelayedFinishTextEnvelopeProvider {
             ]);
             return Ok(s.boxed());
         }
-        let delay = self.delay;
+        // Stream emits: prose, complete envelope, then speculative text
+        // and Finish. The loop should cut at the envelope close, so the
+        // speculative tail is queued on the stream but never consumed.
         let s = stream::unfold(0u8, move |step| async move {
             match step {
                 0 => Some((ChatEvent::TextDelta("Let me check. ".into()), 1)),
@@ -759,19 +790,23 @@ impl Provider for DelayedFinishTextEnvelopeProvider {
                     2,
                 )),
                 2 => Some((
-                    ChatEvent::TextDelta(" Now I think about the answer.".into()),
+                    ChatEvent::TextDelta(" The time is 12:34 UTC.".into()),
                     3,
                 )),
-                3 => {
-                    tokio::time::sleep(delay).await;
-                    Some((
-                        ChatEvent::Finish {
-                            stop_reason: StopReason::EndTurn,
-                            usage: Usage::default(),
-                        },
-                        4,
-                    ))
-                }
+                3 => Some((
+                    ChatEvent::TextDelta(
+                        "<tool_call>{\"name\":\"current_time\",\"arguments\":{}}</tool_call>"
+                            .into(),
+                    ),
+                    4,
+                )),
+                4 => Some((
+                    ChatEvent::Finish {
+                        stop_reason: StopReason::EndTurn,
+                        usage: Usage::default(),
+                    },
+                    5,
+                )),
                 _ => None,
             }
         });
@@ -784,19 +819,24 @@ impl Provider for DelayedFinishTextEnvelopeProvider {
         }
     }
     fn name(&self) -> &str {
-        "delayed-finish-text-envelope-mock"
+        "text-envelope-then-finish-mock"
     }
 }
 
 #[tokio::test]
 async fn text_extracted_tool_dispatches_eagerly_during_stream() {
-    let provider = DelayedFinishTextEnvelopeProvider {
-        delay: Duration::from_millis(60),
+    // Eagerness is now demonstrated via a slow tool (the stream gets
+    // cut at the envelope close, so any stream-side delay would be
+    // unobservable). `elapsed_ms >= 50` proves the spawn happened the
+    // moment the envelope landed rather than being inlined as a post-
+    // Finish blocking invoke.
+    let provider = TextEnvelopeThenFinishProvider {
         calls: Mutex::new(0),
     };
     let mut registry = ToolRegistry::new();
-    registry.register(std::sync::Arc::new(CurrentTimeStub {
+    registry.register(std::sync::Arc::new(SlowCurrentTimeStub {
         fixed: "2026-06-03T12:00:00Z".into(),
+        delay: Duration::from_millis(60),
     }));
     let mut conv = Conversation::new();
     conv.push_user_text("what time is it?");
@@ -827,7 +867,7 @@ async fn text_extracted_tool_dispatches_eagerly_during_stream() {
     // delta carrying the envelope's close tag â€” well before Finish.
     assert!(
         *elapsed_ms >= 50,
-        "expected elapsed_ms >= 50ms (sleep was 60ms), got {elapsed_ms}ms â€” incremental text-extracted dispatch is not eager"
+        "expected elapsed_ms >= 50ms (tool slept 60ms), got {elapsed_ms}ms — text-extracted dispatch is not eager"
     );
 
     // The committed assistant message must NOT carry the raw
@@ -845,6 +885,102 @@ async fn text_extracted_tool_dispatches_eagerly_during_stream() {
     assert!(
         !text_blocks.contains("<tool_call>"),
         "extracted envelope should have been stripped, but assistant text still contains it: {text_blocks:?}"
+    );
+}
+
+#[tokio::test]
+async fn text_extracted_tool_call_cuts_stream_so_speculative_continuation_is_dropped() {
+    // The provider emits a complete <tool_call> envelope and THEN
+    // continues with hallucinated tool output and a second speculative
+    // envelope. The loop must cut the stream at the first envelope's
+    // close so the speculative tail never reaches the conversation.
+    // See spec/components/core/agent-loop.md "Tool dispatch concurrency".
+    let provider = MockProvider::new(vec![
+        // Turn 2 (popped last): the loop's response after the real tool
+        // result feeds back. Just finishes.
+        vec![
+            ChatEvent::TextDelta("done".into()),
+            ChatEvent::Finish {
+                stop_reason: StopReason::EndTurn,
+                usage: Usage::default(),
+            },
+        ],
+        // Turn 1 (popped first): prose, real envelope, then SPECULATIVE
+        // continuation (hallucinated result + second tool_call) that
+        // the loop MUST discard by cutting the stream at the first
+        // envelope's close.
+        vec![
+            ChatEvent::TextDelta("Let me check. ".into()),
+            ChatEvent::TextDelta(
+                "<tool_call>{\"name\":\"current_time\",\"arguments\":{}}</tool_call>".into(),
+            ),
+            ChatEvent::TextDelta(" The time is 12:34 UTC.".into()),
+            ChatEvent::TextDelta(
+                "<tool_call>{\"name\":\"current_time\",\"arguments\":{}}</tool_call>".into(),
+            ),
+            ChatEvent::Finish {
+                stop_reason: StopReason::EndTurn,
+                usage: Usage::default(),
+            },
+        ],
+    ]);
+
+    let mut registry = ToolRegistry::new();
+    registry.register(std::sync::Arc::new(CurrentTimeStub {
+        fixed: "2026-06-03T12:00:00Z".into(),
+    }));
+    let mut conv = Conversation::new();
+    conv.push_user_text("what time is it?");
+
+    let outcome = run(
+        &provider,
+        std::sync::Arc::new(registry),
+        ctx(),
+        &mut conv,
+        &AgentLoopConfig::new("m"),
+        |_| {},
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    // Exactly one tool call was dispatched. The second (speculative)
+    // envelope must NOT have been picked up.
+    assert_eq!(
+        outcome.tool_calls_dispatched, 1,
+        "speculative second envelope must not dispatch; got {} total",
+        outcome.tool_calls_dispatched
+    );
+
+    // Conversation shape: user, assistant(turn 1), tool_result, assistant(turn 2).
+    assert_eq!(
+        conv.messages.len(),
+        4,
+        "expected 4 messages, got {}: {:?}",
+        conv.messages.len(),
+        conv.messages
+    );
+
+    // The first assistant turn's text must include the prose that came
+    // BEFORE the envelope, and must NOT include the speculative
+    // continuation that came AFTER the envelope close.
+    let Message::Assistant { content, .. } = &conv.messages[1] else {
+        panic!("expected assistant at index 1, got {:?}", conv.messages[1]);
+    };
+    let assistant_text: String = content
+        .iter()
+        .filter_map(|b| match b {
+            ContentBlock::Text(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        assistant_text.contains("Let me check."),
+        "pre-envelope prose should survive, got: {assistant_text:?}"
+    );
+    assert!(
+        !assistant_text.contains("The time is 12:34"),
+        "speculative continuation must be dropped (stream was not cut), got: {assistant_text:?}"
     );
 }
 

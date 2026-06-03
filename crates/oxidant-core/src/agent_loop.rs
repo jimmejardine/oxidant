@@ -160,6 +160,11 @@ where
         let mut text_scan_cursor: usize = 0;
         let mut text_extracted_count: usize = 0;
         let mut extracted_ranges: Vec<std::ops::Range<usize>> = Vec::new();
+        // Set by the text-extracted path on Complete{Some(_)} to break
+        // the stream-consumption loop. Qwen/Hermes models don't stop
+        // generating after </tool_call>; left running they emit
+        // hallucinated tool output and speculative follow-on calls.
+        let mut cut_stream = false;
 
         while let Some(event) = stream.next().await {
             on_event(&event);
@@ -222,6 +227,7 @@ where
                                 pending.insert(id, (Instant::now(), handle));
                                 extracted_ranges.push(range.clone());
                                 text_scan_cursor = range.end;
+                                cut_stream = true;
                             }
                         }
                     }
@@ -269,6 +275,11 @@ where
                     error_text = Some(e);
                     break;
                 }
+            }
+            if cut_stream {
+                // Synthesise the Finish we won't see — see spec.
+                acc.stop_reason = Some(StopReason::ToolUse);
+                break;
             }
         }
 
