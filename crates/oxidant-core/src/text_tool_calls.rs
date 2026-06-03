@@ -472,7 +472,10 @@ mod tests {
                 range,
                 parsed: Some(call),
             } => {
-                assert_eq!(&text[range.clone()], "<tool_call>{\"name\":\"a\",\"arguments\":{\"v\":1}}</tool_call>");
+                assert_eq!(
+                    &text[range.clone()],
+                    "<tool_call>{\"name\":\"a\",\"arguments\":{\"v\":1}}</tool_call>"
+                );
                 assert_eq!(call.name, "a");
                 let args: Value = serde_json::from_str(&call.arguments_json).unwrap();
                 assert_eq!(args["v"], 1);
