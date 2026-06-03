@@ -144,11 +144,76 @@ where
         // spec/components/core/agent-loop.md.
         let mut pending: HashMap<String, (Instant, JoinHandle<ToolResult>)> = HashMap::new();
         let mut any_mutating = false;
+        // Per-turn state for the incremental text-tool-call scanner.
+        // See spec/components/core/text-tool-call-extraction.md.
+        let mut text_scan_cursor: usize = 0;
+        let mut text_extracted_count: usize = 0;
+        let mut extracted_ranges: Vec<std::ops::Range<usize>> = Vec::new();
 
         while let Some(event) = stream.next().await {
             on_event(&event);
             match event {
-                ChatEvent::TextDelta(s) => acc.text.push_str(&s),
+                ChatEvent::TextDelta(s) => {
+                    acc.text.push_str(&s);
+                    // Incremental envelope scan — dispatch text-extracted
+                    // tool calls eagerly the same way native ToolUseEnd
+                    // does. Loops until find_next reports NoOpen or
+                    // Incomplete; advances text_scan_cursor as we go.
+                    loop {
+                        use text_tool_calls::FindResult;
+                        match text_tool_calls::find_next(&acc.text, text_scan_cursor) {
+                            FindResult::NoOpen => {
+                                text_scan_cursor = acc.text.len();
+                                break;
+                            }
+                            FindResult::Incomplete { open_at } => {
+                                text_scan_cursor = open_at;
+                                break;
+                            }
+                            FindResult::Complete { range, parsed: None } => {
+                                // Parse failure — advance past, leave
+                                // the bytes in acc.text so the user
+                                // sees something went wrong.
+                                text_scan_cursor = range.end;
+                            }
+                            FindResult::Complete {
+                                range,
+                                parsed: Some(call),
+                            } => {
+                                let id = format!("text_extracted_{text_extracted_count}");
+                                text_extracted_count += 1;
+                                acc.order.push(id.clone());
+                                acc.tool_calls.insert(
+                                    id.clone(),
+                                    PendingToolCall {
+                                        name: call.name.clone(),
+                                        input_buffer: call.arguments_json.clone(),
+                                    },
+                                );
+                                if tool_is_mutating(&registry, &call.name) {
+                                    any_mutating = true;
+                                }
+                                let input = parse_tool_input(&call.arguments_json);
+                                tracing::debug!(
+                                    tool = %call.name,
+                                    id = %id,
+                                    "dispatching tool (eager text-extracted)"
+                                );
+                                let registry_for_task = registry.clone();
+                                let ctx_for_task = ctx.clone();
+                                let name = call.name.clone();
+                                let handle = tokio::spawn(async move {
+                                    registry_for_task
+                                        .invoke(&name, input, &ctx_for_task)
+                                        .await
+                                });
+                                pending.insert(id, (Instant::now(), handle));
+                                extracted_ranges.push(range.clone());
+                                text_scan_cursor = range.end;
+                            }
+                        }
+                    }
+                }
                 ChatEvent::ThinkingDelta(s) => acc.thinking.push_str(&s),
                 ChatEvent::ToolUseStart { id, name } => {
                     acc.order.push(id.clone());
@@ -205,11 +270,25 @@ where
         outcome.total_usage.cache_creation_input_tokens += acc.usage.cache_creation_input_tokens;
         outcome.total_usage.cache_read_input_tokens += acc.usage.cache_read_input_tokens;
 
-        // If the provider didn't emit any native tool-use events, the
-        // model may have written the call as literal text — common with
-        // Qwen / Hermes / smolagents running on textgen-webui. Recover
-        // those into the same PendingToolCall structure the streaming
-        // path produces, so the existing dispatch logic just works.
+        // Strip extracted text-tool-call envelope byte ranges from
+        // acc.text so the committed Message::Assistant doesn't carry
+        // the literal XML. We sort descending by start so earlier
+        // indices stay valid as we splice.
+        if !extracted_ranges.is_empty() {
+            extracted_ranges.sort_by_key(|r| std::cmp::Reverse(r.start));
+            for r in &extracted_ranges {
+                if r.end <= acc.text.len() {
+                    acc.text.replace_range(r.clone(), "\n");
+                }
+            }
+        }
+
+        // Safety net: if the incremental scanner didn't catch any
+        // envelope (e.g. the model only emitted a half-formed one that
+        // closed in the final delta, AND the loop's last incremental
+        // scan happened before that close arrived), fall back to the
+        // whole-text extractor. In practice rare — `extracted_ranges`
+        // is non-empty for every Qwen / Hermes turn.
         // See spec/components/core/text-tool-call-extraction.md.
         if acc.order.is_empty() && text_tool_calls::looks_like_text_tool_call(&acc.text) {
             absorb_text_tool_calls(&mut acc);

@@ -704,3 +704,138 @@ async fn tool_dispatches_eagerly_during_stream_so_elapsed_reflects_real_wait() {
         "expected elapsed_ms >= 50ms (sleep was 60ms), got {elapsed_ms}ms — dispatch is not eager"
     );
 }
+
+// ---------------------------------------------------------------- text-extracted timing
+
+/// Same as DelayedFinishProvider but emits the tool call as a text
+/// envelope (Qwen / Hermes style) inside a TextDelta, then sleeps,
+/// then Finish. Verifies the incremental scanner in agent_loop dispatches
+/// the extracted call eagerly during the stream rather than waiting
+/// until after Finish.
+struct DelayedFinishTextEnvelopeProvider {
+    delay: Duration,
+    calls: Mutex<u32>,
+}
+
+#[async_trait]
+impl Provider for DelayedFinishTextEnvelopeProvider {
+    async fn chat(&self, _req: ChatRequest) -> anyhow::Result<BoxStream<'static, ChatEvent>> {
+        let n = {
+            let mut g = self.calls.lock().unwrap();
+            *g += 1;
+            *g
+        };
+        if n > 1 {
+            // Second turn: model replies to the tool result and ends.
+            let s = stream::iter(vec![
+                ChatEvent::TextDelta("done".into()),
+                ChatEvent::Finish {
+                    stop_reason: StopReason::EndTurn,
+                    usage: Usage::default(),
+                },
+            ]);
+            return Ok(s.boxed());
+        }
+        let delay = self.delay;
+        let s = stream::unfold(0u8, move |step| async move {
+            match step {
+                0 => Some((
+                    ChatEvent::TextDelta("Let me check. ".into()),
+                    1,
+                )),
+                // Whole envelope arrives in one delta — incremental
+                // scan should find Complete on this delta.
+                1 => Some((
+                    ChatEvent::TextDelta(
+                        "<tool_call>{\"name\":\"current_time\",\"arguments\":{}}</tool_call>".into(),
+                    ),
+                    2,
+                )),
+                2 => Some((
+                    ChatEvent::TextDelta(" Now I think about the answer.".into()),
+                    3,
+                )),
+                3 => {
+                    tokio::time::sleep(delay).await;
+                    Some((
+                        ChatEvent::Finish {
+                            stop_reason: StopReason::EndTurn,
+                            usage: Usage::default(),
+                        },
+                        4,
+                    ))
+                }
+                _ => None,
+            }
+        });
+        Ok(s.boxed())
+    }
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities {
+            tool_use: true,
+            ..Default::default()
+        }
+    }
+    fn name(&self) -> &str {
+        "delayed-finish-text-envelope-mock"
+    }
+}
+
+#[tokio::test]
+async fn text_extracted_tool_dispatches_eagerly_during_stream() {
+    let provider = DelayedFinishTextEnvelopeProvider {
+        delay: Duration::from_millis(60),
+        calls: Mutex::new(0),
+    };
+    let mut registry = ToolRegistry::new();
+    registry.register(std::sync::Arc::new(CurrentTimeStub {
+        fixed: "2026-06-03T12:00:00Z".into(),
+    }));
+    let mut conv = Conversation::new();
+    conv.push_user_text("what time is it?");
+
+    let mut config = AgentLoopConfig::new("m");
+    config.max_iterations = 2;
+    let _ = run(
+        &provider,
+        std::sync::Arc::new(registry),
+        ctx(),
+        &mut conv,
+        &config,
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    // user, assistant, tool_result.
+    let Message::ToolResult { elapsed_ms, .. } = &conv.messages[2] else {
+        panic!(
+            "expected tool result at index 2, got {:?}",
+            conv.messages[2]
+        );
+    };
+    // The 60ms sleep between TextDelta (envelope) and Finish should be
+    // captured in elapsed_ms because the tool's spawn happened on the
+    // delta carrying the envelope's close tag — well before Finish.
+    assert!(
+        *elapsed_ms >= 50,
+        "expected elapsed_ms >= 50ms (sleep was 60ms), got {elapsed_ms}ms — incremental text-extracted dispatch is not eager"
+    );
+
+    // The committed assistant message must NOT carry the raw
+    // <tool_call> envelope text — it was stripped post-stream.
+    let Message::Assistant { content, .. } = &conv.messages[1] else {
+        panic!("expected assistant at index 1, got {:?}", conv.messages[1]);
+    };
+    let text_blocks: String = content
+        .iter()
+        .filter_map(|b| match b {
+            ContentBlock::Text(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        !text_blocks.contains("<tool_call>"),
+        "extracted envelope should have been stripped, but assistant text still contains it: {text_blocks:?}"
+    );
+}

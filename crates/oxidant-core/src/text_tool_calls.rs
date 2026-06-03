@@ -46,6 +46,57 @@ pub fn looks_like_text_tool_call(text: &str) -> bool {
     text.contains("<tool_call>") || text.contains("<function=")
 }
 
+/// Outcome of one incremental scan step starting at byte offset `from`.
+/// Used by the agent loop's eager-dispatch path (see
+/// spec/components/core/agent-loop.md "Tool dispatch concurrency").
+#[derive(Debug, PartialEq, Eq)]
+pub enum FindResult {
+    /// No opening token at or after `from`. Caller advances cursor to
+    /// `text.len()` and stops scanning.
+    NoOpen,
+    /// Open token found at `open_at` but no matching close yet — the
+    /// envelope is still streaming. Caller leaves cursor at `open_at`
+    /// so the next scan resumes there.
+    Incomplete { open_at: usize },
+    /// Full envelope found. `range` is the byte-range to strip from
+    /// the text. `parsed` is `Some(call)` on success, `None` when the
+    /// body failed to parse — caller advances past `range.end`
+    /// without dispatching anything.
+    Complete {
+        range: std::ops::Range<usize>,
+        parsed: Option<ExtractedToolCall>,
+    },
+}
+
+/// Find the next envelope at or after byte offset `from`.
+///
+/// This is the per-delta primitive used by the agent loop's eager
+/// dispatch path. The whole-text `extract` API is now a thin loop
+/// over this function.
+pub fn find_next(text: &str, from: usize) -> FindResult {
+    let from = from.min(text.len());
+    let open_rel = match find_envelope_open(&text[from..]) {
+        Some(o) => o,
+        None => return FindResult::NoOpen,
+    };
+    let open_abs = from + open_rel.start;
+    let Some(close) = find_envelope_close(text, open_abs, open_rel.kind) else {
+        return FindResult::Incomplete { open_at: open_abs };
+    };
+    let body_start = open_abs + open_rel.open_token_len;
+    let body = strip_code_fences(text[body_start..close.body_end].trim());
+    let parsed = parse_body(body);
+    if parsed.is_none() {
+        tracing::warn!(
+            "text_tool_calls::find_next: failed to parse envelope body, range will be skipped. body={body:?}"
+        );
+    }
+    FindResult::Complete {
+        range: open_abs..close.block_end,
+        parsed,
+    }
+}
+
 /// Extract every tool-call envelope from `text`. Returns the cleaned
 /// text plus the list of calls in source order.
 ///
@@ -55,39 +106,36 @@ pub fn looks_like_text_tool_call(text: &str) -> bool {
 pub fn extract(text: &str) -> ExtractionResult {
     let mut result = ExtractionResult::default();
     let mut cursor = 0;
-    let bytes = text.as_bytes();
-    while let Some(open_rel) = find_envelope_open(&text[cursor..]) {
-        let open_abs = cursor + open_rel.start;
-        // Carry over everything before the opening token.
-        result.stripped_text.push_str(&text[cursor..open_abs]);
-
-        match find_envelope_close(text, open_abs, open_rel.kind) {
-            Some(close_abs) => {
-                let body_start = open_abs + open_rel.open_token_len;
-                let body = strip_code_fences(text[body_start..close_abs.body_end].trim());
-                let block_end = close_abs.block_end;
-                if let Some(call) = parse_body(body) {
-                    result.calls.push(call);
-                    result.stripped_text.push('\n');
-                } else {
-                    // Parse failure — keep the raw block so the user
-                    // sees something went wrong.
-                    tracing::warn!(
-                        "text_tool_calls: failed to parse envelope body, leaving in text. body={body:?}"
-                    );
-                    result.stripped_text.push_str(&text[open_abs..block_end]);
-                }
-                cursor = block_end;
-            }
-            None => {
-                // No close tag found — bail out and dump the remainder.
-                result.stripped_text.push_str(&text[open_abs..]);
-                cursor = bytes.len();
+    loop {
+        match find_next(text, cursor) {
+            FindResult::NoOpen => break,
+            FindResult::Incomplete { open_at } => {
+                // Carry over the prose before the open, then dump the
+                // unclosed remainder — same as the old behaviour when
+                // no close existed at all.
+                result.stripped_text.push_str(&text[cursor..open_at]);
+                result.stripped_text.push_str(&text[open_at..]);
+                cursor = text.len();
                 break;
+            }
+            FindResult::Complete { range, parsed } => {
+                result.stripped_text.push_str(&text[cursor..range.start]);
+                match parsed {
+                    Some(call) => {
+                        result.calls.push(call);
+                        result.stripped_text.push('\n');
+                    }
+                    None => {
+                        // Parse failure — keep the raw block so the
+                        // user sees something went wrong.
+                        result.stripped_text.push_str(&text[range.clone()]);
+                    }
+                }
+                cursor = range.end;
             }
         }
     }
-    if cursor < bytes.len() {
+    if cursor < text.len() {
         result.stripped_text.push_str(&text[cursor..]);
     }
     result
@@ -392,5 +440,101 @@ mod tests {
         let result = extract(text);
         assert!(result.calls.is_empty());
         assert_eq!(result.stripped_text, text);
+    }
+
+    // ----- find_next (incremental scan primitive) --------------------
+
+    #[test]
+    fn find_next_returns_no_open_when_text_has_none() {
+        let result = find_next("just plain prose, nothing tagged.", 0);
+        assert_eq!(result, FindResult::NoOpen);
+    }
+
+    #[test]
+    fn find_next_returns_incomplete_when_close_missing() {
+        // Open token present, but `</tool_call>` hasn't streamed yet.
+        let text = r#"prefix <tool_call>{"name":"x","arguments":{}"#;
+        let result = find_next(text, 0);
+        match result {
+            FindResult::Incomplete { open_at } => {
+                assert_eq!(&text[open_at..], r#"<tool_call>{"name":"x","arguments":{}"#);
+            }
+            other => panic!("expected Incomplete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn find_next_returns_complete_for_hermes_json_envelope() {
+        let text = "x <tool_call>{\"name\":\"a\",\"arguments\":{\"v\":1}}</tool_call> y";
+        let result = find_next(text, 0);
+        match result {
+            FindResult::Complete {
+                range,
+                parsed: Some(call),
+            } => {
+                assert_eq!(&text[range.clone()], "<tool_call>{\"name\":\"a\",\"arguments\":{\"v\":1}}</tool_call>");
+                assert_eq!(call.name, "a");
+                let args: Value = serde_json::from_str(&call.arguments_json).unwrap();
+                assert_eq!(args["v"], 1);
+            }
+            other => panic!("expected Complete+Some, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn find_next_returns_complete_for_xml_function_envelope() {
+        let text = "<tool_call><function=fs_read><parameter=file>foo.md</parameter></function></tool_call>";
+        let result = find_next(text, 0);
+        match result {
+            FindResult::Complete {
+                range,
+                parsed: Some(call),
+            } => {
+                assert_eq!(range.start, 0);
+                assert_eq!(range.end, text.len());
+                assert_eq!(call.name, "fs_read");
+                let args: Value = serde_json::from_str(&call.arguments_json).unwrap();
+                assert_eq!(args["file"], "foo.md");
+            }
+            other => panic!("expected Complete+Some, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn find_next_returns_complete_with_none_parse_when_body_malformed() {
+        let text = "<tool_call>not-json-not-xml</tool_call>";
+        let result = find_next(text, 0);
+        match result {
+            FindResult::Complete {
+                range,
+                parsed: None,
+            } => {
+                assert_eq!(&text[range], text);
+            }
+            other => panic!("expected Complete+None, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn find_next_respects_from_cursor_and_skips_already_consumed_envelopes() {
+        // First envelope sits at 0..N; cursor advanced past it should
+        // find the second one without re-finding the first.
+        let text = "<tool_call>{\"name\":\"a\",\"arguments\":{}}</tool_call> mid <tool_call>{\"name\":\"b\",\"arguments\":{}}</tool_call>";
+        let first = find_next(text, 0);
+        let after_first = match first {
+            FindResult::Complete { range, .. } => range.end,
+            _ => panic!("first envelope should be Complete"),
+        };
+        let second = find_next(text, after_first);
+        match second {
+            FindResult::Complete {
+                range,
+                parsed: Some(call),
+            } => {
+                assert!(range.start > after_first);
+                assert_eq!(call.name, "b");
+            }
+            other => panic!("expected second Complete+Some, got {other:?}"),
+        }
     }
 }

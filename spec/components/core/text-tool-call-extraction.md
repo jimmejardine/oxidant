@@ -65,16 +65,44 @@ Some models omit `<tool_call>…</tool_call>` and emit the inner `<function>` bl
 
 ## Algorithm
 
-1. Run only when the stream produced zero native tool-use events AND the text contains at least one of the recognised opening tokens (`<tool_call>` or `<function=`).
-2. Walk the text linearly, finding each candidate block. Each block is removed from the text and replaced with a single newline so the surrounding prose stays intact.
-3. For each block, try Format A first (JSON); if that fails to parse, try Format B (XML).
-4. On a successful match, synthesise a `PendingToolCall` with a stable id (`text_extracted_{index}` — uniqueness is per-turn, the agent loop's HashMap doesn't need cross-turn uniqueness) and push it onto the accumulator's `order` vector.
-5. On a parse failure, leave the block in the text and log at `tracing::warn` — better to surface the garbled call than to silently drop it.
+Extraction is **incremental during the stream** — every `ChatEvent::TextDelta` triggers a scan over the suffix of `acc.text` that hasn't yet been searched. The instant a complete envelope is found, its tool call is dispatched eagerly via the same `tokio::spawn` path the native streaming events use ([[components/core/agent-loop]] "Tool dispatch concurrency"). The end-of-stream `absorb_text_tool_calls` becomes a safety-net fallback that fires only when no envelope was successfully extracted incrementally.
 
-The parser is intentionally **lossy on the text side**: extracted XML is removed from the assistant's `ContentBlock::Text` so the transcript shows clean prose. The original raw text is logged at `tracing::debug` for diagnostics.
+### Incremental scan
+
+The core helper is `text_tool_calls::find_next(text, from) -> FindResult`:
+
+```rust
+pub enum FindResult {
+    /// No opening token at or after `from`. Caller advances cursor to text.len() and stops.
+    NoOpen,
+    /// Open token at `open_at` but no matching close yet — wait for more deltas.
+    /// Caller leaves cursor at `open_at` so the next scan picks up where this one paused.
+    Incomplete { open_at: usize },
+    /// Full envelope found.  `range` is the byte-range to strip; `parsed` is
+    /// `Some` on success, `None` when the body failed to parse (advance past it).
+    Complete { range: std::ops::Range<usize>, parsed: Option<ExtractedToolCall> },
+}
+```
+
+After every `TextDelta`, the agent loop calls `find_next` in a tight loop until it returns `NoOpen` or `Incomplete`. For each `Complete { parsed: Some(call) }`:
+1. Synthesise a `PendingToolCall` with id `text_extracted_{n}` (the per-turn counter), push it onto `acc.order` and into `acc.tool_calls`.
+2. `tokio::spawn` `registry.invoke(name, args, ctx)`; drop the `JoinHandle` into `pending` keyed by the synthetic id.
+3. Record `range` in `extracted_ranges` for the end-of-stream strip.
+
+For each `Complete { parsed: None }` (malformed body), the loop logs at `tracing::warn` and advances past the range without dispatching — the bytes stay in `acc.text` for the user to see.
+
+### End-of-stream
+
+After the stream's `Finish`:
+1. Sort `extracted_ranges` by `start` descending; `replace_range` each one with `"\n"` so earlier indices don't shift.
+2. If `acc.order` is empty and `looks_like_text_tool_call(&acc.text)` is still true, run the legacy whole-text `extract()` via `absorb_text_tool_calls` as a fallback. This catches the vanishingly rare case where an envelope was `Incomplete` at every delta and its close only arrived in the final chunk after the last incremental scan.
+
+### Why "lossy on the text side"
+
+Extracted envelope bytes are removed from the assistant's `ContentBlock::Text` so the committed transcript shows clean prose with a tool_use card next to it, not the literal XML. Mid-stream the live-turn UI still shows the raw `<tool_call>` text in `LiveTurn.text` — synthesising `ChatEvent::ToolUseStart/End` so the live-turn renders a tool card is recorded as a follow-up.
 
 ## Out of scope
 
 - Per-model dispatch tables. The detection is by-content, not by-model — a Hermes envelope coming from a model nobody told us about still works.
-- Streaming extraction. The parser runs once at end-of-turn; tool cards appear when the message commits, not while the XML is still streaming. The window of visible XML is brief and acceptable for v1.
+- Synthetic `ChatEvent::ToolUseStart/InputDelta/ToolUseEnd` for text-extracted dispatches so the live-turn UI renders a tool card during streaming instead of the raw envelope text. Worth doing as a follow-up; v1 ships the wall-clock concurrency win and accepts that the live turn still shows the XML mid-stream.
 - Repairing malformed JSON in Format A. If the inner JSON is invalid, the block stays in the text and `parse_tool_input`'s normal fallback (empty object) doesn't fire because no `PendingToolCall` was created. The user sees the garbled call and can re-prompt.

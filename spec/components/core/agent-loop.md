@@ -54,7 +54,11 @@ Tool-use deltas may arrive as fragmented JSON over many SSE events. The loop con
 
 ## Tool dispatch concurrency
 
-Tool dispatch is **eager and parallel**. The instant `ChatEvent::ToolUseEnd { id }` arrives — well before the model finishes streaming the rest of its turn — the loop parses the tool's input and `tokio::spawn`s `registry.invoke(name, input, ctx)` into a `JoinHandle`, keyed by call id, alongside its start `Instant`. The stream continues to accumulate any remaining text, thinking, and further tool_use events in parallel with the tool actually running.
+Tool dispatch is **eager and parallel** on both paths the loop knows about — native streaming events AND text-extracted envelopes from text-only models.
+
+**Native path** (`ChatEvent::ToolUseEnd { id }`): the instant the event arrives — well before the model finishes streaming the rest of its turn — the loop parses the tool's input and `tokio::spawn`s `registry.invoke(name, input, ctx)` into a `JoinHandle`, keyed by call id, alongside its start `Instant`. The stream continues to accumulate any remaining text, thinking, and further tool_use events in parallel with the tool actually running.
+
+**Text-extracted path** (Qwen / Hermes / smolagents `<tool_call>` envelopes): on every `ChatEvent::TextDelta`, after appending to `acc.text`, the loop runs an incremental scan via `text_tool_calls::find_next` over the unsearched suffix. The instant a complete envelope lands (open + matching close + parseable body), the loop synthesises a `PendingToolCall` with id `text_extracted_{n}`, pushes onto `acc.order`, and `tokio::spawn`s the same way the native path does — into the same `pending: HashMap<String, (Instant, JoinHandle)>`. The model's still streaming the *rest* of its reply while the tool runs; once the stream finishes, the extracted envelope byte-ranges are stripped from `acc.text` so the committed `Message::Assistant` doesn't carry the literal XML. See [[components/core/text-tool-call-extraction]].
 
 After the stream's `Finish` event:
 
@@ -62,7 +66,7 @@ After the stream's `Finish` event:
 2. The loop walks `acc.order` (the emit-order list of call ids), awaits each `JoinHandle`, computes `elapsed_ms = start.elapsed()` from the captured Instant, and calls `conv.push_tool_result(id, content, is_error, elapsed_ms)`. Awaiting in `acc.order` preserves emit order regardless of which tool actually completes first.
 3. A `JoinError` (panic in the spawned task) becomes `ToolResult::Err("panic: …")` so the model gets a clean error instead of the loop dying.
 
-Why this is safe even for `Mutating` tools running while the model still streams: the model's emission for the current turn is already encoded server-side by the time `ToolUseEnd` arrives — the model can't observe and re-plan based on tools running concurrently. The tool runs no later than the previous "wait-for-Finish" design; only earlier. Wall-clock savings = `Finish_time - ToolUseEnd_time` per tool, which for wordy models or multi-tool turns is often several seconds.
+Why this is safe even for `Mutating` tools running while the model still streams: the model's emission for the current turn is already encoded server-side by the time `ToolUseEnd` (or the incremental text-extracted envelope's close) arrives — the model can't observe and re-plan based on tools running concurrently. The tool runs no later than the previous "wait-for-Finish" design; only earlier. Wall-clock savings = `Finish_time − dispatch_time` per tool, which for wordy models or multi-tool turns is often several seconds.
 
 Cancellation: spawned tasks receive a `ctx` clone that owns the same `CancellationToken`. A user cancel still short-circuits in-flight tool calls. If the agent-loop future itself is dropped, the spawned tasks are no longer polled and quiesce — tokio's default behaviour.
 
