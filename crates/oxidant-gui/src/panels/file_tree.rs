@@ -7,7 +7,7 @@
 // open onto SharedState::pending_centre_tabs; the host drains and
 // open_in_centre's it next frame.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -15,10 +15,22 @@ use egui::text::LayoutJob;
 use egui::{Color32, CursorIcon, RichText, SelectableLabel, TextFormat};
 use ignore::WalkBuilder;
 
+use oxidant_spec_tools::walk_specs;
+
 use crate::app::SharedState;
 use crate::dock::{DockTab, FileSource};
 use crate::panels::new_item_dialog::{NewItemDialog, NewKind};
 use crate::theme;
+
+/// A spec that declares a given source file via its `code:` frontmatter.
+/// Used for the file leaf "Refs in" subtree.
+#[derive(Debug, Clone)]
+struct SpecRef {
+    canonical_id: String,
+    kind: String,
+    /// Absolute path to the spec file (for opening).
+    path: PathBuf,
+}
 
 /// Files larger than this are skipped from the tree — the editor isn't
 /// built for big binaries. Matches the spec.
@@ -32,6 +44,10 @@ const ALWAYS_SKIP_DIRS: &[&str] = &["target", ".git", "node_modules", "dist", "b
 pub struct FileTreePanel {
     workspace_root: PathBuf,
     tree: Option<DirNode>,
+    /// Reverse map: workspace-relative code path (forward slashes) → the
+    /// specs whose `code:` frontmatter declares it. Backs the file leaf
+    /// "Refs in" subtree. Rebuilt with the tree.
+    code_to_specs: Option<HashMap<String, Vec<SpecRef>>>,
     new_item: NewItemDialog,
 }
 
@@ -53,6 +69,7 @@ impl FileTreePanel {
         Self {
             workspace_root,
             tree: None,
+            code_to_specs: None,
             new_item: NewItemDialog::new(),
         }
     }
@@ -60,6 +77,9 @@ impl FileTreePanel {
     pub fn render(&mut self, ui: &mut egui::Ui, state: &Arc<StdMutex<SharedState>>) {
         if self.tree.is_none() {
             self.tree = Some(self.build_tree());
+        }
+        if self.code_to_specs.is_none() {
+            self.code_to_specs = Some(build_code_to_specs(&self.workspace_root));
         }
 
         ui.horizontal(|ui| {
@@ -70,11 +90,14 @@ impl FileTreePanel {
                 .clicked()
             {
                 self.tree = Some(self.build_tree());
+                self.code_to_specs = Some(build_code_to_specs(&self.workspace_root));
             }
         });
         ui.separator();
 
         let workspace_root = self.workspace_root.clone();
+        let empty_refs: HashMap<String, Vec<SpecRef>> = HashMap::new();
+        let code_to_specs = self.code_to_specs.as_ref().unwrap_or(&empty_refs);
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
             .show(ui, |ui| {
@@ -88,6 +111,7 @@ impl FileTreePanel {
                         true,
                         state,
                         &mut self.new_item,
+                        code_to_specs,
                     );
                 }
             });
@@ -203,6 +227,29 @@ fn looks_binary(path: &Path) -> bool {
     buf[..n].contains(&0)
 }
 
+/// Normalise a path to the key form used in the code→specs map:
+/// workspace-relative with forward slashes (mirrors `spec_for_file`).
+fn normalise_code_key(p: &str) -> String {
+    p.replace('\\', "/")
+}
+
+/// Build the reverse map from each spec's `code:` frontmatter: declared
+/// source file (workspace-relative, forward slashes) → declaring specs.
+fn build_code_to_specs(workspace_root: &Path) -> HashMap<String, Vec<SpecRef>> {
+    let mut map: HashMap<String, Vec<SpecRef>> = HashMap::new();
+    for rec in walk_specs(workspace_root) {
+        for code in &rec.file.frontmatter.code {
+            let key = normalise_code_key(&code.to_string_lossy());
+            map.entry(key).or_default().push(SpecRef {
+                canonical_id: rec.canonical_id.clone(),
+                kind: rec.file.frontmatter.kind.as_str().to_string(),
+                path: rec.path.clone(),
+            });
+        }
+    }
+    map
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_node(
     ui: &mut egui::Ui,
@@ -213,6 +260,7 @@ fn render_node(
     default_open: bool,
     state: &Arc<StdMutex<SharedState>>,
     new_item: &mut NewItemDialog,
+    code_to_specs: &HashMap<String, Vec<SpecRef>>,
 ) {
     let header = egui::CollapsingHeader::new(RichText::new(label).strong())
         .default_open(default_open)
@@ -227,10 +275,11 @@ fn render_node(
                     false,
                     state,
                     new_item,
+                    code_to_specs,
                 );
             }
             for file in &node.files {
-                render_leaf(ui, file, workspace_root, state);
+                render_leaf(ui, file, workspace_root, state, code_to_specs);
             }
         });
     header.header_response.context_menu(|ui| {
@@ -250,31 +299,69 @@ fn render_leaf(
     file: &FileEntry,
     workspace_root: &Path,
     state: &Arc<StdMutex<SharedState>>,
+    code_to_specs: &HashMap<String, Vec<SpecRef>>,
 ) {
     let (tag, tag_color) = tag_for(&file.name);
-    let leaf_color = ui.visuals().text_color();
+    // Colour the filename itself by type (no [xxx] prefix); unknown
+    // types stay the normal text colour.
+    let name_color = if tag.is_some() {
+        tag_color
+    } else {
+        ui.visuals().text_color()
+    };
     let mut job = LayoutJob::default();
-    if let Some(t) = tag {
-        job.append(
-            &format!("[{t}] "),
-            0.0,
-            TextFormat {
-                color: tag_color,
-                ..Default::default()
-            },
-        );
-    }
     job.append(
         &file.name,
         0.0,
         TextFormat {
-            color: leaf_color,
+            color: name_color,
             ..Default::default()
         },
     );
 
-    let resp = ui
-        .add(SelectableLabel::new(false, job))
+    // Specs that declare this file via their `code:` frontmatter.
+    let key = file
+        .path
+        .strip_prefix(workspace_root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    let specs = code_to_specs.get(&key);
+
+    match specs {
+        None => {
+            // No declaring spec — plain leaf, no expander.
+            let resp = ui.add(SelectableLabel::new(false, job));
+            wire_file_actions(resp, file, workspace_root, state);
+        }
+        Some(specs) => {
+            let header = egui::CollapsingHeader::new(job)
+                .id_salt(&file.path)
+                .show(ui, |ui| {
+                    egui::CollapsingHeader::new(
+                        RichText::new(format!("Refs in ({})", specs.len()))
+                            .italics()
+                            .color(theme::muted_text()),
+                    )
+                    .show(ui, |ui| {
+                        for sr in specs {
+                            ref_row_spec(ui, sr, workspace_root, state);
+                        }
+                    });
+                });
+            wire_file_actions(header.header_response, file, workspace_root, state);
+        }
+    }
+}
+
+/// Wire the shared leaf interactions (hover, double-click to open, the
+/// right-click context menu) onto a file leaf's response.
+fn wire_file_actions(
+    resp: egui::Response,
+    file: &FileEntry,
+    workspace_root: &Path,
+    state: &Arc<StdMutex<SharedState>>,
+) {
+    let resp = resp
         .on_hover_cursor(CursorIcon::PointingHand)
         .on_hover_text(format!(
             "{} — double-click to open, right-click for history",
@@ -303,6 +390,47 @@ fn render_leaf(
             ui.close_menu();
         }
     });
+}
+
+/// A clickable ref row pointing at a spec that declares this file.
+/// Double-click opens the spec (sourced as Spec by `push_open`).
+fn ref_row_spec(
+    ui: &mut egui::Ui,
+    sr: &SpecRef,
+    workspace_root: &Path,
+    state: &Arc<StdMutex<SharedState>>,
+) {
+    let short = sr.canonical_id.rsplit('/').next().unwrap_or(&sr.canonical_id);
+    let mut job = LayoutJob::default();
+    job.append(
+        short,
+        0.0,
+        TextFormat {
+            color: spec_kind_color(&sr.kind),
+            ..Default::default()
+        },
+    );
+    let resp = ui
+        .add(SelectableLabel::new(false, job))
+        .on_hover_cursor(CursorIcon::PointingHand)
+        .on_hover_text(format!("{} — double-click to open", sr.canonical_id));
+    if resp.double_clicked() {
+        push_open(state, &sr.path, workspace_root);
+    }
+}
+
+/// Spec-kind colour, matching the spec tree's leaf colouring.
+fn spec_kind_color(kind: &str) -> Color32 {
+    match kind {
+        "overview" | "glossary" => Color32::LIGHT_BLUE,
+        "contract" => Color32::from_rgb(255, 160, 0),
+        "component" => Color32::LIGHT_GREEN,
+        "tool" => Color32::from_rgb(180, 220, 255),
+        "flow" => Color32::from_rgb(220, 180, 255),
+        "invariant" => Color32::from_rgb(255, 200, 200),
+        "decision" => Color32::from_rgb(200, 200, 200),
+        _ => theme::muted_text(),
+    }
 }
 
 fn tag_for(name: &str) -> (Option<&'static str>, Color32) {
@@ -445,5 +573,17 @@ mod tests {
     fn tag_for_unknown_returns_none() {
         assert_eq!(tag_for("Makefile").0, None);
         assert_eq!(tag_for("LICENSE").0, None);
+    }
+
+    #[test]
+    fn normalise_code_key_uses_forward_slashes() {
+        assert_eq!(
+            normalise_code_key("crates\\oxidant-gui\\src\\app.rs"),
+            "crates/oxidant-gui/src/app.rs"
+        );
+        assert_eq!(
+            normalise_code_key("crates/oxidant-gui/src/app.rs"),
+            "crates/oxidant-gui/src/app.rs"
+        );
     }
 }

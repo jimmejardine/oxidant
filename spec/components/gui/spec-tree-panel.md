@@ -11,7 +11,7 @@ code:
   - crates/oxidant-gui/src/panels/spec_tree.rs
 status: active
 responsibility: |
-  Left-docked tree view of spec/ organised by kind, with status/order ordering, recent-change badges, and validate-warning indicators.
+  Left-docked tree view of spec/ organised by kind, with status/order ordering, recent-change badges, validate-warning indicators, and per-leaf Refs out / Refs in subtrees.
 ---
 
 ## Layout
@@ -54,7 +54,8 @@ Tooltip on hover gives last-modified timestamp + commit subject.
   - **View history** — opens a read-only side-by-side diff viewer for the spec via [[components/gui/diff-history-panel]]. The tab is queued through `SharedState::pending_centre_tabs` the same way the double-click flow queues an editable File tab. See [[flows/view-spec-history]].
   - **Open in spec graph** — seeds [[components/gui/spec-graph-panel]] with this spec's `canonical_id` and opens the graph tab (or focuses it if already open). The previous graph state is discarded — the user is asking for a fresh exploration from this node. Implemented via the `pending_graph_seeds` queue described in the spec-graph panel doc.
   
-  Further leaf actions (Reveal in code, Show inbound refs, Show outbound refs, Show drift) are deferred.
+  Further leaf actions (Reveal in code, Show drift) are deferred.
+- **Expand a leaf** (the triangle): reveals its **Refs out** / **Refs in** subtrees — see below. Leaves with no associations render as plain rows with no expander.
 - Drag onto a chat input: inserts the canonical ref as a `[[ref]]`.
 
 New-item creation runs directly through `std::fs::create_dir` / `std::fs::File::create` on the GUI thread. The permission engine ([[components/config/permissions]]) doesn't gate it — these are explicit user actions, not agent-initiated tool calls. After a successful creation the panel invalidates its cached tree so the next frame's `walk_specs` picks up the new entry.
@@ -62,6 +63,15 @@ New-item creation runs directly through `std::fs::create_dir` / `std::fs::File::
 The double-click handler MUST NOT mutate the dock directly — the spec-tree panel is rendered inside `egui_dock`'s `TabViewer::ui`, which doesn't see the `DockState`. Instead it pushes a `DockTab::File { ..., source: Spec }` onto `SharedState::pending_centre_tabs`; the host viewport drains that queue after `DockArea::show` and inserts the tab via [[components/gui/dock-layout]]'s `open_in_centre` helper.
 
 `open_in_centre` (NOT `open_tab`) is required because `push_to_focused_leaf` would put the new tab next to the spec tree on the left — the spec-tree leaf is what gained focus on the double-click. `open_in_centre` finds the leaf currently containing the `Transcript` tab and pushes there, so file tabs always dock alongside Transcript regardless of which side panel triggered the open.
+
+## Refs subtrees
+
+Each leaf with associations expands to two nested subtrees, backed by an in-memory [[components/spec-tools/graph]] built from the same `walk_specs` pass that builds the tree (cached, rebuilt on ⟳):
+
+- **Refs out (N)** — what this spec points at: its outbound graph edges (`depends_on`, `implements`, `parent`, body `[[ref]]`), each row labelled with the edge kind and coloured by the target's kind, plus one `code → <file>` row per path in the spec's `code:` frontmatter.
+- **Refs in (M)** — specs that point at this one (the inbound graph edges).
+
+Each ref row is double-click-to-open: spec rows open the target spec ([[components/gui/file-tabs]], Spec source); `code:` rows open the source file (Code source). Leaves with no outbound edges, no `code:` files, and no inbound edges stay plain rows (no triangle), so the expander itself signals "has associations".
 
 ## Backing query
 

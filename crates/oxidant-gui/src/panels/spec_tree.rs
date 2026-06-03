@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use egui::text::LayoutJob;
 use egui::{Color32, CursorIcon, RichText, SelectableLabel, Stroke, TextFormat};
 
-use oxidant_spec_tools::{SpecRecord, walk_specs};
+use oxidant_spec_tools::{EdgeKind, GraphInput, Node, SpecGraph, SpecRecord, walk_specs};
 
 use crate::app::SharedState;
 use crate::dock::{DockTab, FileSource};
@@ -22,6 +22,9 @@ use crate::theme;
 pub struct SpecTreePanel {
     workspace_root: PathBuf,
     tree: Option<DirNode>,
+    /// Spec graph for the leaf "Refs out" / "Refs in" subtrees. Built
+    /// from the same `walk_specs` pass as `tree`; rebuilt together.
+    graph: Option<SpecGraph>,
     new_item: NewItemDialog,
 }
 
@@ -36,13 +39,14 @@ impl SpecTreePanel {
         Self {
             workspace_root,
             tree: None,
+            graph: None,
             new_item: NewItemDialog::new(),
         }
     }
 
     pub fn render(&mut self, ui: &mut egui::Ui, state: &Arc<StdMutex<SharedState>>) {
         if self.tree.is_none() {
-            self.tree = Some(self.build_tree());
+            self.rebuild();
         }
 
         ui.horizontal(|ui| {
@@ -52,7 +56,7 @@ impl SpecTreePanel {
                 .on_hover_text("rebuild from disk")
                 .clicked()
             {
-                self.tree = Some(self.build_tree());
+                self.rebuild();
             }
         });
         ui.separator();
@@ -62,7 +66,7 @@ impl SpecTreePanel {
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
             .show(ui, |ui| {
-                if let Some(tree) = &self.tree {
+                if let (Some(tree), Some(graph)) = (&self.tree, &self.graph) {
                     render_node(
                         ui,
                         tree,
@@ -71,6 +75,7 @@ impl SpecTreePanel {
                         &workspace_root,
                         state,
                         &mut self.new_item,
+                        graph,
                     );
                 }
             });
@@ -86,9 +91,13 @@ impl SpecTreePanel {
         }
     }
 
-    fn build_tree(&self) -> DirNode {
+    /// Walk `spec/` once and rebuild both the directory `tree` and the
+    /// `graph` (used for the leaf Refs out / Refs in subtrees).
+    fn rebuild(&mut self) {
+        let records = walk_specs(&self.workspace_root);
+
         let mut root = DirNode::default();
-        for rec in walk_specs(&self.workspace_root) {
+        for rec in &records {
             let mut cursor = &mut root;
             let segments: Vec<&str> = rec.canonical_id.split('/').collect();
             let last = segments.len() - 1;
@@ -103,7 +112,18 @@ impl SpecTreePanel {
         }
         // Sort files within each node by frontmatter order then alphabetical.
         sort_dir(&mut root);
-        root
+
+        let inputs: Vec<GraphInput> = records
+            .into_iter()
+            .map(|r| GraphInput {
+                canonical_id: r.canonical_id,
+                file: r.file,
+                path: r.path,
+            })
+            .collect();
+
+        self.tree = Some(root);
+        self.graph = Some(SpecGraph::build(&inputs));
     }
 }
 
@@ -132,6 +152,7 @@ fn render_node(
     workspace_root: &Path,
     state: &Arc<StdMutex<SharedState>>,
     new_item: &mut NewItemDialog,
+    graph: &SpecGraph,
 ) {
     let header = egui::CollapsingHeader::new(RichText::new(label).strong())
         .default_open(label == "spec")
@@ -145,10 +166,11 @@ fn render_node(
                     workspace_root,
                     state,
                     new_item,
+                    graph,
                 );
             }
             for rec in &node.files {
-                render_leaf(ui, rec, workspace_root, state);
+                render_leaf(ui, rec, workspace_root, state, graph);
             }
         });
     header.header_response.context_menu(|ui| {
@@ -163,20 +185,9 @@ fn render_node(
     });
 }
 
-fn render_leaf(
-    ui: &mut egui::Ui,
-    rec: &SpecRecord,
-    workspace_root: &Path,
-    state: &Arc<StdMutex<SharedState>>,
-) {
-    let leaf_name = rec
-        .canonical_id
-        .rsplit('/')
-        .next()
-        .unwrap_or(&rec.canonical_id);
-    let kind = rec.file.frontmatter.kind.as_str();
-    let status = rec.file.frontmatter.status;
-    let kind_color = match kind {
+/// Colour for a spec kind. Shared by the leaf name and the ref rows.
+fn kind_color(kind: &str) -> Color32 {
+    match kind {
         "overview" | "glossary" => Color32::LIGHT_BLUE,
         "contract" => Color32::from_rgb(255, 160, 0),
         "component" => Color32::LIGHT_GREEN,
@@ -185,11 +196,27 @@ fn render_leaf(
         "invariant" => Color32::from_rgb(255, 200, 200),
         "decision" => Color32::from_rgb(200, 200, 200),
         _ => theme::muted_text(),
-    };
+    }
+}
+
+fn render_leaf(
+    ui: &mut egui::Ui,
+    rec: &SpecRecord,
+    workspace_root: &Path,
+    state: &Arc<StdMutex<SharedState>>,
+    graph: &SpecGraph,
+) {
+    let leaf_name = rec
+        .canonical_id
+        .rsplit('/')
+        .next()
+        .unwrap_or(&rec.canonical_id);
+    let kind = rec.file.frontmatter.kind.as_str();
+    let status = rec.file.frontmatter.status;
     let (leaf_color, strike) = match status {
         oxidant_spec_tools::SpecStatus::Deprecated => (theme::faint_text(), true),
         oxidant_spec_tools::SpecStatus::Draft => (Color32::from_rgb(255, 200, 100), false),
-        _ => (kind_color, false),
+        _ => (kind_color(kind), false),
     };
 
     let mut job = LayoutJob::default();
@@ -202,8 +229,60 @@ fn render_leaf(
     }
     job.append(leaf_name, 0.0, leaf_fmt);
 
-    let resp = ui
-        .add(SelectableLabel::new(false, job))
+    let outbound = graph.outbound(&rec.canonical_id);
+    let inbound = graph.inbound(&rec.canonical_id);
+    let code_files = &rec.file.frontmatter.code;
+    let has_refs = !outbound.is_empty() || !inbound.is_empty() || !code_files.is_empty();
+
+    if !has_refs {
+        // No associations — render a plain leaf, no expander.
+        let resp = ui.add(SelectableLabel::new(false, job));
+        wire_leaf_actions(resp, rec, workspace_root, state);
+        return;
+    }
+
+    let header = egui::CollapsingHeader::new(job)
+        .id_salt(&rec.canonical_id)
+        .show(ui, |ui| {
+            let out_count = outbound.len() + code_files.len();
+            egui::CollapsingHeader::new(
+                RichText::new(format!("Refs out ({out_count})"))
+                    .italics()
+                    .color(theme::muted_text()),
+            )
+            .show(ui, |ui| {
+                for (node, ek) in &outbound {
+                    ref_row_spec(ui, node, *ek, workspace_root, state);
+                }
+                for code in code_files {
+                    ref_row_code(ui, code, state);
+                }
+            });
+
+            egui::CollapsingHeader::new(
+                RichText::new(format!("Refs in ({})", inbound.len()))
+                    .italics()
+                    .color(theme::muted_text()),
+            )
+            .show(ui, |ui| {
+                for (node, ek) in &inbound {
+                    ref_row_spec(ui, node, *ek, workspace_root, state);
+                }
+            });
+        });
+    wire_leaf_actions(header.header_response, rec, workspace_root, state);
+}
+
+/// Wire the shared leaf interactions (hover, double-click to open, the
+/// right-click context menu) onto a leaf's response — works for both the
+/// plain `SelectableLabel` and the `CollapsingHeader` header response.
+fn wire_leaf_actions(
+    resp: egui::Response,
+    rec: &SpecRecord,
+    workspace_root: &Path,
+    state: &Arc<StdMutex<SharedState>>,
+) {
+    let resp = resp
         .on_hover_cursor(CursorIcon::PointingHand)
         .on_hover_text(format!(
             "{} — double-click to edit, right-click for history",
@@ -230,6 +309,89 @@ fn render_leaf(
             ui.close_menu();
         }
     });
+}
+
+/// A clickable ref row pointing at another spec, labelled with the edge
+/// kind. Double-click opens that spec.
+fn ref_row_spec(
+    ui: &mut egui::Ui,
+    node: &Node,
+    edge: EdgeKind,
+    workspace_root: &Path,
+    state: &Arc<StdMutex<SharedState>>,
+) {
+    let short = node.id.rsplit('/').next().unwrap_or(&node.id);
+    let mut job = LayoutJob::default();
+    job.append(
+        &format!("{} → ", edge.as_str()),
+        0.0,
+        TextFormat {
+            color: theme::faint_text(),
+            ..Default::default()
+        },
+    );
+    job.append(
+        short,
+        0.0,
+        TextFormat {
+            color: kind_color(node.kind.as_str()),
+            ..Default::default()
+        },
+    );
+    let resp = ui
+        .add(SelectableLabel::new(false, job))
+        .on_hover_cursor(CursorIcon::PointingHand)
+        .on_hover_text(format!("{} — double-click to open", node.id));
+    if resp.double_clicked() {
+        push_open(state, &node.path, workspace_root);
+    }
+}
+
+/// A clickable ref row pointing at a source file declared in the spec's
+/// `code:` frontmatter. Double-click opens that file as a code tab.
+fn ref_row_code(ui: &mut egui::Ui, code: &Path, state: &Arc<StdMutex<SharedState>>) {
+    let rel = code.to_string_lossy().replace('\\', "/");
+    let name = code
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| rel.clone());
+    let mut job = LayoutJob::default();
+    job.append(
+        "code → ",
+        0.0,
+        TextFormat {
+            color: theme::faint_text(),
+            ..Default::default()
+        },
+    );
+    job.append(
+        &name,
+        0.0,
+        TextFormat {
+            color: Color32::from_rgb(180, 220, 255),
+            ..Default::default()
+        },
+    );
+    let resp = ui
+        .add(SelectableLabel::new(false, job))
+        .on_hover_cursor(CursorIcon::PointingHand)
+        .on_hover_text(format!("{rel} — double-click to open"));
+    if resp.double_clicked() {
+        push_open_code(state, code);
+    }
+}
+
+/// Queue a code file (workspace-relative path) as an editable code tab.
+fn push_open_code(state: &Arc<StdMutex<SharedState>>, rel_path: &Path) {
+    let tab = DockTab::File {
+        path: rel_path.to_path_buf(),
+        source: FileSource::Code,
+    };
+    if let Ok(mut s) = state.lock()
+        && !s.pending_centre_tabs.contains(&tab)
+    {
+        s.pending_centre_tabs.push(tab);
+    }
 }
 
 /// Push a `DockTab::File { source: Spec }` onto the shared state's
