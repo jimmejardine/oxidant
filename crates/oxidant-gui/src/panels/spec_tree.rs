@@ -397,6 +397,24 @@ fn push_open_code(state: &Arc<StdMutex<SharedState>>, rel_path: &Path) {
     }
 }
 
+/// Load a file's contents into `SharedState::selected_preview` and queue
+/// the `Selected` tab to the front so a single click previews it
+/// read-only. See spec/components/gui/dock-layout.md "Selected preview tab".
+fn set_selected_preview(state: &Arc<StdMutex<SharedState>>, abs_path: &Path) {
+    let text = std::fs::read_to_string(abs_path);
+    if let Ok(mut s) = state.lock() {
+        s.selected_preview = Some(SelectedPreview {
+            path: abs_path.to_path_buf(),
+            text: text.as_deref().unwrap_or("").to_string(),
+            error: text.err().map(|e| e.to_string()),
+        });
+        let sel = DockTab::Selected;
+        if !s.pending_centre_tabs.contains(&sel) {
+            s.pending_centre_tabs.push(sel);
+        }
+    }
+}
+
 /// Push a `DockTab::File { source: Spec }` onto the shared state's
 /// `pending_centre_tabs` queue. The App drains the queue after
 /// `DockArea::show` and inserts the tab into the dock — we can't

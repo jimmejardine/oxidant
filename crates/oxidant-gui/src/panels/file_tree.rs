@@ -17,7 +17,7 @@ use ignore::WalkBuilder;
 
 use oxidant_spec_tools::walk_specs;
 
-use crate::app::SharedState;
+use crate::app::{SelectedPreview, SharedState};
 use crate::dock::{DockTab, FileSource};
 use crate::panels::new_item_dialog::{NewItemDialog, NewKind};
 use crate::theme;
@@ -370,6 +370,9 @@ fn wire_file_actions(
                 .map(|p| p.to_string_lossy().replace('\\', "/"))
                 .unwrap_or_else(|_| file.path.to_string_lossy().to_string())
         ));
+    if resp.clicked() {
+        set_selected_preview(state, &file.path);
+    }
     if resp.double_clicked() {
         push_open(state, &file.path, workspace_root);
     }
@@ -449,6 +452,24 @@ fn tag_for(name: &str) -> (Option<&'static str>, Color32) {
         (Some("data"), theme::faint_text())
     } else {
         (None, theme::faint_text())
+    }
+}
+
+/// Load a file's contents into `SharedState::selected_preview` and queue
+/// the `Selected` tab to the front so a single click previews it
+/// read-only. See spec/components/gui/dock-layout.md "Selected preview tab".
+fn set_selected_preview(state: &Arc<StdMutex<SharedState>>, abs_path: &Path) {
+    let text = std::fs::read_to_string(abs_path);
+    if let Ok(mut s) = state.lock() {
+        s.selected_preview = Some(SelectedPreview {
+            path: abs_path.to_path_buf(),
+            text: text.as_deref().unwrap_or("").to_string(),
+            error: text.err().map(|e| e.to_string()),
+        });
+        let sel = DockTab::Selected;
+        if !s.pending_centre_tabs.contains(&sel) {
+            s.pending_centre_tabs.push(sel);
+        }
     }
 }
 
