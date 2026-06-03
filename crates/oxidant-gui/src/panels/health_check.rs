@@ -11,7 +11,8 @@ use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::time::Instant;
 
-use egui::{Color32, CursorIcon, RichText};
+use egui::text::LayoutJob;
+use egui::{Color32, CursorIcon, RichText, SelectableLabel, TextFormat};
 use serde_json::Value;
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
@@ -268,16 +269,15 @@ fn render_subtree(
             issues.len(),
             if issues.len() == 1 { "" } else { "s" }
         );
-        let group_response = egui::CollapsingHeader::new(
-            RichText::new(header).color(theme::muted_text()),
-        )
-        .id_salt(("health_group", group_key.clone()))
-        .default_open(group_has_error)
-        .show(ui, |ui| {
-            for issue in issues {
-                render_issue(ui, state, issue);
-            }
-        });
+        let group_response =
+            egui::CollapsingHeader::new(RichText::new(header).color(theme::muted_text()))
+                .id_salt(("health_group", group_key.clone()))
+                .default_open(group_has_error)
+                .show(ui, |ui| {
+                    for issue in issues {
+                        render_issue(ui, state, issue);
+                    }
+                });
         group_response
             .header_response
             .on_hover_cursor(CursorIcon::PointingHand);
@@ -285,24 +285,51 @@ fn render_subtree(
 }
 
 fn render_issue(ui: &mut egui::Ui, state: &Arc<StdMutex<SharedState>>, issue: &HealthIssue) {
-    let sev_label = match issue.severity {
-        IssueSeverity::Error => RichText::new("[error]").color(Color32::from_rgb(247, 118, 142)),
-        IssueSeverity::Warning => RichText::new("[warn]").color(Color32::from_rgb(255, 198, 109)),
-        IssueSeverity::Note => RichText::new("[note]").color(theme::muted_text()),
+    // Build one LayoutJob containing the whole leaf — severity tag,
+    // message, optional location suffix — then add as a single
+    // SelectableLabel. Mirrors panels/spec_tree.rs::render_leaf.
+    //
+    // The reason for one widget instead of three labels in a
+    // horizontal layout: separate Label widgets each consume the
+    // hover for their own rect, leaving the outer horizontal-row
+    // response unhovered over the text — so the pointer cursor only
+    // appears in the gaps. SelectableLabel covers the whole text as
+    // a single hit region, which is what we want.
+    let (tag, tag_colour) = match issue.severity {
+        IssueSeverity::Error => ("[error] ", Color32::from_rgb(247, 118, 142)),
+        IssueSeverity::Warning => ("[warn] ", Color32::from_rgb(255, 198, 109)),
+        IssueSeverity::Note => ("[note] ", theme::muted_text()),
     };
+    let mut job = LayoutJob::default();
+    job.append(
+        tag,
+        0.0,
+        TextFormat {
+            color: tag_colour,
+            ..Default::default()
+        },
+    );
+    job.append(
+        &issue.message,
+        0.0,
+        TextFormat {
+            color: ui.visuals().text_color(),
+            ..Default::default()
+        },
+    );
+    if let Some(file) = &issue.file {
+        job.append(
+            &format!("  · {}:{}:{}", file, issue.line, issue.character),
+            0.0,
+            TextFormat {
+                color: theme::muted_text(),
+                ..Default::default()
+            },
+        );
+    }
+
     let resp = ui
-        .horizontal(|ui| {
-            ui.label(sev_label.strong());
-            ui.label(&issue.message);
-            if let Some(file) = &issue.file {
-                ui.label(
-                    RichText::new(format!("· {}:{}:{}", file, issue.line, issue.character))
-                        .color(theme::muted_text()),
-                );
-            }
-        })
-        .response
-        .interact(egui::Sense::click())
+        .add(SelectableLabel::new(false, job))
         .on_hover_cursor(CursorIcon::PointingHand)
         .on_hover_text("click to open · double-click to ask the agent in Plan mode");
 

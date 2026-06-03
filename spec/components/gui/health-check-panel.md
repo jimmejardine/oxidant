@@ -135,6 +135,8 @@ Fields are omitted when empty: `File:` is dropped when `issue.file` is `None`; `
 
 Forcing Plan mode is deliberate — double-clicking an issue is a "help me think" gesture. If the user wants the agent to immediately fix it, they flip to Implement after reading the proposal.
 
+Leaf rows are rendered as a single `egui::SelectableLabel` over a multi-segment `egui::text::LayoutJob` (severity tag in the severity colour, message in default text, location suffix in muted), matching the pattern in [[components/gui/spec-tree-panel]] and [[components/gui/file-tree-panel]]. This is what makes the pointer cursor land on the actual text rather than only on the inter-label gaps a `ui.horizontal(|ui| { ui.label(...); ui.label(...); })` layout would produce — separate `Label` widgets each consume the hover for their own rect and the outer horizontal-row response no longer reads as hovered over the text.
+
 ### Failure isolation
 
 If a check's tool returns `ToolResult::Err` or the spawned task panics, the root renders `✗ {kind} · failed: {message}` and does NOT auto-expand any subtree. The other roots are unaffected — one broken checker does not poison Run-all.
