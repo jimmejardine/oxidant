@@ -1,6 +1,6 @@
-// Agent loop unit tests with a scripted mock Provider.
+﻿// Agent loop unit tests with a scripted mock Provider.
 //
-// MockProvider takes a Vec<Vec<ChatEvent>> — one inner Vec per turn. Each
+// MockProvider takes a Vec<Vec<ChatEvent>> â€” one inner Vec per turn. Each
 // call to chat() pops the next turn's script and yields its events as a
 // stream. This lets us assert the loop's behaviour across multi-turn
 // scenarios without needing a real LLM.
@@ -92,6 +92,7 @@ async fn text_only_response_ends_after_one_iteration() {
         ctx(),
         &mut conv,
         &AgentLoopConfig::new("m"),
+        |_| {},
         |_| {},
     )
     .await
@@ -186,6 +187,7 @@ async fn tool_call_is_dispatched_and_results_feed_next_turn() {
         &mut conv,
         &AgentLoopConfig::new("m"),
         |_| {},
+        |_| {},
     )
     .await
     .unwrap();
@@ -249,6 +251,7 @@ async fn malformed_tool_args_fall_back_to_empty_object() {
         &mut conv,
         &AgentLoopConfig::new("m"),
         |_| {},
+        |_| {},
     )
     .await
     .unwrap();
@@ -283,6 +286,7 @@ async fn error_event_terminates_with_err() {
         &mut conv,
         &AgentLoopConfig::new("m"),
         |_| {},
+        |_| {},
     )
     .await
     .unwrap_err();
@@ -310,7 +314,7 @@ impl Tool for ScratchWrite {
     }
 }
 
-/// The check tool — ReadOnly. Counts how often it was invoked via shared state.
+/// The check tool â€” ReadOnly. Counts how often it was invoked via shared state.
 struct DriftCheck {
     invocations: std::sync::Arc<std::sync::atomic::AtomicUsize>,
 }
@@ -383,6 +387,7 @@ async fn post_edit_hook_fires_after_mutating_tool() {
         ctx(),
         &mut conv,
         &config_with_hook(),
+        |_| {},
         |_| {},
     )
     .await
@@ -470,6 +475,7 @@ async fn post_edit_hook_skipped_when_only_readonly_tools_used() {
         &mut conv,
         &config_with_hook(),
         |_| {},
+        |_| {},
     )
     .await
     .unwrap();
@@ -517,6 +523,7 @@ async fn post_edit_hook_silent_when_unconfigured() {
         ctx(),
         &mut conv,
         &AgentLoopConfig::new("m"),
+        |_| {},
         |_| {},
     )
     .await
@@ -575,6 +582,7 @@ async fn max_iterations_bound_returns_error() {
         ctx(),
         &mut conv,
         &config,
+        |_| {},
         |_| {},
     )
     .await
@@ -675,7 +683,7 @@ async fn tool_dispatches_eagerly_during_stream_so_elapsed_reflects_real_wait() {
     // emitting Finish. With eager dispatch, the tool's future started
     // running ~immediately on ToolUseEnd; only the await for the result
     // happens after Finish. The captured elapsed_ms is the wall clock
-    // from ToolUseEnd → result, which includes the 60ms sleep.
+    // from ToolUseEnd â†’ result, which includes the 60ms sleep.
     let mut config = AgentLoopConfig::new("m");
     config.max_iterations = 2;
     let _ = run(
@@ -684,6 +692,7 @@ async fn tool_dispatches_eagerly_during_stream_so_elapsed_reflects_real_wait() {
         ctx(),
         &mut conv,
         &config,
+        |_| {},
         |_| {},
     )
     .await
@@ -701,7 +710,7 @@ async fn tool_dispatches_eagerly_during_stream_so_elapsed_reflects_real_wait() {
     // happened on ToolUseEnd rather than after Finish.
     assert!(
         *elapsed_ms >= 50,
-        "expected elapsed_ms >= 50ms (sleep was 60ms), got {elapsed_ms}ms — dispatch is not eager"
+        "expected elapsed_ms >= 50ms (sleep was 60ms), got {elapsed_ms}ms â€” dispatch is not eager"
     );
 }
 
@@ -739,15 +748,13 @@ impl Provider for DelayedFinishTextEnvelopeProvider {
         let delay = self.delay;
         let s = stream::unfold(0u8, move |step| async move {
             match step {
-                0 => Some((
-                    ChatEvent::TextDelta("Let me check. ".into()),
-                    1,
-                )),
-                // Whole envelope arrives in one delta — incremental
+                0 => Some((ChatEvent::TextDelta("Let me check. ".into()), 1)),
+                // Whole envelope arrives in one delta â€” incremental
                 // scan should find Complete on this delta.
                 1 => Some((
                     ChatEvent::TextDelta(
-                        "<tool_call>{\"name\":\"current_time\",\"arguments\":{}}</tool_call>".into(),
+                        "<tool_call>{\"name\":\"current_time\",\"arguments\":{}}</tool_call>"
+                            .into(),
                     ),
                     2,
                 )),
@@ -803,6 +810,7 @@ async fn text_extracted_tool_dispatches_eagerly_during_stream() {
         &mut conv,
         &config,
         |_| {},
+        |_| {},
     )
     .await
     .unwrap();
@@ -816,14 +824,14 @@ async fn text_extracted_tool_dispatches_eagerly_during_stream() {
     };
     // The 60ms sleep between TextDelta (envelope) and Finish should be
     // captured in elapsed_ms because the tool's spawn happened on the
-    // delta carrying the envelope's close tag — well before Finish.
+    // delta carrying the envelope's close tag â€” well before Finish.
     assert!(
         *elapsed_ms >= 50,
-        "expected elapsed_ms >= 50ms (sleep was 60ms), got {elapsed_ms}ms — incremental text-extracted dispatch is not eager"
+        "expected elapsed_ms >= 50ms (sleep was 60ms), got {elapsed_ms}ms â€” incremental text-extracted dispatch is not eager"
     );
 
     // The committed assistant message must NOT carry the raw
-    // <tool_call> envelope text — it was stripped post-stream.
+    // <tool_call> envelope text â€” it was stripped post-stream.
     let Message::Assistant { content, .. } = &conv.messages[1] else {
         panic!("expected assistant at index 1, got {:?}", conv.messages[1]);
     };
@@ -838,4 +846,78 @@ async fn text_extracted_tool_dispatches_eagerly_during_stream() {
         !text_blocks.contains("<tool_call>"),
         "extracted envelope should have been stripped, but assistant text still contains it: {text_blocks:?}"
     );
+}
+
+#[tokio::test]
+async fn on_commit_fires_after_every_conversation_push() {
+    // Two-iteration scenario:
+    //   turn 1: assistant calls current_time → push_assistant + push_tool_result
+    //   turn 2: assistant emits text and finishes → push_assistant
+    //
+    // We expect on_commit to fire 3 times, observing message counts
+    // 2, 3, 4 (the initial conversation already has the user message).
+    let provider = MockProvider::new(vec![
+        vec![
+            ChatEvent::TextDelta("ok".into()),
+            ChatEvent::Finish {
+                stop_reason: StopReason::EndTurn,
+                usage: Usage::default(),
+            },
+        ],
+        vec![
+            ChatEvent::ToolUseStart {
+                id: "tc1".into(),
+                name: "current_time".into(),
+            },
+            ChatEvent::ToolUseInputDelta {
+                id: "tc1".into(),
+                json_delta: "{}".into(),
+            },
+            ChatEvent::ToolUseEnd { id: "tc1".into() },
+            ChatEvent::Finish {
+                stop_reason: StopReason::ToolUse,
+                usage: Usage::default(),
+            },
+        ],
+    ]);
+
+    let mut registry = ToolRegistry::new();
+    registry.register(std::sync::Arc::new(CurrentTimeStub {
+        fixed: "2026-05-22T12:00:00Z".into(),
+    }));
+
+    let mut conv = Conversation::new();
+    conv.push_user_text("time?");
+
+    let commit_snapshots = std::sync::Arc::new(std::sync::Mutex::new(Vec::<usize>::new()));
+    let commit_snapshots_for_cb = commit_snapshots.clone();
+
+    let _ = run(
+        &provider,
+        std::sync::Arc::new(registry),
+        ctx(),
+        &mut conv,
+        &AgentLoopConfig::new("m"),
+        |_| {},
+        move |c: &Conversation| {
+            commit_snapshots_for_cb
+                .lock()
+                .unwrap()
+                .push(c.messages.len());
+        },
+    )
+    .await
+    .unwrap();
+
+    // After turn 1 push_assistant: 2 messages (user, assistant_with_tool_use).
+    // After turn 1 push_tool_result: 3 messages.
+    // After turn 2 push_assistant: 4 messages.
+    let snapshots = commit_snapshots.lock().unwrap().clone();
+    assert_eq!(
+        snapshots,
+        vec![2, 3, 4],
+        "on_commit must fire after each push_assistant and push_tool_result \
+         so the GUI sees in-flight tool results before run() returns"
+    );
+    assert_eq!(conv.messages.len(), 4);
 }

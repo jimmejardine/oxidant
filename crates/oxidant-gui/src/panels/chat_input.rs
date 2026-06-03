@@ -285,6 +285,8 @@ async fn drive_agent(
 
     let event_tx_for_loop = event_tx.clone();
     let egui_ctx_for_loop = egui_ctx.clone();
+    let state_for_commit = state.clone();
+    let egui_ctx_for_commit = egui_ctx.clone();
 
     let outcome = run(
         provider.as_ref(),
@@ -295,6 +297,17 @@ async fn drive_agent(
         |ev: &ChatEvent| {
             let _ = event_tx_for_loop.send(AgentEvent::Chat(ev.clone()));
             egui_ctx_for_loop.request_repaint();
+        },
+        // Conversation commit observer: publish each push_assistant /
+        // push_tool_result / post-edit push_user_text to SharedState
+        // immediately so the transcript reflects in-flight tool results
+        // without waiting for the whole loop to return. See
+        // spec/components/core/agent-loop.md "Tool dispatch concurrency".
+        |conv: &Conversation| {
+            if let Ok(mut s) = state_for_commit.lock() {
+                s.exploration.conversation = conv.clone();
+            }
+            egui_ctx_for_commit.request_repaint();
         },
     )
     .await;

@@ -70,6 +70,14 @@ Why this is safe even for `Mutating` tools running while the model still streams
 
 Cancellation: spawned tasks receive a `ctx` clone that owns the same `CancellationToken`. A user cancel still short-circuits in-flight tool calls. If the agent-loop future itself is dropped, the spawned tasks are no longer polled and quiesce — tokio's default behaviour.
 
+Conversation commits fire a second callback so the GUI sees the loop's progress in real time. `run()` takes an `on_commit: G where G: FnMut(&Conversation)` alongside the existing `on_event: F where F: FnMut(&ChatEvent)`. `on_commit` is invoked immediately after every `conv.push_*` call inside the loop:
+
+- after `conv.push_assistant(...)` once per iteration,
+- after every `conv.push_tool_result(...)` as each spawned tool's `JoinHandle` resolves,
+- after the post-edit hook's synthetic `conv.push_user_text(...)`.
+
+Without this callback the host (`drive_agent` in [[components/gui/chat-input-panel]]) only sees the final conversation when `run()` returns — even though tool results are pushed to `conv` as each handle resolves — because the host clones the conversation in, runs the loop on the clone, and only copies it back after `run()` returns. With the callback the host publishes each snapshot to `SharedState` mid-flight, so a long tool that completes well before the model finishes streaming shows up in the transcript the moment it lands rather than after the whole turn is over.
+
 The transcript ([[components/gui/transcript-tab]]) shows `⟳ pending dispatch…` on a tool_use card whose result hasn't landed yet so the user can tell the tool is queued / running rather than the UI being frozen.
 
 ## Termination

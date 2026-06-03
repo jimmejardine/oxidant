@@ -109,19 +109,30 @@ pub struct AgentLoopOutcome {
 /// no pending tool calls, or until `max_iterations` is reached.
 ///
 /// `on_event` is invoked synchronously for every ChatEvent — use it to
-/// surface streaming output to the GUI, log, or terminal. The function
-/// returns when the loop terminates; cancellation is implicit (drop the
-/// future) per the spec.
-pub async fn run<F>(
+/// surface streaming output to the GUI, log, or terminal.
+///
+/// `on_commit` is invoked synchronously after every conversation
+/// mutation (`push_assistant`, `push_tool_result`, and the post-edit
+/// hook's synthetic user message). The GUI uses it to publish the
+/// in-progress conversation to shared state so tool results show up in
+/// the transcript the moment they land — not only after the whole
+/// loop returns. See spec/components/core/agent-loop.md
+/// "Tool dispatch concurrency".
+///
+/// The function returns when the loop terminates; cancellation is
+/// implicit (drop the future) per the spec.
+pub async fn run<F, G>(
     provider: &dyn Provider,
     registry: Arc<ToolRegistry>,
     ctx: ToolContext,
     conv: &mut Conversation,
     config: &AgentLoopConfig,
     mut on_event: F,
+    mut on_commit: G,
 ) -> anyhow::Result<AgentLoopOutcome>
 where
     F: FnMut(&ChatEvent),
+    G: FnMut(&Conversation),
 {
     let mut outcome = AgentLoopOutcome::default();
 
@@ -170,7 +181,10 @@ where
                                 text_scan_cursor = open_at;
                                 break;
                             }
-                            FindResult::Complete { range, parsed: None } => {
+                            FindResult::Complete {
+                                range,
+                                parsed: None,
+                            } => {
                                 // Parse failure — advance past, leave
                                 // the bytes in acc.text so the user
                                 // sees something went wrong.
@@ -203,9 +217,7 @@ where
                                 let ctx_for_task = ctx.clone();
                                 let name = call.name.clone();
                                 let handle = tokio::spawn(async move {
-                                    registry_for_task
-                                        .invoke(&name, input, &ctx_for_task)
-                                        .await
+                                    registry_for_task.invoke(&name, input, &ctx_for_task).await
                                 });
                                 pending.insert(id, (Instant::now(), handle));
                                 extracted_ranges.push(range.clone());
@@ -297,6 +309,7 @@ where
         let assistant_content = build_assistant_blocks(&acc);
         let has_tool_calls = !acc.order.is_empty();
         conv.push_assistant(assistant_content, acc.stop_reason, Some(acc.usage));
+        on_commit(conv);
 
         if !has_tool_calls {
             return Ok(outcome);
@@ -337,6 +350,7 @@ where
                 ToolResult::Err(e) => (ToolResultContent::Text(e), true),
             };
             conv.push_tool_result(id, content, is_error, elapsed_ms);
+            on_commit(conv);
         }
 
         // Post-edit hook — see spec/components/core/agent-loop.md.
@@ -352,6 +366,7 @@ where
                     .await;
                 let message = format_post_edit_check(check_tool, &result);
                 conv.push_user_text(message);
+                on_commit(conv);
                 outcome.post_edit_checks_fired += 1;
             } else {
                 tracing::warn!("post_edit_check_tool {check_tool:?} not registered; skipping");
