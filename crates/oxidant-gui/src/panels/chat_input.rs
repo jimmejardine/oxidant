@@ -151,10 +151,7 @@ fn render_mode_chip(ui: &mut egui::Ui, mode: AgentMode, streaming: bool) -> bool
     if streaming {
         text = text.color(theme::muted_text());
     }
-    let resp = ui.add_enabled(
-        !streaming,
-        egui::Button::new(text).frame(false),
-    );
+    let resp = ui.add_enabled(!streaming, egui::Button::new(text).frame(false));
     resp.on_hover_text("Shift+Tab to toggle mode (or click).")
         .clicked()
 }
@@ -262,8 +259,8 @@ async fn drive_agent(
 
     let outcome = run(
         provider.as_ref(),
-        registry.as_ref(),
-        &ctx,
+        registry,
+        ctx,
         &mut conv,
         &config,
         |ev: &ChatEvent| {

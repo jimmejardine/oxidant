@@ -6,9 +6,10 @@
 // scenarios without needing a real LLM.
 
 use std::sync::Mutex;
+use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::stream::BoxStream;
+use futures::stream::{self, BoxStream, StreamExt};
 use serde_json::json;
 
 use oxidant_core::{
@@ -87,8 +88,8 @@ async fn text_only_response_ends_after_one_iteration() {
 
     let outcome = run(
         &provider,
-        &registry,
-        &ctx(),
+        std::sync::Arc::new(registry),
+        ctx(),
         &mut conv,
         &AgentLoopConfig::new("m"),
         |_| {},
@@ -180,8 +181,8 @@ async fn tool_call_is_dispatched_and_results_feed_next_turn() {
 
     let outcome = run(
         &provider,
-        &registry,
-        &ctx(),
+        std::sync::Arc::new(registry),
+        ctx(),
         &mut conv,
         &AgentLoopConfig::new("m"),
         |_| {},
@@ -243,8 +244,8 @@ async fn malformed_tool_args_fall_back_to_empty_object() {
 
     let outcome = run(
         &provider,
-        &registry,
-        &ctx(),
+        std::sync::Arc::new(registry),
+        ctx(),
         &mut conv,
         &AgentLoopConfig::new("m"),
         |_| {},
@@ -277,8 +278,8 @@ async fn error_event_terminates_with_err() {
 
     let err = run(
         &provider,
-        &registry,
-        &ctx(),
+        std::sync::Arc::new(registry),
+        ctx(),
         &mut conv,
         &AgentLoopConfig::new("m"),
         |_| {},
@@ -378,8 +379,8 @@ async fn post_edit_hook_fires_after_mutating_tool() {
 
     let outcome = run(
         &provider,
-        &registry,
-        &ctx(),
+        std::sync::Arc::new(registry),
+        ctx(),
         &mut conv,
         &config_with_hook(),
         |_| {},
@@ -464,8 +465,8 @@ async fn post_edit_hook_skipped_when_only_readonly_tools_used() {
 
     let outcome = run(
         &provider,
-        &registry,
-        &ctx(),
+        std::sync::Arc::new(registry),
+        ctx(),
         &mut conv,
         &config_with_hook(),
         |_| {},
@@ -512,8 +513,8 @@ async fn post_edit_hook_silent_when_unconfigured() {
     // No post_edit_check_tool configured.
     let outcome = run(
         &provider,
-        &registry,
-        &ctx(),
+        std::sync::Arc::new(registry),
+        ctx(),
         &mut conv,
         &AgentLoopConfig::new("m"),
         |_| {},
@@ -568,8 +569,138 @@ async fn max_iterations_bound_returns_error() {
     let mut config = AgentLoopConfig::new("m");
     config.max_iterations = 2;
 
-    let err = run(&provider, &registry, &ctx(), &mut conv, &config, |_| {})
-        .await
-        .unwrap_err();
+    let err = run(
+        &provider,
+        std::sync::Arc::new(registry),
+        ctx(),
+        &mut conv,
+        &config,
+        |_| {},
+    )
+    .await
+    .unwrap_err();
     assert!(err.to_string().contains("max_iterations"));
+}
+
+// ---------------------------------------------------------------- timing
+
+/// Provider that yields a tool_use, then sleeps before emitting Finish
+/// on the FIRST call; on subsequent calls returns plain EndTurn so the
+/// agent loop terminates. Exercises the "eager dispatch on ToolUseEnd"
+/// path: the tool's spawned future should be running during the sleep,
+/// so its elapsed_ms reflects the delay rather than zero.
+struct DelayedFinishProvider {
+    delay: Duration,
+    calls: Mutex<u32>,
+}
+
+#[async_trait]
+impl Provider for DelayedFinishProvider {
+    async fn chat(&self, _req: ChatRequest) -> anyhow::Result<BoxStream<'static, ChatEvent>> {
+        let n = {
+            let mut g = self.calls.lock().unwrap();
+            *g += 1;
+            *g
+        };
+        if n > 1 {
+            // Second turn: model "replies" to the tool result and ends.
+            let s = stream::iter(vec![
+                ChatEvent::TextDelta("done".into()),
+                ChatEvent::Finish {
+                    stop_reason: StopReason::EndTurn,
+                    usage: Usage::default(),
+                },
+            ]);
+            return Ok(s.boxed());
+        }
+        let delay = self.delay;
+        // First turn: hand-roll the stream so we can sleep between events.
+        let s = stream::unfold(0u8, move |step| async move {
+            match step {
+                0 => Some((
+                    ChatEvent::ToolUseStart {
+                        id: "tc1".into(),
+                        name: "current_time".into(),
+                    },
+                    1,
+                )),
+                1 => Some((
+                    ChatEvent::ToolUseInputDelta {
+                        id: "tc1".into(),
+                        json_delta: "{}".into(),
+                    },
+                    2,
+                )),
+                2 => Some((ChatEvent::ToolUseEnd { id: "tc1".into() }, 3)),
+                3 => {
+                    tokio::time::sleep(delay).await;
+                    Some((
+                        ChatEvent::Finish {
+                            stop_reason: StopReason::EndTurn,
+                            usage: Usage::default(),
+                        },
+                        4,
+                    ))
+                }
+                _ => None,
+            }
+        });
+        Ok(s.boxed())
+    }
+    fn capabilities(&self) -> ProviderCapabilities {
+        ProviderCapabilities {
+            tool_use: true,
+            ..Default::default()
+        }
+    }
+    fn name(&self) -> &str {
+        "delayed-finish-mock"
+    }
+}
+
+#[tokio::test]
+async fn tool_dispatches_eagerly_during_stream_so_elapsed_reflects_real_wait() {
+    let provider = DelayedFinishProvider {
+        delay: Duration::from_millis(60),
+        calls: Mutex::new(0),
+    };
+    let mut registry = ToolRegistry::new();
+    registry.register(std::sync::Arc::new(CurrentTimeStub {
+        fixed: "2026-06-03T12:00:00Z".into(),
+    }));
+    let mut conv = Conversation::new();
+    conv.push_user_text("what time is it?");
+
+    // The model emits ToolUseEnd up front, then sleeps for 60ms before
+    // emitting Finish. With eager dispatch, the tool's future started
+    // running ~immediately on ToolUseEnd; only the await for the result
+    // happens after Finish. The captured elapsed_ms is the wall clock
+    // from ToolUseEnd → result, which includes the 60ms sleep.
+    let mut config = AgentLoopConfig::new("m");
+    config.max_iterations = 2;
+    let _ = run(
+        &provider,
+        std::sync::Arc::new(registry),
+        ctx(),
+        &mut conv,
+        &config,
+        |_| {},
+    )
+    .await
+    .unwrap();
+
+    // First message is the user, second is the assistant, third is the
+    // tool result. Pull elapsed_ms off the latter.
+    let Message::ToolResult { elapsed_ms, .. } = &conv.messages[2] else {
+        panic!(
+            "expected tool result at index 2, got {:?}",
+            conv.messages[2]
+        );
+    };
+    // Allow generous slack for CI jitter; the floor proves the spawn
+    // happened on ToolUseEnd rather than after Finish.
+    assert!(
+        *elapsed_ms >= 50,
+        "expected elapsed_ms >= 50ms (sleep was 60ms), got {elapsed_ms}ms — dispatch is not eager"
+    );
 }

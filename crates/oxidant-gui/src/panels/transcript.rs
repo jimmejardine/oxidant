@@ -216,6 +216,16 @@ fn render_block(
                 ui.code(&pretty);
                 if let Some(r) = result {
                     render_tool_result_nested(ui, id.with("result"), r);
+                } else {
+                    // Eager dispatch fired on ToolUseEnd but the result
+                    // hasn't been committed to the conversation yet — let
+                    // the user know the tool is in flight, not frozen.
+                    // See spec/components/core/agent-loop.md "Tool
+                    // dispatch concurrency".
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Spinner::new().size(12.0));
+                        ui.label(RichText::new("pending dispatch…").color(theme::muted_text()));
+                    });
                 }
             });
         }

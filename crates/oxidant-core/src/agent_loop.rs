@@ -8,11 +8,13 @@
 // caller, matching the spec's "loop runs on a tokio task" model.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::anyhow;
 use futures::StreamExt;
 use serde_json::Value;
+use tokio::task::JoinHandle;
 
 use oxidant_providers::{
     ChatEvent, ChatRequest, ContentPart, Provider, RequestMessage, Role, StopReason,
@@ -112,8 +114,8 @@ pub struct AgentLoopOutcome {
 /// future) per the spec.
 pub async fn run<F>(
     provider: &dyn Provider,
-    registry: &ToolRegistry,
-    ctx: &ToolContext,
+    registry: Arc<ToolRegistry>,
+    ctx: ToolContext,
     conv: &mut Conversation,
     config: &AgentLoopConfig,
     mut on_event: F,
@@ -126,7 +128,7 @@ where
     for iteration in 0..config.max_iterations {
         outcome.iterations = iteration + 1;
 
-        let request = build_request(conv, registry, config);
+        let request = build_request(conv, &registry, config);
         tracing::debug!(
             iter = iteration,
             messages = request.messages.len(),
@@ -137,6 +139,11 @@ where
         let mut stream = provider.chat(request).await?;
         let mut acc = TurnAccumulator::default();
         let mut error_text: Option<String> = None;
+        // Per-tool join handles, populated on ToolUseEnd and awaited in
+        // acc.order after Finish. See "Tool dispatch concurrency" in
+        // spec/components/core/agent-loop.md.
+        let mut pending: HashMap<String, (Instant, JoinHandle<ToolResult>)> = HashMap::new();
+        let mut any_mutating = false;
 
         while let Some(event) = stream.next().await {
             on_event(&event);
@@ -158,8 +165,24 @@ where
                         tc.input_buffer.push_str(&json_delta);
                     }
                 }
-                ChatEvent::ToolUseEnd { .. } => {
-                    // input is fully accumulated; we parse below.
+                ChatEvent::ToolUseEnd { id } => {
+                    // Inputs are fully accumulated — kick off the tool
+                    // NOW rather than waiting for Finish. The future runs
+                    // concurrently with the rest of the stream.
+                    if let Some(tc) = acc.tool_calls.get(&id) {
+                        let input = parse_tool_input(&tc.input_buffer);
+                        if tool_is_mutating(&registry, &tc.name) {
+                            any_mutating = true;
+                        }
+                        tracing::debug!(tool = %tc.name, id = %id, "dispatching tool");
+                        let registry_for_task = registry.clone();
+                        let ctx_for_task = ctx.clone();
+                        let name = tc.name.clone();
+                        let handle = tokio::spawn(async move {
+                            registry_for_task.invoke(&name, input, &ctx_for_task).await
+                        });
+                        pending.insert(id, (Instant::now(), handle));
+                    }
                 }
                 ChatEvent::Finish { stop_reason, usage } => {
                     acc.stop_reason = Some(stop_reason);
@@ -200,17 +223,34 @@ where
             return Ok(outcome);
         }
 
-        // Dispatch every tool call the model made this turn.
-        let mut any_mutating = false;
+        // Tool dispatch: spawned-on-ToolUseEnd above. If text-tool-call
+        // extraction produced tool calls AFTER the stream ended, those
+        // weren't spawned during the loop — fall back to inline dispatch
+        // for any id in acc.order without a pending handle.
         for id in &acc.order {
-            let tc = acc.tool_calls.get(id).expect("tool call we just inserted");
-            let input = parse_tool_input(&tc.input_buffer);
-            tracing::debug!(tool = %tc.name, id = %id, "dispatching tool");
-            if tool_is_mutating(registry, &tc.name) {
-                any_mutating = true;
-            }
-            let start = Instant::now();
-            let result = registry.invoke(&tc.name, input, ctx).await;
+            let (start, handle) = if let Some(entry) = pending.remove(id) {
+                entry
+            } else {
+                // Text-tool-call fallback: never went through ToolUseEnd
+                // because the provider emitted as plain text. Spawn now.
+                let tc = acc.tool_calls.get(id).expect("tool call in acc.order");
+                let input = parse_tool_input(&tc.input_buffer);
+                if tool_is_mutating(&registry, &tc.name) {
+                    any_mutating = true;
+                }
+                tracing::debug!(tool = %tc.name, id = %id, "dispatching (text-tool-call) tool");
+                let registry_for_task = registry.clone();
+                let ctx_for_task = ctx.clone();
+                let name = tc.name.clone();
+                let handle = tokio::spawn(async move {
+                    registry_for_task.invoke(&name, input, &ctx_for_task).await
+                });
+                (Instant::now(), handle)
+            };
+            let result = match handle.await {
+                Ok(r) => r,
+                Err(join_err) => ToolResult::Err(format!("tool task panicked: {join_err}")),
+            };
             let elapsed_ms = start.elapsed().as_millis() as u64;
             outcome.tool_calls_dispatched += 1;
             let (content, is_error) = match result {
@@ -228,7 +268,7 @@ where
                     .invoke(
                         check_tool,
                         serde_json::Value::Object(Default::default()),
-                        ctx,
+                        &ctx,
                     )
                     .await;
                 let message = format_post_edit_check(check_tool, &result);
@@ -624,7 +664,9 @@ mod tests {
         config.system_prompt = Some("Be terse.".to_string());
 
         let req = build_request(&conv, &registry, &config);
-        let system = req.system.expect("plan mode should produce a system prompt");
+        let system = req
+            .system
+            .expect("plan mode should produce a system prompt");
         assert!(
             system.starts_with("Be terse."),
             "caller's prompt should lead: {system:?}"
@@ -644,7 +686,9 @@ mod tests {
         config.system_prompt = None;
 
         let req = build_request(&conv, &registry, &config);
-        let system = req.system.expect("plan mode should produce a system prompt");
+        let system = req
+            .system
+            .expect("plan mode should produce a system prompt");
         assert!(system.contains("PLAN MODE"));
         // Suffix's natural leading whitespace is trimmed when standalone.
         assert!(system.starts_with("You are currently in PLAN MODE"));

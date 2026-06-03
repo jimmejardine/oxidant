@@ -38,6 +38,10 @@ pub enum ToolResult {
     Err(String),
 }
 
+/// Cheap to clone: workspace_root and exploration_id are owned strings;
+/// CancellationToken is Arc-backed. The agent_loop clones this once per
+/// spawned tool task so each tokio task has its own `'static` copy.
+#[derive(Clone)]
 pub struct ToolContext {
     pub workspace_root: Utf8PathBuf,
     pub exploration_id: String,

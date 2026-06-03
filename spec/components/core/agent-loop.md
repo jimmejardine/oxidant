@@ -52,6 +52,22 @@ loop {
 
 Tool-use deltas may arrive as fragmented JSON over many SSE events. The loop concatenates `ToolUseInputDelta.json_delta` per `id` and parses at `ToolUseEnd`. Parse failure → synthesise a `ToolResult::Err` instead of throwing, so the model gets a chance to retry.
 
+## Tool dispatch concurrency
+
+Tool dispatch is **eager and parallel**. The instant `ChatEvent::ToolUseEnd { id }` arrives — well before the model finishes streaming the rest of its turn — the loop parses the tool's input and `tokio::spawn`s `registry.invoke(name, input, ctx)` into a `JoinHandle`, keyed by call id, alongside its start `Instant`. The stream continues to accumulate any remaining text, thinking, and further tool_use events in parallel with the tool actually running.
+
+After the stream's `Finish` event:
+
+1. `conv.push_assistant(content, stop_reason, usage)` commits the assistant message first — `Message::Assistant` must precede any `Message::ToolResult` in the conversation so providers see a consistent prior-turn history on the next request.
+2. The loop walks `acc.order` (the emit-order list of call ids), awaits each `JoinHandle`, computes `elapsed_ms = start.elapsed()` from the captured Instant, and calls `conv.push_tool_result(id, content, is_error, elapsed_ms)`. Awaiting in `acc.order` preserves emit order regardless of which tool actually completes first.
+3. A `JoinError` (panic in the spawned task) becomes `ToolResult::Err("panic: …")` so the model gets a clean error instead of the loop dying.
+
+Why this is safe even for `Mutating` tools running while the model still streams: the model's emission for the current turn is already encoded server-side by the time `ToolUseEnd` arrives — the model can't observe and re-plan based on tools running concurrently. The tool runs no later than the previous "wait-for-Finish" design; only earlier. Wall-clock savings = `Finish_time - ToolUseEnd_time` per tool, which for wordy models or multi-tool turns is often several seconds.
+
+Cancellation: spawned tasks receive a `ctx` clone that owns the same `CancellationToken`. A user cancel still short-circuits in-flight tool calls. If the agent-loop future itself is dropped, the spawned tasks are no longer polled and quiesce — tokio's default behaviour.
+
+The transcript ([[components/gui/transcript-tab]]) shows `⟳ pending dispatch…` on a tool_use card whose result hasn't landed yet so the user can tell the tool is queued / running rather than the UI being frozen.
+
 ## Termination
 
 The loop returns when:
