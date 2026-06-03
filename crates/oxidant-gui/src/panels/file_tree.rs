@@ -400,7 +400,11 @@ fn ref_row_spec(
     workspace_root: &Path,
     state: &Arc<StdMutex<SharedState>>,
 ) {
-    let short = sr.canonical_id.rsplit('/').next().unwrap_or(&sr.canonical_id);
+    let short = sr
+        .canonical_id
+        .rsplit('/')
+        .next()
+        .unwrap_or(&sr.canonical_id);
     let mut job = LayoutJob::default();
     job.append(
         short,
