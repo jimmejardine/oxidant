@@ -344,7 +344,10 @@ fn ref_row_spec(
     let resp = ui
         .add(SelectableLabel::new(false, job))
         .on_hover_cursor(CursorIcon::PointingHand)
-        .on_hover_text(format!("{} — click to preview, double-click to open", node.id));
+        .on_hover_text(format!(
+            "{} — click to preview, double-click to open",
+            node.id
+        ));
     if resp.clicked() {
         set_selected_preview(state, &node.path);
     }

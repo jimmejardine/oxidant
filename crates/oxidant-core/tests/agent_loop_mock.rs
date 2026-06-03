@@ -1,4 +1,4 @@
-﻿// Agent loop unit tests with a scripted mock Provider.
+// Agent loop unit tests with a scripted mock Provider.
 //
 // MockProvider takes a Vec<Vec<ChatEvent>> â€” one inner Vec per turn. Each
 // call to chat() pops the next turn's script and yields its events as a
@@ -789,10 +789,7 @@ impl Provider for TextEnvelopeThenFinishProvider {
                     ),
                     2,
                 )),
-                2 => Some((
-                    ChatEvent::TextDelta(" The time is 12:34 UTC.".into()),
-                    3,
-                )),
+                2 => Some((ChatEvent::TextDelta(" The time is 12:34 UTC.".into()), 3)),
                 3 => Some((
                     ChatEvent::TextDelta(
                         "<tool_call>{\"name\":\"current_time\",\"arguments\":{}}</tool_call>"
