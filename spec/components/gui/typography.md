@@ -11,8 +11,7 @@ code:
   - crates/oxidant-gui/src/viewport.rs
   - crates/oxidant-gui/src/app.rs
 status: active
-responsibility: |
-  Single-size uniform typography across every panel, with broad-Unicode bundled fonts and a user-controllable global zoom factor (scroll-wheel hotkey, Ctrl+0 reset, settings slider) persisted across launches.
+responsibility: "Single-size uniform typography across every panel, with broad-Unicode bundled fonts. Describes the user-facing zoom factor behavior (scroll-wheel hotkey, Ctrl+0 reset, settings slider); settings persistence is owned by [[components/config/settings]]."
 ```
 
 ## Bundled fonts

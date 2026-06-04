@@ -4,7 +4,8 @@ kind: component
 parent: overview
 order: 1
 implements: []
-depends_on: []
+depends_on:
+  - components/gui/typography
 code:
   - crates/oxidant-config/src/settings.rs
 status: active
