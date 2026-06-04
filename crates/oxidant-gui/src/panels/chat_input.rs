@@ -139,15 +139,13 @@ impl ChatInputPanel {
         // when `enter_sends` is on, plain Enter sends too while Shift+Enter
         // (the SHIFT modifier is left untouched) still inserts a newline.
         // See spec/components/gui/chat-input-panel.md "Keybindings".
-        let key_send = !streaming
-            && chat_input_focused
-            && {
-                let mut s = ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Enter));
-                if enter_sends {
-                    s |= ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
-                }
-                s
-            };
+        let key_send = !streaming && chat_input_focused && {
+            let mut s = ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Enter));
+            if enter_sends {
+                s |= ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
+            }
+            s
+        };
 
         // Header row: mode chip · model · send/cancel.
         ui.horizontal(|ui| {
