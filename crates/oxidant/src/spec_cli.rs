@@ -209,6 +209,7 @@ fn build_ctx(workspace: &std::path::Path) -> anyhow::Result<ToolContext> {
         workspace_root: utf8,
         exploration_id: "cli".to_string(),
         cancellation: CancellationToken::new(),
+        ui: None,
     })
 }
 
@@ -355,7 +356,10 @@ fn print_for_file(value: &Value) {
 
 fn print_coverage(value: &Value) {
     let count = value.get("count").and_then(Value::as_u64).unwrap_or(0);
-    let covered = value.get("covered_count").and_then(Value::as_u64).unwrap_or(0);
+    let covered = value
+        .get("covered_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     let seeds = value.get("seed_count").and_then(Value::as_u64).unwrap_or(0);
     if let Some(missing) = value.get("missing_seeds").and_then(Value::as_array)
         && !missing.is_empty()
@@ -368,10 +372,14 @@ fn print_coverage(value: &Value) {
         }
     }
     if count == 0 {
-        println!("spec coverage: every source file is reachable from a spec ({seeds} seeds, {covered} covered)");
+        println!(
+            "spec coverage: every source file is reachable from a spec ({seeds} seeds, {covered} covered)"
+        );
         return;
     }
-    println!("spec coverage: {count} file(s) not reachable from any spec ({seeds} seeds, {covered} covered)");
+    println!(
+        "spec coverage: {count} file(s) not reachable from any spec ({seeds} seeds, {covered} covered)"
+    );
     let mut last_crate = String::new();
     if let Some(arr) = value.get("uncovered").and_then(Value::as_array) {
         for u in arr {

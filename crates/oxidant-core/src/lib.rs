@@ -22,4 +22,4 @@ pub use agent_loop::{
 pub use conversation::Conversation;
 pub use exploration::{Exploration, ExplorationId, ExplorationKind, ExplorationSummary, LspHandle};
 pub use message::{ContentBlock, ImageSource, Message, ToolResultContent};
-pub use registry::{Tool, ToolCategory, ToolContext, ToolRegistry, ToolResult};
+pub use registry::{Tool, ToolCategory, ToolContext, ToolRegistry, ToolResult, UiBridge};

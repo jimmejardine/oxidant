@@ -22,6 +22,7 @@ pub mod graph_layout;
 pub mod highlighter;
 pub mod panels;
 pub mod theme;
+pub mod ui_bridge;
 pub mod viewport;
 
 pub use app::App;

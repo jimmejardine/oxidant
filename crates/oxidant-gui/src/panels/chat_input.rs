@@ -396,6 +396,11 @@ async fn drive_agent(
         workspace_root: workspace_camino,
         exploration_id,
         cancellation: cancellation.clone(),
+        ui: Some(Arc::new(crate::ui_bridge::GuiBridge {
+            state: state.clone(),
+            view_id,
+            egui_ctx: egui_ctx.clone(),
+        })),
     };
 
     let mut config = AgentLoopConfig::new(model);

@@ -58,6 +58,26 @@ pub enum ToolResult {
 - Tools are pure modulo `ToolContext` — same `(args, ctx)` produces the same `ToolResult` on a quiescent filesystem. See [[invariants/explorations-are-isolated]].
 - Tools must respect `ctx.workspace_root` — no escape to other explorations' worktrees.
 
+## UiBridge
+
+For the rare tool that genuinely needs to defer to the user mid-iteration — currently only [[tools/ask-user]] — `ToolContext` carries an optional `ui: Option<Arc<dyn UiBridge>>`. The trait is one method:
+
+```rust
+#[async_trait]
+pub trait UiBridge: Send + Sync {
+    async fn ask_user(
+        &self,
+        question: String,
+        options: Vec<String>,
+        allow_freeform: bool,
+    ) -> anyhow::Result<String>;
+}
+```
+
+The host provides the implementation: the GUI's `GuiBridge` posts the question into per-window state and `await`s a `tokio::sync::oneshot::Receiver` fulfilled by the user clicking Submit; CLI / headless contexts pass `ui: None`. Tools requiring user input MUST return `ToolResult::Err` with a descriptive message when `ctx.ui.is_none()` rather than block, retry, or hallucinate an answer.
+
+A tool may `.await` on the bridge without harming concurrency — the agent loop already `tokio::spawn`s every tool invocation onto its own task. Concurrent native tools continue while one tool is parked on a user response.
+
 ## Implementors
 
 - Generic: [[components/tools/fs]], [[components/tools/bash-runner]], [[components/tools/edit]]

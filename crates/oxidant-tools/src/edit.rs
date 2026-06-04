@@ -308,6 +308,7 @@ mod tests {
             workspace_root: Utf8PathBuf::from_path_buf(dunce::canonicalize(dir).unwrap()).unwrap(),
             exploration_id: "test".into(),
             cancellation: CancellationToken::new(),
+            ui: None,
         }
     }
 

@@ -24,6 +24,7 @@ use crate::panels::{
     exploration_list::ExplorationListPanel, file_tab::FileTabPanel, file_tree::FileTreePanel,
     health_check::HealthCheckPanel, merge_conflicts::MergeConflictsPanel, settings::SettingsPanel,
     spec_graph::SpecGraphPanel, spec_tree::SpecTreePanel, transcript::TranscriptPanel,
+    user_question::UserQuestionPanel,
 };
 use crate::theme::Theme;
 use crate::viewport::ViewportConfig;
@@ -52,6 +53,9 @@ pub struct App {
     settings_panel: SettingsPanel,
     exploration_list_panel: ExplorationListPanel,
     merge_conflicts_panel: MergeConflictsPanel,
+    /// Modal that fulfils a pending `ask_user` tool call in the main
+    /// window. See spec/tools/ask-user.md.
+    user_question_panel: UserQuestionPanel,
     /// One DiffHistory panel per open path. Lazily inserted when the tab
     /// first paints; entries leak across tab close in MVP (cheap state,
     /// at most a handful per session). See
@@ -142,6 +146,7 @@ pub struct SharedState {
 pub struct SubWindow {
     pub view_id: ExplorationId,
     pub chat_panel: ChatInputPanel,
+    pub user_question_panel: UserQuestionPanel,
 }
 
 impl SubWindow {
@@ -149,6 +154,7 @@ impl SubWindow {
         Self {
             view_id,
             chat_panel: ChatInputPanel::new(),
+            user_question_panel: UserQuestionPanel::new(),
         }
     }
 }
@@ -158,7 +164,7 @@ impl SubWindow {
 /// them per-window means two windows can stream independent turns
 /// against different explorations without their state colliding.
 /// Routed by `AgentEvent.viewport_id`.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct PerWindowState {
     pub live_turn: Option<LiveTurn>,
     pub last_outcome: Option<TurnOutcome>,
@@ -166,6 +172,27 @@ pub struct PerWindowState {
     /// from the exploration's own `cancellation`, which tears down
     /// the whole exploration.
     pub cancellation: Option<CancellationToken>,
+    /// An in-flight `ask_user` tool call awaiting an answer from
+    /// the user in this window. Some when a question is pending;
+    /// `UserQuestionPanel::render` consumes it on Submit by `take()`
+    /// + sending on the oneshot. See spec/tools/ask-user.md.
+    pub pending_question: Option<PendingUserQuestion>,
+}
+
+/// An in-flight `ask_user` request: the question, the precanned
+/// options, whether to render the free-form fallback, and the
+/// oneshot sender that fulfills the tool's awaiting future.
+///
+/// Not `Clone` (the Sender isn't); lives by `Option::take()` only.
+pub struct PendingUserQuestion {
+    pub question: String,
+    pub options: Vec<String>,
+    pub allow_freeform: bool,
+    /// Consumed when the user clicks Submit. If the window or turn
+    /// is dropped before the user answers, the Sender drops and the
+    /// tool's Receiver errors — surfaced as "user cancelled" in the
+    /// conversation.
+    pub answer_tx: tokio::sync::oneshot::Sender<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -488,6 +515,7 @@ impl App {
             settings_panel,
             exploration_list_panel: ExplorationListPanel::new(),
             merge_conflicts_panel: MergeConflictsPanel::new(),
+            user_question_panel: UserQuestionPanel::new(),
             diff_history_panels: HashMap::new(),
             config,
             dock: default_layout(),
@@ -629,6 +657,16 @@ impl eframe::App for App {
         DockArea::new(&mut self.dock)
             .style(Style::from_egui(ctx.style().as_ref()))
             .show(ctx, &mut viewer);
+
+        // ask_user modal — renders on top of the dock when a tool has
+        // posted a pending question for the main window's view. See
+        // spec/tools/ask-user.md.
+        if self
+            .user_question_panel
+            .render(ctx, &self.state, main_view_id)
+        {
+            ctx.request_repaint();
+        }
 
         // Drain any tab-open requests pushed by panels during render
         // (the spec tree's double-click handler is the main caller).
@@ -777,6 +815,13 @@ fn render_sub_window(
             s.pending_continue = Some(new_max);
         }
     });
+    // ask_user modal for this sub-window. Rendered after the
+    // central panel so it overlays the transcript when a question
+    // is posted on this view.
+    let mut sub_locked = sub.lock().unwrap();
+    if sub_locked.user_question_panel.render(ctx, state, view_id) {
+        ctx.request_repaint();
+    }
 }
 
 fn apply_event(state: &mut SharedState, ev: AgentEvent) {

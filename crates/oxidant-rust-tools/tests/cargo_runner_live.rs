@@ -16,6 +16,7 @@ fn ctx_for(dir: &Path) -> ToolContext {
         workspace_root: Utf8PathBuf::from_path_buf(dunce::canonicalize(dir).unwrap()).unwrap(),
         exploration_id: "live-test".into(),
         cancellation: CancellationToken::new(),
+        ui: None,
     }
 }
 

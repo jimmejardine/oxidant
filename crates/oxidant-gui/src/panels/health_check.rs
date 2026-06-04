@@ -504,6 +504,7 @@ async fn invoke_check(
         workspace_root: workspace_camino,
         exploration_id: exploration_id.to_string(),
         cancellation: CancellationToken::new(),
+        ui: None,
     };
     let tool_name = kind.tool_name();
     match registry

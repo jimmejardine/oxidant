@@ -63,6 +63,7 @@ fn ctx() -> ToolContext {
         workspace_root: camino::Utf8PathBuf::from("."),
         exploration_id: "test".to_string(),
         cancellation: CancellationToken::new(),
+        ui: None,
     }
 }
 
@@ -1088,6 +1089,7 @@ async fn cancel_before_run_short_circuits_without_calling_provider() {
         workspace_root: camino::Utf8PathBuf::from("."),
         exploration_id: "test".to_string(),
         cancellation: token,
+        ui: None,
     };
     let mut conv = Conversation::new();
     conv.push_user_text("hi");
@@ -1125,6 +1127,7 @@ async fn cancel_during_stream_returns_promptly() {
         workspace_root: camino::Utf8PathBuf::from("."),
         exploration_id: "test".to_string(),
         cancellation: token.clone(),
+        ui: None,
     };
     let mut conv = Conversation::new();
     conv.push_user_text("hi");

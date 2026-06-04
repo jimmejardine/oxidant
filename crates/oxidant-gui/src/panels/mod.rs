@@ -11,3 +11,4 @@ pub mod slash_commands;
 pub mod spec_graph;
 pub mod spec_tree;
 pub mod transcript;
+pub mod user_question;

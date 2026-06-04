@@ -92,6 +92,10 @@ Subsequent fills overwrite: only the most recent `Some(...)` value is honoured, 
 
 Slash command parsing and execution is specified in [[chat-input-panel-commands]]. The chat input panel drains `/clear`, `/compact`, and unknown commands from the draft before dispatch.
 
+## UiBridge for ask_user
+
+`spawn_agent_inner` constructs a `GuiBridge` (`crates/oxidant-gui/src/ui_bridge.rs`) per agent-loop spawn and attaches it to `ToolContext.ui`. The bridge captures the spawning window's `view_id`, an `Arc<Mutex<SharedState>>`, and the `egui::Context`. When [[tools/ask-user]] is invoked, the bridge posts a `PendingUserQuestion` into `state.windows[view_id].pending_question` and awaits a oneshot answer. The `UserQuestionPanel` modal renders at the end of each frame (after the dock) and on Submit takes the question out of state and sends the answer through the oneshot. The modal is per-window — sub-windows show their own modal and never see the main window's pending question.
+
 ## Continue iterating
 
 When the most recent `TurnOutcome` has `hit_max_iterations == true`, the [[components/gui/transcript-tab]] renders a `▶ Continue iterating (+N)` button beneath the red error label. Clicking it resumes the *same* conversation — **no new user message is appended** — with `max_iterations + N` (`N = 20`). Repeat clicks compound: second click 50, third 70, …
