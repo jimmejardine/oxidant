@@ -7,6 +7,7 @@ implements: []
 depends_on:
   - components/gui/viewport
   - components/config/settings
+  - components/gui/typography
 code:
   - crates/oxidant-gui/src/theme.rs
 status: active
