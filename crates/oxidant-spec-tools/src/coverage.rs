@@ -151,8 +151,7 @@ fn build_graph(repo: &Path) -> Graph {
         let refs = file_references(repo, f);
         let mut targets: BTreeSet<String> = BTreeSet::new();
         for segs in refs {
-            if let Some(target) =
-                resolve(&segs, &krate, cur_mod.as_deref(), &crate_idents, &modmap)
+            if let Some(target) = resolve(&segs, &krate, cur_mod.as_deref(), &crate_idents, &modmap)
                 && &target != f
             {
                 targets.insert(target);
@@ -216,7 +215,9 @@ fn map_module(
         return; // already mapped (lib root wins over later visits)
     }
     modmap.insert(modpath.clone(), file_rel.to_string());
-    file_mod.entry(file_rel.to_string()).or_insert(modpath.clone());
+    file_mod
+        .entry(file_rel.to_string())
+        .or_insert(modpath.clone());
 
     let Ok(content) = std::fs::read_to_string(repo.join(file_rel)) else {
         return;
@@ -386,7 +387,10 @@ fn resolve(
     best
 }
 
-fn reachable(seeds: &BTreeSet<String>, edges: &HashMap<String, BTreeSet<String>>) -> BTreeSet<String> {
+fn reachable(
+    seeds: &BTreeSet<String>,
+    edges: &HashMap<String, BTreeSet<String>>,
+) -> BTreeSet<String> {
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut queue: VecDeque<String> = seeds.iter().cloned().collect();
     for s in seeds {
@@ -511,6 +515,9 @@ mod tests {
         let d = fixture();
         let edges = build_graph(d.path()).edges;
         let a = edges.get("crates/app/src/a.rs").unwrap();
-        assert!(a.contains("crates/app/src/util.rs"), "a.rs → util.rs: {a:?}");
+        assert!(
+            a.contains("crates/app/src/util.rs"),
+            "a.rs → util.rs: {a:?}"
+        );
     }
 }

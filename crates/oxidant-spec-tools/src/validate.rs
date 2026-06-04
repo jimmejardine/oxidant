@@ -389,8 +389,7 @@ mod tests {
                     .map(|r| format!("See [[{r}]]."))
                     .collect::<Vec<_>>()
                     .join("\n");
-                let raw =
-                    format!("---\nid: {id}\nkind: {kind}\n---\n{body_refs}\n(body)\n");
+                let raw = format!("---\nid: {id}\nkind: {kind}\n---\n{body_refs}\n(body)\n");
                 GraphInput {
                     canonical_id: (*id).to_string(),
                     file: frontmatter::parse(&raw).expect("parse"),

@@ -64,8 +64,7 @@ enum WrapOutcome {
 }
 
 fn wrap_one(path: &Path) -> Result<WrapOutcome> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let content = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
     let Some(wrapped) = produce_wrapped(&content) else {
         // Either no frontmatter or already wrapped — disambiguate.
         let first = content.lines().next().unwrap_or("").trim();

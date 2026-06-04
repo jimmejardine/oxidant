@@ -183,17 +183,17 @@ fn split_frontmatter(content: &str) -> Result<(&str, String, usize), ParseError>
     // consumed so the body lead doesn't start with an awkward gap.
     if has_opening_fence {
         let mut after_close = content.lines().skip(body_start);
-        if let Some(line) = after_close.next() {
-            if line.trim().starts_with("```") {
+        if let Some(line) = after_close.next()
+            && line.trim().starts_with("```")
+        {
+            body_start += 1;
+            // Eat one optional blank line so the body content
+            // starts at its first real line, matching the
+            // unfenced shape.
+            if let Some(maybe_blank) = after_close.next()
+                && maybe_blank.trim().is_empty()
+            {
                 body_start += 1;
-                // Eat one optional blank line so the body content
-                // starts at its first real line, matching the
-                // unfenced shape.
-                if let Some(maybe_blank) = after_close.next()
-                    && maybe_blank.trim().is_empty()
-                {
-                    body_start += 1;
-                }
             }
         }
     }
@@ -522,8 +522,7 @@ mod tests {
         // The fence + opener + 2 yaml keys + closer + closing-fence +
         // blank-line consume lines 1..=7, so the first body line
         // showing [[ref]] lands at line 8.
-        let src =
-            "```yaml\n---\nid: a\nkind: tool\n---\n```\n\nSee [[x/y]] and [[z]].\n";
+        let src = "```yaml\n---\nid: a\nkind: tool\n---\n```\n\nSee [[x/y]] and [[z]].\n";
         let f = parse(src).expect("parse");
         let raws: Vec<_> = f.refs_in_body.iter().map(|r| r.raw.as_str()).collect();
         assert_eq!(raws, vec!["x/y", "z"]);
