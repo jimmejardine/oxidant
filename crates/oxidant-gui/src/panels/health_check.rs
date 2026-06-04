@@ -236,7 +236,18 @@ fn root_header_text(kind: CheckKind, st: &CheckState) -> String {
                 .iter()
                 .filter(|i| matches!(i.severity, IssueSeverity::Warning))
                 .count();
-            if errors == 0 && warnings == 0 {
+            // Notes are lower-weight (spec_coverage parses uncovered
+            // files as Notes), but they're still real issues — the
+            // glyph already paints ✗ for them via `issues.is_empty()`.
+            // Counting them here keeps the label honest: a check with
+            // only-notes reads `N note(s)`, never `clean`. See
+            // spec/components/spec-tools/coverage.md.
+            let notes = st
+                .issues
+                .iter()
+                .filter(|i| matches!(i.severity, IssueSeverity::Note))
+                .count();
+            if errors == 0 && warnings == 0 && notes == 0 {
                 format!("{label} · clean{elapsed}")
             } else {
                 let mut parts = Vec::new();
@@ -251,6 +262,9 @@ fn root_header_text(kind: CheckKind, st: &CheckState) -> String {
                         "{warnings} warning{}",
                         if warnings == 1 { "" } else { "s" }
                     ));
+                }
+                if notes > 0 {
+                    parts.push(format!("{notes} note{}", if notes == 1 { "" } else { "s" }));
                 }
                 format!("{label} · {}{elapsed}", parts.join(", "))
             }
@@ -905,6 +919,71 @@ mod tests {
         assert!(issues[0].message.contains("src/foo.rs"));
         assert_eq!(issues[1].group_key, "MethodSignatureChanged");
         assert!(issues[1].message.contains("chat"));
+    }
+
+    fn done_with(issues: Vec<HealthIssue>) -> CheckState {
+        CheckState {
+            status: CheckStatus::Done,
+            issues,
+            finished_in_ms: 0,
+            user_toggled: false,
+        }
+    }
+
+    fn issue_with(severity: IssueSeverity) -> HealthIssue {
+        HealthIssue {
+            check: CheckKind::SpecCoverage,
+            severity,
+            group_key: "(test)".into(),
+            message: "x".into(),
+            file: None,
+            line: 0,
+            character: 0,
+        }
+    }
+
+    #[test]
+    fn root_header_text_truly_empty_check_is_clean() {
+        let st = done_with(vec![]);
+        let text = root_header_text(CheckKind::SpecCoverage, &st);
+        assert!(text.contains("clean"), "got: {text}");
+    }
+
+    #[test]
+    fn root_header_text_note_only_check_is_not_clean() {
+        // Before the fix: spec-coverage with N uncovered files (Notes)
+        // would render "spec coverage · clean" next to the red ✗ icon.
+        let st = done_with(vec![issue_with(IssueSeverity::Note)]);
+        let text = root_header_text(CheckKind::SpecCoverage, &st);
+        assert!(text.contains("1 note"), "got: {text}");
+        assert!(!text.contains("clean"), "got: {text}");
+    }
+
+    #[test]
+    fn root_header_text_note_only_pluralises() {
+        let st = done_with(vec![
+            issue_with(IssueSeverity::Note),
+            issue_with(IssueSeverity::Note),
+            issue_with(IssueSeverity::Note),
+        ]);
+        let text = root_header_text(CheckKind::SpecCoverage, &st);
+        assert!(text.contains("3 notes"), "got: {text}");
+    }
+
+    #[test]
+    fn root_header_text_lists_all_three_severities() {
+        let mut issues = vec![issue_with(IssueSeverity::Error)];
+        issues.push(issue_with(IssueSeverity::Warning));
+        issues.push(issue_with(IssueSeverity::Warning));
+        issues.push(issue_with(IssueSeverity::Note));
+        issues.push(issue_with(IssueSeverity::Note));
+        issues.push(issue_with(IssueSeverity::Note));
+        let st = done_with(issues);
+        let text = root_header_text(CheckKind::SpecCoverage, &st);
+        assert!(text.contains("1 error"), "got: {text}");
+        assert!(text.contains("2 warnings"), "got: {text}");
+        assert!(text.contains("3 notes"), "got: {text}");
+        assert!(!text.contains("clean"), "got: {text}");
     }
 
     #[test]

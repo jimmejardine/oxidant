@@ -199,7 +199,10 @@ mod tests {
     fn bare_dashes_become_fence_only() {
         let src = "---\nid: foo\nkind: component\n---\n\nBody paragraph.\n";
         let out = normalize(src).expect("normalize");
-        assert_eq!(out, "```yaml\nid: foo\nkind: component\n```\n\nBody paragraph.\n");
+        assert_eq!(
+            out,
+            "```yaml\nid: foo\nkind: component\n```\n\nBody paragraph.\n"
+        );
     }
 
     #[test]
@@ -220,7 +223,10 @@ mod tests {
     fn body_started_immediately_gets_blank_separator() {
         let src = "---\nid: foo\nkind: component\n---\nBody immediately.\n";
         let out = normalize(src).expect("normalize");
-        assert_eq!(out, "```yaml\nid: foo\nkind: component\n```\n\nBody immediately.\n");
+        assert_eq!(
+            out,
+            "```yaml\nid: foo\nkind: component\n```\n\nBody immediately.\n"
+        );
     }
 
     #[test]
