@@ -104,12 +104,13 @@ impl HealthCheckPanel {
     }
 }
 
-const ALL_CHECKS: [CheckKind; 5] = [
+const ALL_CHECKS: [CheckKind; 6] = [
     CheckKind::CargoCheck,
     CheckKind::Clippy,
     CheckKind::Tests,
     CheckKind::SpecValidate,
     CheckKind::SpecDiff,
+    CheckKind::SpecCoverage,
 ];
 
 #[derive(Default, Clone, Copy)]
@@ -522,7 +523,49 @@ pub(crate) fn parse_for(kind: CheckKind, value: &Value) -> Vec<HealthIssue> {
         CheckKind::Tests => parse_test_failures(value),
         CheckKind::SpecValidate => parse_spec_validate(value),
         CheckKind::SpecDiff => parse_spec_diff(value),
+        CheckKind::SpecCoverage => parse_spec_coverage(value),
     }
+}
+
+fn parse_spec_coverage(value: &Value) -> Vec<HealthIssue> {
+    let mut out = Vec::new();
+    // Declared `code:` paths that don't exist on disk — surfaced as warnings.
+    if let Some(missing) = value.get("missing_seeds").and_then(|m| m.as_array()) {
+        for m in missing {
+            if let Some(path) = m.as_str() {
+                out.push(HealthIssue {
+                    check: CheckKind::SpecCoverage,
+                    severity: IssueSeverity::Warning,
+                    group_key: "(missing seed)".into(),
+                    message: format!("declared in a spec's code: but not on disk: {path}"),
+                    file: Some(path.to_string()),
+                    line: 0,
+                    character: 0,
+                });
+            }
+        }
+    }
+    // Files no spec transitively reaches — grouped by crate, as notes.
+    if let Some(arr) = value.get("uncovered").and_then(|u| u.as_array()) {
+        for u in arr {
+            let file = u.get("file").and_then(|v| v.as_str()).unwrap_or("?");
+            let krate = u
+                .get("krate")
+                .and_then(|v| v.as_str())
+                .unwrap_or("(unknown)")
+                .to_string();
+            out.push(HealthIssue {
+                check: CheckKind::SpecCoverage,
+                severity: IssueSeverity::Note,
+                group_key: krate,
+                message: format!("not reachable from any spec: {file}"),
+                file: Some(file.to_string()),
+                line: 0,
+                character: 0,
+            });
+        }
+    }
+    out
 }
 
 fn parse_cargo_messages(kind: CheckKind, value: &Value) -> Vec<HealthIssue> {

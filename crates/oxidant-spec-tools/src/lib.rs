@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use oxidant_core::{Tool, ToolRegistry};
 
+pub mod coverage;
 pub mod diff;
 pub mod frontmatter;
 pub mod graph;
@@ -26,6 +27,7 @@ pub mod tools;
 pub mod validate;
 pub mod walker;
 
+pub use coverage::{CoverageReport, UncoveredFile, analyze as analyze_coverage};
 pub use diff::{Drift, diff_all, diff_spec};
 pub use frontmatter::{
     FencedBlock, FrontmatterRecord, ParseError, RefMention, SpecFile, SpecKind, SpecStatus,
@@ -36,8 +38,8 @@ pub use index_db::{IndexDb, SpecFilter, SpecRow};
 pub use search_index::{SearchHit, SearchIndex, SearchQuery, SearchSource};
 pub use timeline::{Commit, Timeline, TimelineFilter};
 pub use tools::{
-    CodeChanges, SpecChanges, SpecDiff, SpecForFile, SpecRead, SpecResolveLinks, SpecSearch,
-    SpecTree, SpecValidate, TextSearch,
+    CodeChanges, SpecChanges, SpecCoverage, SpecDiff, SpecForFile, SpecRead, SpecResolveLinks,
+    SpecSearch, SpecTree, SpecValidate, TextSearch,
 };
 pub use validate::{Warning, WarningKind, validate};
 pub use walker::{SpecRecord, walk_specs};
@@ -56,6 +58,7 @@ pub fn register_standard_tools(registry: &mut ToolRegistry) {
         Arc::new(TextSearch),
         Arc::new(SpecChanges),
         Arc::new(CodeChanges),
+        Arc::new(SpecCoverage),
     ];
     for t in tools {
         registry.register(t);

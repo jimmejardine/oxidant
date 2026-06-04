@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 use oxidant_core::{Tool, ToolContext, ToolResult};
 use oxidant_spec_tools::{
-    SpecDiff, SpecForFile, SpecRead, SpecResolveLinks, SpecTree, SpecValidate,
+    SpecCoverage, SpecDiff, SpecForFile, SpecRead, SpecResolveLinks, SpecTree, SpecValidate,
 };
 
 #[derive(Subcommand)]
@@ -79,6 +79,14 @@ pub enum SpecCommand {
     ResolveLinks {
         #[arg(value_name = "REF")]
         r#ref: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Find Rust source files no spec transitively reaches (code not anchored to any spec).
+    Coverage {
+        /// Exit with code 1 if any uncovered files are found. Use in CI.
+        #[arg(long)]
+        strict: bool,
         #[arg(long)]
         json: bool,
     },
@@ -176,6 +184,19 @@ async fn dispatch(workspace: PathBuf, command: SpecCommand) -> anyhow::Result<Ex
                 print_resolve_links(&value);
             }
             Ok(ExitCode::SUCCESS)
+        }
+        SpecCommand::Coverage {
+            strict,
+            json: as_json,
+        } => {
+            let value = invoke(&SpecCoverage, json!({}), &ctx).await?;
+            let count = value.get("count").and_then(Value::as_u64).unwrap_or(0);
+            if as_json {
+                print_json(&value);
+            } else {
+                print_coverage(&value);
+            }
+            Ok(strict_exit(strict, count))
         }
     }
 }
@@ -328,6 +349,39 @@ fn print_for_file(value: &Value) {
             if !resp.is_empty() {
                 println!("    {}", resp.lines().next().unwrap_or(""));
             }
+        }
+    }
+}
+
+fn print_coverage(value: &Value) {
+    let count = value.get("count").and_then(Value::as_u64).unwrap_or(0);
+    let covered = value.get("covered_count").and_then(Value::as_u64).unwrap_or(0);
+    let seeds = value.get("seed_count").and_then(Value::as_u64).unwrap_or(0);
+    if let Some(missing) = value.get("missing_seeds").and_then(Value::as_array)
+        && !missing.is_empty()
+    {
+        println!("missing seed files (declared in a spec's code: but absent):");
+        for m in missing {
+            if let Some(p) = m.as_str() {
+                println!("  {p}");
+            }
+        }
+    }
+    if count == 0 {
+        println!("spec coverage: every source file is reachable from a spec ({seeds} seeds, {covered} covered)");
+        return;
+    }
+    println!("spec coverage: {count} file(s) not reachable from any spec ({seeds} seeds, {covered} covered)");
+    let mut last_crate = String::new();
+    if let Some(arr) = value.get("uncovered").and_then(Value::as_array) {
+        for u in arr {
+            let krate = u.get("krate").and_then(Value::as_str).unwrap_or("");
+            let file = u.get("file").and_then(Value::as_str).unwrap_or("?");
+            if krate != last_crate {
+                println!("  [{krate}]");
+                last_crate = krate.to_string();
+            }
+            println!("    {file}");
         }
     }
 }

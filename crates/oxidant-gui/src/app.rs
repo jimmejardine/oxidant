@@ -321,6 +321,7 @@ pub enum CheckKind {
     Tests,
     SpecValidate,
     SpecDiff,
+    SpecCoverage,
 }
 
 impl CheckKind {
@@ -331,6 +332,7 @@ impl CheckKind {
             CheckKind::Tests => "tests",
             CheckKind::SpecValidate => "spec validate",
             CheckKind::SpecDiff => "spec diff",
+            CheckKind::SpecCoverage => "spec coverage",
         }
     }
 
@@ -341,6 +343,7 @@ impl CheckKind {
             CheckKind::Tests => "tests",
             CheckKind::SpecValidate => "spec_validate",
             CheckKind::SpecDiff => "spec_diff",
+            CheckKind::SpecCoverage => "spec_coverage",
         }
     }
 
@@ -351,6 +354,7 @@ impl CheckKind {
             CheckKind::Tests => "cargo_test",
             CheckKind::SpecValidate => "spec_validate",
             CheckKind::SpecDiff => "spec_diff",
+            CheckKind::SpecCoverage => "spec_coverage",
         }
     }
 }

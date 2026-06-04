@@ -20,7 +20,7 @@ responsibility: "Right-docked tree panel showing the workspace's CI-equivalent s
 
 ## Checks
 
-One root per `CheckKind`. v1 ships five — adding a check means one enum variant + one parser:
+One root per `CheckKind`. v1 ships six — adding a check means one enum variant + one parser:
 
 | CheckKind     | Tool invoked      | What counts as an issue                                                                                       |
 |---------------|-------------------|---------------------------------------------------------------------------------------------------------------|
@@ -29,6 +29,7 @@ One root per `CheckKind`. v1 ships five — adding a check means one enum varian
 | Tests         | `cargo_test`      | Every entry in `failures: [...]`. Compile failures (`compile_messages`) also surface — they're real issues.   |
 | SpecValidate  | `spec_validate`   | Every entry in `warnings: [{ kind, message, location: [path, line, col]? }]`.                                 |
 | SpecDiff      | `spec_diff`       | Every entry in `drifts: [...]` — `MissingCodePath`, `MethodAdded`, `MethodRemoved`, `MethodSignatureChanged`. |
+| SpecCoverage  | `spec_coverage`   | Every entry in `uncovered: [{ file, krate }]` (note, grouped by crate) + each `missing_seeds` path (warning). See [[tools/spec/spec-coverage]] / [[components/spec-tools/coverage]]. |
 
 ## Data model (in `app.rs`)
 
