@@ -1,3 +1,4 @@
+```yaml
 ---
 id: cargo-build
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Run cargo build (debug or release) and return diagnostics plus produced artifact paths.
 ---
+```
 
 `category`: `Mutating` (writes binaries to `target/`).
 

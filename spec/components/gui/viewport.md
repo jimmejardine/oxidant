@@ -1,3 +1,4 @@
+```yaml
 ---
 id: viewport
 kind: component
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Manage one OS window per exploration via eframe's multi-viewport API; coordinate window lifecycle, title bar, and dock layout reset.
 ---
+```
 
 One OS window = one exploration. The viewport component is the eframe-side glue.
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: diff-history-panel
 kind: component
@@ -15,6 +16,7 @@ status: active
 responsibility: |
   Read-only side-by-side diff viewer for one file. Two columns, each with a commit-picker dropdown that lists every commit that touched the file plus a virtual "Working tree" entry. Body of each column shows the file at the selected version with line-level diff overlay.
 ---
+```
 
 The history-viewing surface. Opened from the spec tree or file tree right-click menu via "View history"; lives as a `DockTab::DiffHistory { path, source }` in the centre dock leaf. Distinct from [[components/gui/file-tabs]] — that one is the *editable* view of a file's current contents; this one is the *read-only* view of how the file changed over time.
 

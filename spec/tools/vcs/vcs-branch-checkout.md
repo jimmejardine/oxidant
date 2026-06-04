@@ -1,3 +1,4 @@
+```yaml
 ---
 id: vcs-branch-checkout
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Switch the active exploration's worktree to a different branch.
 ---
+```
 
 `category`: `Mutating`.
 

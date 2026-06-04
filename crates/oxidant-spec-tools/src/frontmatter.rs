@@ -131,13 +131,39 @@ fn split_frontmatter(content: &str) -> Result<(&str, String, usize), ParseError>
     let Some((_, first)) = lines.next() else {
         return Err(ParseError::MissingFrontmatter);
     };
-    if first.trim() != "---" {
-        return Err(ParseError::MissingFrontmatter);
-    }
+
+    // Optional code-fence wrap: a spec can open with ```yaml (or
+    // bare ```) so the frontmatter renders as a code block in raw-
+    // markdown viewers. The matching close ``` after the YAML's
+    // `---` terminator is also consumed. Both shapes parse to the
+    // same Frontmatter. See spec/components/spec-tools/validate.md
+    // "Frontmatter format".
+    let has_opening_fence = is_fence_opener(first.trim());
+    let opening_fence_bytes = if has_opening_fence {
+        first.len() + 1 // include the newline
+    } else {
+        0
+    };
+
+    let yaml_start_line = if has_opening_fence {
+        // Read the next line as the real frontmatter opener.
+        let Some((_, second)) = lines.next() else {
+            return Err(ParseError::MissingFrontmatter);
+        };
+        if second.trim() != "---" {
+            return Err(ParseError::MissingFrontmatter);
+        }
+        second
+    } else {
+        if first.trim() != "---" {
+            return Err(ParseError::MissingFrontmatter);
+        }
+        first
+    };
 
     let mut yaml_end_byte: Option<usize> = None;
     let mut body_start_line: Option<usize> = None;
-    let mut running_byte = first.len() + 1; // +1 for the newline we consumed
+    let mut running_byte = opening_fence_bytes + yaml_start_line.len() + 1;
     for (line_idx, line) in lines {
         let trimmed = line.trim();
         if trimmed == "---" || trimmed == "..." {
@@ -148,13 +174,42 @@ fn split_frontmatter(content: &str) -> Result<(&str, String, usize), ParseError>
         running_byte += line.len() + 1;
     }
     let yaml_end = yaml_end_byte.ok_or(ParseError::UnterminatedFrontmatter)?;
-    let body_start = body_start_line.unwrap();
+    let mut body_start = body_start_line.unwrap();
 
-    let yaml_text = &content[first.len() + 1..yaml_end];
+    // If the file opened with a fence, the line right after the
+    // closing `---` should be the matching ``` close. Consume it
+    // so the body is what the user actually wrote, not the literal
+    // close-fence text. A blank line after the close-fence is also
+    // consumed so the body lead doesn't start with an awkward gap.
+    if has_opening_fence {
+        let mut after_close = content.lines().skip(body_start);
+        if let Some(line) = after_close.next() {
+            if line.trim().starts_with("```") {
+                body_start += 1;
+                // Eat one optional blank line so the body content
+                // starts at its first real line, matching the
+                // unfenced shape.
+                if let Some(maybe_blank) = after_close.next()
+                    && maybe_blank.trim().is_empty()
+                {
+                    body_start += 1;
+                }
+            }
+        }
+    }
+
+    let yaml_text = &content[opening_fence_bytes + yaml_start_line.len() + 1..yaml_end];
     let body = collect_body(content, body_start);
-    // body_line_offset: the line number the first body line had in the original source (1-indexed).
+    // body_line_offset: the line number the first body line had in the
+    // original source (1-indexed).
     let body_line_offset = body_start + 1;
     Ok((yaml_text, body, body_line_offset))
+}
+
+/// A markdown code-fence opener. Recognises ```` ``` ```` and ```` ~~~ ````
+/// with any trailing info string (`yaml`, `yml`, etc).
+fn is_fence_opener(trimmed: &str) -> bool {
+    trimmed.starts_with("```") || trimmed.starts_with("~~~")
 }
 
 fn collect_body(content: &str, start_line: usize) -> String {
@@ -438,6 +493,44 @@ mod tests {
         assert!(matches!(f.frontmatter.kind, SpecKind::Component));
         assert!(matches!(f.frontmatter.status, SpecStatus::Active));
         assert_eq!(f.body.trim(), "body text");
+    }
+
+    #[test]
+    fn parses_yaml_fenced_frontmatter() {
+        // ```yaml fence wrap renders as a code block in raw-markdown
+        // viewers but parses to the same Frontmatter as the unfenced
+        // shape. See spec/components/spec-tools/validate.md
+        // "Frontmatter format".
+        let src = "```yaml\n---\nid: foo\nkind: component\n---\n```\n\nbody text\n";
+        let f = parse(src).expect("parse");
+        assert_eq!(f.frontmatter.id, "foo");
+        assert!(matches!(f.frontmatter.kind, SpecKind::Component));
+        assert_eq!(f.body.trim(), "body text");
+    }
+
+    #[test]
+    fn parses_plain_fenced_frontmatter() {
+        // Bare ``` (no language tag) should also work.
+        let src = "```\n---\nid: foo\nkind: component\n---\n```\nbody text\n";
+        let f = parse(src).expect("parse");
+        assert_eq!(f.frontmatter.id, "foo");
+        assert_eq!(f.body.trim(), "body text");
+    }
+
+    #[test]
+    fn fenced_frontmatter_keeps_correct_line_numbers_for_body_refs() {
+        // The fence + opener + 2 yaml keys + closer + closing-fence +
+        // blank-line consume lines 1..=7, so the first body line
+        // showing [[ref]] lands at line 8.
+        let src =
+            "```yaml\n---\nid: a\nkind: tool\n---\n```\n\nSee [[x/y]] and [[z]].\n";
+        let f = parse(src).expect("parse");
+        let raws: Vec<_> = f.refs_in_body.iter().map(|r| r.raw.as_str()).collect();
+        assert_eq!(raws, vec!["x/y", "z"]);
+        assert_eq!(
+            f.refs_in_body[0].line, 8,
+            "body ref must point at the line a reader sees in the editor"
+        );
     }
 
     #[test]

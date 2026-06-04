@@ -1,3 +1,4 @@
+```yaml
 ---
 id: 0009-no-ra-ap-crates-lsp-suffices
 kind: decision
@@ -7,6 +8,7 @@ date: 2026-05-21
 responsibility: |
   Use rust-analyzer as an LSP subprocess; do not embed ra_ap_* internal crates for semantic queries.
 ---
+```
 
 # 0009 — No `ra_ap_*` internal crates; LSP is enough
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: fix-diagnostic
 kind: flow
@@ -18,6 +19,7 @@ depends_on:
   - tools/vcs/vcs-commit
   - components/tools/workspace-edit-substrate
 ---
+```
 
 # Fix a Rust compiler diagnostic
 

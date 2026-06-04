@@ -1,3 +1,4 @@
+```yaml
 ---
 id: target-dirs-are-never-shared
 kind: invariant
@@ -8,6 +9,7 @@ depends_on:
 responsibility: |
   Each exploration's cargo runs against its own per-worktree target/ directory; CARGO_TARGET_DIR is never set to a shared path.
 ---
+```
 
 Every cargo subprocess spawned by [[components/rust-tools/cargo-runner]] runs with `CARGO_TARGET_DIR=<worktree>/target` explicitly. No exploration shares its `target/` with any other.
 

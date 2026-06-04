@@ -1,3 +1,4 @@
+```yaml
 ---
 id: spec-changes
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Return chronological change history for one or more spec files, optionally filtered by kind / status / time window.
 ---
+```
 
 Surfaces git history for the spec tree, structured for the agent and the GUI's "recent activity" panel.
 

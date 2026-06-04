@@ -1,3 +1,4 @@
+```yaml
 ---
 id: vcs-diff
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Return a structured diff between the worktree and a revspec (or between two revspecs).
 ---
+```
 
 `category`: `ReadOnly`.
 

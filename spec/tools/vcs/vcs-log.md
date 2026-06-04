@@ -1,3 +1,4 @@
+```yaml
 ---
 id: vcs-log
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Return recent commits for the active exploration's branch (or a revspec) as structured records.
 ---
+```
 
 `category`: `ReadOnly`.
 

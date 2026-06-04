@@ -1,3 +1,4 @@
+```yaml
 ---
 id: agent-mode
 kind: component
@@ -12,6 +13,7 @@ status: active
 responsibility: |
   Define the two interaction modes the chat agent runs in — Plan and Implement — and the enforcement that hard-caps the tools and steering each mode sees. Plan is a guardrail mode: the agent investigates with read-only tools and then *describes* what it would do. Implement is the normal mode with full tool access. The toggle is a keyboard binding in the chat input ([[components/gui/chat-input-panel]]).
 ---
+```
 
 ## The two modes
 

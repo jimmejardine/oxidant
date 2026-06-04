@@ -1,3 +1,4 @@
+```yaml
 ---
 id: rust-goto-definition
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Return the definition site(s) of the symbol at a position.
 ---
+```
 
 `category`: `ReadOnly`.
 

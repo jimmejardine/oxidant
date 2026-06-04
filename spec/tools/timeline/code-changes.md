@@ -1,3 +1,4 @@
+```yaml
 ---
 id: code-changes
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Return chronological change history for code files, optionally filtered by path / language / time window.
 ---
+```
 
 The code-tree counterpart to [[tools/timeline/spec-changes]]. Same git plumbing, different filter set.
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: rust-workspace-symbols
 kind: tool
@@ -15,6 +16,7 @@ status: active
 responsibility: |
   Search across the workspace for symbols (functions, types, traits, modules) by name.
 ---
+```
 
 `category`: `ReadOnly`.
 

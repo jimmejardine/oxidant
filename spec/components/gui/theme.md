@@ -1,3 +1,4 @@
+```yaml
 ---
 id: theme
 kind: component
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Provide a small set of switchable colour schemes for the viewport, expose the active theme's secondary text colours to every panel, and persist the user's choice in settings.
 ---
+```
 
 ## Themes shipped
 

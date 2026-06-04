@@ -1,3 +1,4 @@
+```yaml
 ---
 id: spec-graph-panel
 kind: component
@@ -15,6 +16,7 @@ status: active
 responsibility: |
   Interactive force-directed graph of specs, the code files that realise them, and the tests that prove them. Each graph is a centre-area `DockTab::SpecGraph { seed }` tab keyed by its starting node — multiple graphs can coexist, each seeded from a different right-click. Populates progressively — starts with the seed and grows when the user clicks per-node expand icons. Complements (does not replace) the spec-tree and file-tree panels.
 ---
+```
 
 ## Data sources
 

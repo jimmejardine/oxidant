@@ -1,3 +1,4 @@
+```yaml
 ---
 id: exploration
 kind: component
@@ -14,6 +15,7 @@ status: active
 responsibility: |
   Bundle the runtime state of one self-contained workspace: conversation, worktree, branch, LSP handle, target/, cancellation token.
 ---
+```
 
 ## Struct
 

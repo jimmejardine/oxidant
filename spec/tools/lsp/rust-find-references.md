@@ -1,3 +1,4 @@
+```yaml
 ---
 id: rust-find-references
 kind: tool
@@ -15,6 +16,7 @@ status: active
 responsibility: |
   Return all references to the symbol at a position across the workspace.
 ---
+```
 
 `category`: `ReadOnly`.
 

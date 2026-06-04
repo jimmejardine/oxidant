@@ -1,3 +1,4 @@
+```yaml
 ---
 id: syn-add-derive
 kind: tool
@@ -18,6 +19,7 @@ status: active
 responsibility: |
   Add a #[derive(...)] entry to a struct or enum, merging with any existing derive attribute.
 ---
+```
 
 `category`: `ReadOnly` for preview; `Mutating` when applied.
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: 0010-spec-index-and-search
 kind: decision
@@ -7,6 +8,7 @@ date: 2026-05-21
 responsibility: |
   Adopt SQLite for spec metadata, Tantivy for full-text search over spec+code, and git for timeline; do not store timestamps in spec frontmatter.
 ---
+```
 
 # 0010 — Spec metadata index, full-text search, and git-backed timeline
 

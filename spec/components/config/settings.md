@@ -1,3 +1,4 @@
+```yaml
 ---
 id: settings
 kind: component
@@ -11,6 +12,7 @@ status: active
 responsibility: |
   Load, merge, and serve oxidant's configuration from per-repo and per-user oxidant.toml files.
 ---
+```
 
 ## File locations
 

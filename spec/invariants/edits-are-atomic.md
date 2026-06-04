@@ -1,3 +1,4 @@
+```yaml
 ---
 id: edits-are-atomic
 kind: invariant
@@ -8,6 +9,7 @@ responsibility: |
 depends_on:
   - components/tools/workspace-edit-substrate
 ---
+```
 
 For every `WorkspaceEdit` flowing through [[components/tools/workspace-edit-substrate]]:
 

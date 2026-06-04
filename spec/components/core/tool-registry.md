@@ -1,3 +1,4 @@
+```yaml
 ---
 id: tool-registry
 kind: component
@@ -12,6 +13,7 @@ status: active
 responsibility: |
   Hold the set of available tools, validate model input against each schema before dispatch, and route invocations to the right impl.
 ---
+```
 
 ## Struct
 

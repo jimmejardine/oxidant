@@ -1,3 +1,4 @@
+```yaml
 ---
 id: validate
 kind: component
@@ -19,6 +20,7 @@ status: active
 responsibility: |
   Produce structured warnings about frontmatter completeness, link integrity, length budgets, orphans, and code-path existence.
 ---
+```
 
 The drift detector for spec hygiene. Warnings, never errors — even severe issues surface in the GUI's spec panel rather than blocking the agent. See [[decisions/0008-spec-is-canonical]].
 

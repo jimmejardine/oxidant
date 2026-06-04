@@ -1,3 +1,4 @@
+```yaml
 ---
 id: syn-tools
 kind: component
@@ -14,6 +15,7 @@ status: active
 responsibility: |
   Parse and transform Rust source via syn 2.x; backs the syntactic agent tools and produces WorkspaceEdits for the substrate.
 ---
+```
 
 The fast, syntactic, write-capable tier. Complements the semantic LSP layer ([[components/rust-tools/lsp]]) — see [[decisions/0009-no-ra-ap-crates-lsp-suffices]].
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: edit-settings
 kind: flow
@@ -13,6 +14,7 @@ depends_on:
   - components/gui/theme
   - tools/spec/spec-validate
 ---
+```
 
 # Edit and persist user settings
 

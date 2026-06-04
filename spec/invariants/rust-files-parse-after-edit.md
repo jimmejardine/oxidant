@@ -1,3 +1,4 @@
+```yaml
 ---
 id: rust-files-parse-after-edit
 kind: invariant
@@ -8,6 +9,7 @@ depends_on:
 responsibility: |
   Every .rs file written by oxidant must parse cleanly with syn immediately after the write, or the entire WorkspaceEdit is rolled back.
 ---
+```
 
 The [[components/tools/workspace-edit-substrate]] runs `syn::parse_file` on every `.rs` file it has modified, in memory, before committing any writes to disk. If any post-edit file fails to parse:
 

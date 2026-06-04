@@ -1,3 +1,4 @@
+```yaml
 ---
 id: edit
 kind: component
@@ -15,6 +16,7 @@ status: active
 responsibility: |
   Expose the two model-facing edit surfaces (string-replace and span-precise), both backed by the workspace-edit substrate.
 ---
+```
 
 The edit subsystem. Holds [[tools/edit/edit-string]] and [[tools/edit/apply-edits]], the only model-facing tools that mutate source code directly. Smart-tool refactors (rename, code actions, syn transforms) also produce `WorkspaceEdit`s and apply via the same substrate.
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: view-spec-history
 kind: flow
@@ -13,6 +14,7 @@ depends_on:
   - components/gui/dock-layout
   - components/vcs/git-shellout
 ---
+```
 
 # View the git history of a spec or file
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: vcs-explore
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Spawn a new sub-exploration with its own worktree + branch + conversation. GUI-only — agent cannot spawn explorations to prevent uncontrolled chat birth.
 ---
+```
 
 `category`: `Mutating`. **GUI-only**: the registry refuses to dispatch this tool when the caller is the agent loop. Only the human (via the GUI button or context menu) can spawn explorations.
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: openai
 kind: component
@@ -15,6 +16,7 @@ status: active
 responsibility: |
   Talk to OpenAI Chat Completions (default) or the Responses API (feature-gated); base path also serves OpenAI-compatible servers.
 ---
+```
 
 ## API specifics
 

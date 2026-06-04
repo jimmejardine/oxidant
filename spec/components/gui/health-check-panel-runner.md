@@ -1,3 +1,4 @@
+```yaml
 ---
 id: health-check-panel-runner
 kind: component
@@ -13,6 +14,7 @@ code:
 status: active
 responsibility: "Run execution for the health-check panel: Run-all flow, per-row run dispatch via spawn_check, last_run_at semantics, and disabled-while-running state."
 ---
+```
 
 ## Run-all flow
 

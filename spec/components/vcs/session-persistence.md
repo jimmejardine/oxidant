@@ -1,3 +1,4 @@
+```yaml
 ---
 id: session-persistence
 kind: component
@@ -12,6 +13,7 @@ status: active
 responsibility: |
   Persist and restore per-exploration conversation transcripts as append-only .jsonl files inside the worktree.
 ---
+```
 
 ## File layout
 

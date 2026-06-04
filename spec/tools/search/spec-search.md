@@ -1,3 +1,4 @@
+```yaml
 ---
 id: spec-search
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Structured query over spec metadata (kind, status, parent, edges) without free-text matching.
 ---
+```
 
 The structural counterpart to [[tools/search/text-search]]. Answers questions like "list all draft components", "which tools implement contracts/provider", "find specs with no inbound references". Hits the SQLite index ([[components/spec-tools/index-db]]) directly — no text matching.
 

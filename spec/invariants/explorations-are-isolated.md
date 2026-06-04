@@ -1,3 +1,4 @@
+```yaml
 ---
 id: explorations-are-isolated
 kind: invariant
@@ -9,6 +10,7 @@ depends_on:
 responsibility: |
   Operations in one exploration never modify another exploration's worktree, target/, LSP state, or conversation.
 ---
+```
 
 Two explorations may share `.git/objects` (the git worktree design point) but nothing else above that. Specifically:
 

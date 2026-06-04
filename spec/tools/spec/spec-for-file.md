@@ -1,3 +1,4 @@
+```yaml
 ---
 id: spec-for-file
 kind: tool
@@ -17,6 +18,7 @@ status: active
 responsibility: |
   Reverse lookup: given a code file path, return the specs that reference it via their code: frontmatter.
 ---
+```
 
 `category`: `ReadOnly`.
 

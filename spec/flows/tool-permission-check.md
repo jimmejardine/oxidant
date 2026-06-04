@@ -1,3 +1,4 @@
+```yaml
 ---
 id: tool-permission-check
 kind: flow
@@ -12,6 +13,7 @@ depends_on:
   - contracts/tool
   - decisions/0002-no-built-in-sandbox
 ---
+```
 
 # Decide whether a tool call may proceed
 

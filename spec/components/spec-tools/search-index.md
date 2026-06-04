@@ -1,3 +1,4 @@
+```yaml
 ---
 id: search-index
 kind: component
@@ -14,6 +15,7 @@ status: active
 responsibility: |
   Maintain a Tantivy full-text index over spec markdown and Rust source for BM25-ranked search via tools/search/text-search and tools/search/spec-search.
 ---
+```
 
 A single Tantivy index at `<worktree>/.oxidant/search-index/`. Indexes both `spec/**/*.md` and `crates/**/*.rs` (and other configured code paths). One index, with a `source` field for filtering by `spec` vs `code`. Powers [[tools/search/text-search]] and [[tools/search/spec-search]] for the agent, plus the GUI's search box.
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: agent-loop
 kind: component
@@ -19,6 +20,7 @@ status: active
 responsibility: |
   Drive the per-exploration conversation: send to the Provider, stream events, dispatch tool calls through the registry, append results, repeat until stop.
 ---
+```
 
 One agent loop per exploration. Owns the streaming side of the conversation; the registry owns dispatch; the provider owns the network call. Surfaces every event as a `ChatEvent` to the GUI via `mpsc::UnboundedSender`.
 

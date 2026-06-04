@@ -1,3 +1,4 @@
+```yaml
 ---
 id: merge-conflicts
 kind: component
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Centre-tab panel that opens when a merge-back returns conflicts. Lists conflicted files, lets the user resolve each via in-editor or external mergetool, then finalises the merge with a single commit + worktree cleanup.
 ---
+```
 
 ## Trigger
 

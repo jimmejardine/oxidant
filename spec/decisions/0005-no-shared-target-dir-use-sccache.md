@@ -1,3 +1,4 @@
+```yaml
 ---
 id: 0005-no-shared-target-dir-use-sccache
 kind: decision
@@ -7,6 +8,7 @@ date: 2026-05-21
 responsibility: |
   Each worktree keeps its own target/; cross-worktree compile reuse comes from sccache, not shared CARGO_TARGET_DIR.
 ---
+```
 
 # 0005 — Per-worktree `target/` plus sccache, no shared `CARGO_TARGET_DIR`
 

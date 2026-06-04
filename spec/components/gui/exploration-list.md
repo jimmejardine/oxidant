@@ -1,3 +1,4 @@
+```yaml
 ---
 id: exploration-list
 kind: component
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Left-panel tab listing all explorations for the current repo with status, branch, resource badges, and spawn/discard actions.
 ---
+```
 
 ## Row content
 

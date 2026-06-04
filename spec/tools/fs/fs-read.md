@@ -1,3 +1,4 @@
+```yaml
 ---
 id: fs-read
 kind: tool
@@ -18,6 +19,7 @@ status: active
 responsibility: |
   Read a file from the worktree, optionally a line range, returning UTF-8 text or a binary marker.
 ---
+```
 
 `category`: `ReadOnly`.
 

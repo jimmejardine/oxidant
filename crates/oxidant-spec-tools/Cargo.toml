@@ -32,3 +32,12 @@ dunce.workspace = true
 tokio = { workspace = true }
 tokio-util.workspace = true
 tempfile.workspace = true
+
+# One-shot maintenance binary. Wraps the `---`-delimited YAML
+# frontmatter on every spec/**/*.md in ```yaml … ``` fences so
+# raw-markdown viewers (GitHub, mdbook, egui_commonmark) render the
+# header as a code block instead of collapsing it onto one line.
+# Idempotent; safe to re-run.
+[[bin]]
+name = "wrap_frontmatter"
+path = "src/bin/wrap_frontmatter.rs"

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: apply-edits
 kind: tool
@@ -16,6 +17,7 @@ status: active
 responsibility: |
   Apply one or more span-precise edits across one or more files, atomically.
 ---
+```
 
 The span-native edit surface. Used when the model already has spans from a previous tool call (cargo diagnostic, LSP reference, syn query) and wants to make a precise change without copying source text.
 

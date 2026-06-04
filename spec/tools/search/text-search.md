@@ -1,3 +1,4 @@
+```yaml
 ---
 id: text-search
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Full-text BM25 search across both spec markdown and Rust source, with optional source/kind/language filters.
 ---
+```
 
 The agent's primary "find a concept" tool. Hits both `spec/**/*.md` and `crates/**/*.rs` in one call, with optional filters to narrow the scope.
 

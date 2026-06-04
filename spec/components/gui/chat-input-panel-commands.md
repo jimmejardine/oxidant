@@ -1,3 +1,4 @@
+```yaml
 ---
 id: chat-input-panel-commands
 kind: component
@@ -13,6 +14,7 @@ responsibility: |
   Slash command parsing and execution: ChatCommand enum, /clear, /compact,
   and unknown command handling.
 ---
+```
 
 ## ChatCommand enum
 

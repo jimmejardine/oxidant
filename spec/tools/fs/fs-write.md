@@ -1,3 +1,4 @@
+```yaml
 ---
 id: fs-write
 kind: tool
@@ -16,6 +17,7 @@ status: active
 responsibility: |
   Create a new file or fully overwrite an existing one; for in-place edits use edit-string or apply-edits instead.
 ---
+```
 
 `category`: `Mutating`.
 

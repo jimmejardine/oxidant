@@ -1,3 +1,4 @@
+```yaml
 ---
 id: spawn-exploration
 kind: flow
@@ -12,6 +13,7 @@ depends_on:
   - components/core/exploration
   - components/gui/viewport
 ---
+```
 
 # Spawn a sub-exploration
 

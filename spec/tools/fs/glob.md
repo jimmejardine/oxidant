@@ -1,3 +1,4 @@
+```yaml
 ---
 id: glob
 kind: tool
@@ -15,6 +16,7 @@ status: active
 responsibility: |
   Return paths matching a glob pattern under the worktree root.
 ---
+```
 
 `category`: `ReadOnly`.
 

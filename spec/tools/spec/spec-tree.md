@@ -1,3 +1,4 @@
+```yaml
 ---
 id: spec-tree
 kind: tool
@@ -17,6 +18,7 @@ status: active
 responsibility: |
   Return a hierarchical view of the spec graph rooted at a given ref, walking parent or depends_on edges.
 ---
+```
 
 `category`: `ReadOnly`.
 

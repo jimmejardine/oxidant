@@ -1,3 +1,4 @@
+```yaml
 ---
 id: vcs-merge-back
 kind: tool
@@ -14,6 +15,7 @@ status: active
 responsibility: |
   Merge a sub-exploration's branch back into its parent branch. GUI-only — destructive cross-exploration operations are user-initiated.
 ---
+```
 
 `category`: `Mutating`. **GUI-only**.
 

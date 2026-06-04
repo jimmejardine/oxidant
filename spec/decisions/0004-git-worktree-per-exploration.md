@@ -1,3 +1,4 @@
+```yaml
 ---
 id: 0004-git-worktree-per-exploration
 kind: decision
@@ -7,6 +8,7 @@ date: 2026-05-21
 responsibility: |
   Each side exploration gets its own git worktree + branch + rust-analyzer + target/, providing filesystem-level isolation between concurrent ideas.
 ---
+```
 
 # 0004 — One git worktree per exploration
 

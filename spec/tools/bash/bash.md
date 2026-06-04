@@ -1,3 +1,4 @@
+```yaml
 ---
 id: bash
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Run a shell command in the worktree with a timeout and captured output; the escape hatch when no first-class tool covers the case.
 ---
+```
 
 `category`: `Mutating`.
 

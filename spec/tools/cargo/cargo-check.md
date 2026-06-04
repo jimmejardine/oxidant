@@ -1,3 +1,4 @@
+```yaml
 ---
 id: cargo-check
 kind: tool
@@ -16,6 +17,7 @@ status: active
 responsibility: |
   Run cargo check with --message-format=json and return structured CompilerMessages + a pass/fail summary.
 ---
+```
 
 `category`: `ReadOnly` (build artifacts are side-effects but the tool doesn't modify source).
 

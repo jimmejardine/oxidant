@@ -1,3 +1,4 @@
+```yaml
 ---
 id: syn-rename-local
 kind: tool
@@ -17,6 +18,7 @@ status: active
 responsibility: |
   Rename a local binding (variable, parameter, or local function) within a single file based on a syntactic span; cross-file renames go through rust-rename.
 ---
+```
 
 `category`: `ReadOnly` for preview; `Mutating` when applied.
 

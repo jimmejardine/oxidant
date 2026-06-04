@@ -1,3 +1,4 @@
+```yaml
 ---
 id: workspace-edit-substrate
 kind: component
@@ -16,6 +17,7 @@ status: active
 responsibility: |
   Apply atomic, span-precise multi-file edits with optimistic-concurrency checks and post-edit syntactic validation for .rs files.
 ---
+```
 
 The internal apply path for every code change in oxidant. Private to `oxidant-tools`; not exposed directly to the model. Both [[tools/edit/edit-string]] and [[tools/edit/apply-edits]] route through it, and so do smart tools like [[tools/lsp/rust-rename]], [[tools/syn/syn-add-use]], and clippy-fix flows.
 

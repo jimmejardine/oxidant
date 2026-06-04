@@ -1,3 +1,4 @@
+```yaml
 ---
 id: add-tool
 kind: flow
@@ -15,6 +16,7 @@ depends_on:
   - tools/cargo/cargo-check
   - tools/cargo/cargo-test
 ---
+```
 
 # Add a new model-facing tool
 

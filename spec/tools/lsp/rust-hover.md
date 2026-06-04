@@ -1,3 +1,4 @@
+```yaml
 ---
 id: rust-hover
 kind: tool
@@ -15,6 +16,7 @@ status: active
 responsibility: |
   Return the rust-analyzer hover info at a position: type signature plus markdown docs.
 ---
+```
 
 `category`: `ReadOnly`.
 

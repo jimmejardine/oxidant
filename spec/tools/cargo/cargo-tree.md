@@ -1,3 +1,4 @@
+```yaml
 ---
 id: cargo-tree
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Return the cargo dependency tree as structured nodes (package, version, source, dependents).
 ---
+```
 
 `category`: `ReadOnly`.
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: spec-resolve-links
 kind: tool
@@ -16,6 +17,7 @@ status: active
 responsibility: |
   Return all inbound and outbound links (frontmatter and body refs) for one spec.
 ---
+```
 
 `category`: `ReadOnly`.
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: open-file-from-tree
 kind: flow
@@ -12,6 +13,7 @@ depends_on:
   - components/gui/file-tabs
   - components/gui/dock-layout
 ---
+```
 
 # Open a file from a tree panel into a centre tab
 

@@ -1,3 +1,4 @@
+```yaml
 ---
 id: spec-read
 kind: tool
@@ -17,6 +18,7 @@ status: active
 responsibility: |
   Fetch one spec file by canonical or short-form ref, returning parsed frontmatter and raw body.
 ---
+```
 
 `category`: `ReadOnly`.
 

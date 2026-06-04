@@ -1,3 +1,4 @@
+```yaml
 ---
 id: syn-find-items
 kind: tool
@@ -16,6 +17,7 @@ status: active
 responsibility: |
   Parse a Rust file via syn and return the items matching a kind + optional name pattern, with byte ranges.
 ---
+```
 
 `category`: `ReadOnly`.
 

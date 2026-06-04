@@ -1,3 +1,4 @@
+```yaml
 ---
 id: transcript-tab
 kind: component
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Render an exploration's conversation as a scrollable centre tab with markdown, tool-call cards, and streaming token updates.
 ---
+```
 
 The home centre tab in every exploration window.
 

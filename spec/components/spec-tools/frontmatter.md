@@ -1,3 +1,4 @@
+```yaml
 ---
 id: frontmatter
 kind: component
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Parse YAML frontmatter and body `[[refs]]` from spec markdown files; produce typed FrontmatterRecord and SpecBody structs.
 ---
+```
 
 The lexer/parser layer underneath everything else in `oxidant-spec-tools`. Pure function: bytes in, structured record out.
 
@@ -56,6 +58,10 @@ pub struct RefMention {
 ## Frontmatter grammar
 
 YAML between `---` markers at the very top of the file. Missing → error. Empty → empty `FrontmatterRecord` minus `id`/`kind` → validation error downstream.
+
+The frontmatter block MAY be wrapped in a ` ```yaml … ``` ` (or bare ` ``` `) code fence so that raw-markdown viewers (GitHub, mdbook, `egui_commonmark` in our own file tabs) render the header as a code block instead of collapsing the leading `---` into a horizontal rule. Both shapes parse to the same `FrontmatterRecord`; the canonical form for new specs is the fenced one. A trailing blank line between the closing ` ``` ` and the body's first prose line is consumed so the body line numbers match what a reader sees in the editor.
+
+The one-shot `wrap_frontmatter` binary under `crates/oxidant-spec-tools/src/bin/` adds fences to any spec that doesn't have them and is idempotent on those that do.
 
 ## `tests:` field
 

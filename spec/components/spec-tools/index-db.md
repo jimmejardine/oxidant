@@ -1,3 +1,4 @@
+```yaml
 ---
 id: index-db
 kind: component
@@ -14,6 +15,7 @@ status: active
 responsibility: |
   Maintain a SQLite metadata index of spec files supporting graph queries, status filters, and git-derived timestamps.
 ---
+```
 
 The structural backbone for [[tools/spec/spec-tree]], [[tools/spec/spec-resolve-links]], [[tools/spec/spec-for-file]], and the GUI's spec-tree panel ([[components/gui/spec-tree-panel]]). A single SQLite file at `<worktree>/.oxidant/spec-index.db`. Rebuilt incrementally by a file watcher in the running app, fully via `oxidant spec rebuild-index` on demand.
 

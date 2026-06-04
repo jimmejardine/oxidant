@@ -1,3 +1,4 @@
+```yaml
 ---
 id: cargo-metadata
 kind: tool
@@ -13,6 +14,7 @@ status: active
 responsibility: |
   Return workspace metadata: members, dependencies, features, target_dir, rust-version.
 ---
+```
 
 `category`: `ReadOnly`.
 

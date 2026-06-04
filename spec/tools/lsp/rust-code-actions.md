@@ -1,3 +1,4 @@
+```yaml
 ---
 id: rust-code-actions
 kind: tool
@@ -16,6 +17,7 @@ status: active
 responsibility: |
   Enumerate rust-analyzer code actions (quick-fixes, refactors, organise imports, implement missing members) for a range.
 ---
+```
 
 `category`: `ReadOnly` for enumeration; applying any action is `Mutating` and routes through the substrate.
 
