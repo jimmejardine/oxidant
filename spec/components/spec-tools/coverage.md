@@ -22,8 +22,8 @@ Specs name high-level files; those `use` utility files specs don't name directly
 3. **Edges** (`file → file`): from each file's `use` trees and `crate::` / `self::` / `super::` / `<workspace-crate>::`-rooted path expressions (collected via `syn`), resolved through the module map to the file the path lands in. External/std paths are skipped.
 4. **Seed**: every existing `code:` file across all specs (gathered by walking `spec/**/*.md`, see [[components/spec-tools/frontmatter]]).
 5. **Reachability**: BFS from the seeds over the edges.
-6. **Report**: source files not reached = `uncovered`, grouped by crate; plus `missing_seeds` (declared `code:` files absent on disk).
+6. **Report**: source files not reached = `uncovered`, grouped by crate; plus `missing_seeds` (declared `code:` files absent on disk). `mod.rs` files are excluded from the uncovered list — they're pure module-declaration files (`pub mod foo;` lines), nothing in them is worth a spec, and their parent reaches them via `mod x;` not `use x;` so they'd otherwise pile up as false positives. They stay in the graph so submodules they declare resolve correctly.
 
 ## Limits
 
-Reachability over real import edges — deterministic, but **heuristic**: macro-generated paths, `include!`, and edges that exist only through external re-exports can be missed. Binary entry points (`main.rs`, CLI-only modules) and pure re-export `mod.rs` hubs appear as uncovered unless a spec declares them — that's a genuine "not spec-anchored" signal, not a defect. This is a review aid, **not** a CI gate. Function-level granularity is a deferred follow-up (would need a call graph).
+Reachability over real import edges — deterministic, but **heuristic**: macro-generated paths, `include!`, and edges that exist only through external re-exports can be missed. Binary entry points (`main.rs`, CLI-only modules) appear as uncovered unless a spec declares them — that's a genuine "not spec-anchored" signal, not a defect. This is a review aid, **not** a CI gate. Function-level granularity is a deferred follow-up (would need a call graph).

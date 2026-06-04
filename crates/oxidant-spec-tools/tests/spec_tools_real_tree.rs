@@ -218,13 +218,23 @@ async fn spec_validate_tree_wide_returns_warnings() {
         ToolResult::Err(e) => panic!("err: {e}"),
     };
     assert_eq!(v["ok"], true);
-    let count = v["count"].as_u64().unwrap();
-    assert!(count > 0, "expected the baseline to surface real warnings");
-    let counts = v["counts"].as_object().unwrap();
-    assert!(
-        !counts.is_empty(),
-        "expected counts to be populated when warnings exist"
-    );
+    // Structural assertion only — `count` may legitimately be 0 on a
+    // clean tree, and `counts` is then an empty object. We don't tie
+    // the test to whether the live spec/ tree happens to have warnings
+    // right now; assert the envelope's shape instead.
+    let count = v["count"].as_u64().expect("count is a non-negative integer");
+    let counts = v["counts"].as_object().expect("counts is an object");
+    if count > 0 {
+        assert!(
+            !counts.is_empty(),
+            "when count > 0, counts must be populated by kind"
+        );
+    } else {
+        assert!(
+            counts.is_empty(),
+            "when count == 0, counts must be empty"
+        );
+    }
 }
 
 #[tokio::test]

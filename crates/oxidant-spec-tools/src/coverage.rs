@@ -73,6 +73,13 @@ pub fn analyze(repo: &Path) -> CoverageReport {
         .files
         .iter()
         .filter(|f| !reachable.contains(*f))
+        // `mod.rs` is a pure module-declaration file (`pub mod foo;`
+        // lines and the occasional shared use-statement) — nothing
+        // there is worth a spec, and most are unreachable via the
+        // import graph because their parent does `mod x;` not `use
+        // x;`. Exclude from the uncovered list; they stay in the
+        // graph so submodules they declare resolve correctly.
+        .filter(|f| !is_mod_rs(f))
         .map(|f| UncoveredFile {
             file: f.clone(),
             krate: graph.file_crate.get(f).cloned().unwrap_or_default(),
@@ -429,6 +436,12 @@ fn join(dir: &str, rest: &str) -> String {
     }
 }
 
+/// True when the workspace-relative path ends in `mod.rs`. Used to
+/// exclude pure module-declaration files from the uncovered list.
+fn is_mod_rs(rel: &str) -> bool {
+    rel.ends_with("/mod.rs") || rel == "mod.rs"
+}
+
 fn walk_rs(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for entry in walkdir::WalkDir::new(dir).into_iter().flatten() {
@@ -471,6 +484,37 @@ mod tests {
         write(r, "crates/app/src/util.rs", "pub fn helper() {}\n");
         write(r, "crates/app/src/orphan.rs", "pub fn dead() {}\n");
         d
+    }
+
+    #[test]
+    fn mod_rs_files_are_never_uncovered() {
+        let d = TempDir::new().unwrap();
+        let r = d.path();
+        write(r, "crates/app/Cargo.toml", "[package]\nname=\"app\"\n");
+        // lib.rs → pub mod sub; sub/mod.rs → pub mod thing;
+        // No spec declares any code: path, so everything is technically
+        // unreachable — but mod.rs files must NOT appear in `uncovered`.
+        write(r, "crates/app/src/lib.rs", "pub mod sub;\n");
+        write(r, "crates/app/src/sub/mod.rs", "pub mod thing;\n");
+        write(r, "crates/app/src/sub/thing.rs", "pub fn t() {}\n");
+        let report = analyze(r);
+        let unc: Vec<&str> = report.uncovered.iter().map(|u| u.file.as_str()).collect();
+        assert!(
+            !unc.iter().any(|f| f.ends_with("mod.rs")),
+            "mod.rs files must be excluded; got {unc:?}"
+        );
+        // lib.rs and thing.rs (non-mod.rs) still appear as uncovered.
+        assert!(unc.contains(&"crates/app/src/lib.rs"));
+        assert!(unc.contains(&"crates/app/src/sub/thing.rs"));
+    }
+
+    #[test]
+    fn is_mod_rs_matches_only_module_root_files() {
+        assert!(is_mod_rs("crates/app/src/sub/mod.rs"));
+        assert!(is_mod_rs("mod.rs"));
+        assert!(!is_mod_rs("crates/app/src/sub/other.rs"));
+        assert!(!is_mod_rs("crates/app/src/modifier.rs"));
+        assert!(!is_mod_rs("crates/app/src/mod.rs.bak"));
     }
 
     #[test]
