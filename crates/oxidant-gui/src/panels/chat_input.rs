@@ -73,6 +73,7 @@ impl ChatInputPanel {
         provider: &Arc<dyn Provider>,
         model: &str,
         system_prompt: Option<&str>,
+        enter_sends: bool,
         egui_ctx: &egui::Context,
     ) {
         // Drain pending_continue before drawing — clicking the
@@ -128,6 +129,26 @@ impl ChatInputPanel {
             ui.memory_mut(|m| m.request_focus(text_edit_id));
         }
 
+        // Whether the chat input held focus (last frame). Reused for both
+        // the keyboard-send decision and the Shift+Tab mode toggle below.
+        let chat_input_focused = ui.memory(|m| m.has_focus(text_edit_id));
+
+        // Decide a keyboard "send" and CONSUME the key so the multiline
+        // TextEdit (rendered below) doesn't also insert a newline — same
+        // trick as the Shift+Tab handling. Ctrl/Cmd+Enter always sends;
+        // when `enter_sends` is on, plain Enter sends too while Shift+Enter
+        // (the SHIFT modifier is left untouched) still inserts a newline.
+        // See spec/components/gui/chat-input-panel.md "Keybindings".
+        let key_send = !streaming
+            && chat_input_focused
+            && {
+                let mut s = ui.input_mut(|i| i.consume_key(Modifiers::COMMAND, Key::Enter));
+                if enter_sends {
+                    s |= ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
+                }
+                s
+            };
+
         // Header row: mode chip · model · send/cancel.
         ui.horizontal(|ui| {
             let chip_clicked = render_mode_chip(ui, self.mode, streaming);
@@ -147,11 +168,12 @@ impl ChatInputPanel {
                         }
                     }
                 } else {
-                    let send = ui.button("Send ⏎ (Ctrl+Enter)");
-                    let pressed_send = send.clicked()
-                        || ui.input(|i| {
-                            i.modifiers.command_only() && i.key_pressed(egui::Key::Enter)
-                        });
+                    let label = if enter_sends {
+                        "Send ⏎"
+                    } else {
+                        "Send ⏎ (Ctrl+Enter)"
+                    };
+                    let pressed_send = ui.button(label).clicked() || key_send;
                     if pressed_send && !self.draft.trim().is_empty() {
                         let prompt = std::mem::take(&mut self.draft);
                         // Clear any prior command feedback as we re-submit.
@@ -224,7 +246,6 @@ impl ChatInputPanel {
         // Shift+Tab and outdent (decrease_indentation); pulling the
         // event from the queue first means our consume_key fires and
         // the TextEdit's filtered_events returns nothing for Shift+Tab.
-        let chat_input_focused = ui.memory(|m| m.has_focus(id));
         if chat_input_focused
             && !streaming
             && ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab))

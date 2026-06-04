@@ -721,6 +721,12 @@ impl eframe::App for App {
             let provider = self.config.provider.clone();
             let model = self.config.model.clone();
             let system_prompt = self.config.system_prompt.clone();
+            let enter_sends = self
+                .config
+                .settings
+                .lock()
+                .map(|s| s.gui.enter_sends)
+                .unwrap_or(false);
             let title = format_sub_title(&self.state, id);
             ctx.show_viewport_deferred(
                 egui::ViewportId::from_hash_of(id),
@@ -738,6 +744,7 @@ impl eframe::App for App {
                         &provider,
                         &model,
                         system_prompt.as_deref(),
+                        enter_sends,
                     );
                     if viewport_ctx.input(|i| i.viewport().close_requested())
                         && let Ok(mut s) = state.lock()
@@ -771,6 +778,7 @@ fn render_sub_window(
     provider: &Arc<dyn Provider>,
     model: &str,
     system_prompt: Option<&str>,
+    enter_sends: bool,
 ) {
     let view_id = sub.lock().unwrap().view_id;
     // Top label: which exploration this window is locked to.
@@ -800,6 +808,7 @@ fn render_sub_window(
             provider,
             model,
             system_prompt,
+            enter_sends,
             ctx,
         );
     });
@@ -969,6 +978,11 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                 );
             }
             DockTab::ChatInput => {
+                let enter_sends = self
+                    .settings
+                    .lock()
+                    .map(|s| s.gui.enter_sends)
+                    .unwrap_or(false);
                 self.chat_panel.render(
                     ui,
                     &self.state,
@@ -979,6 +993,7 @@ impl<'a> egui_dock::TabViewer for TabViewer<'a> {
                     &self.provider,
                     &self.model,
                     self.system_prompt.as_deref(),
+                    enter_sends,
                     &self.egui_ctx,
                 );
             }

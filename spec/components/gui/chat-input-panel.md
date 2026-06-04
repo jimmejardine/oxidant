@@ -28,7 +28,10 @@ responsibility: |
 
 ## Keybindings
 
-- Enter: insert newline by default; Ctrl+Enter sends. (Configurable: swap to Enter-sends in [[components/config/settings]].)
+- Send key, driven by the `gui.enter_sends` setting ([[components/config/settings]]), read live each frame and passed into `ChatInputPanel::render`:
+  - **default (`enter_sends = false`)**: Enter inserts a newline; **Ctrl/Cmd+Enter sends**. The button reads `Send ⏎ (Ctrl+Enter)`.
+  - **`enter_sends = true`**: **Enter sends**; **Shift+Enter inserts a newline**; Ctrl/Cmd+Enter still sends. The button reads `Send ⏎`.
+  The send key is consumed (`ui.input_mut(|i| i.consume_key(..))`) before the `TextEdit` renders so the multiline widget doesn't also insert a newline — same technique as Shift+Tab below.
 - Esc: cancel the in-flight agent turn if any.
 - **Shift+Tab** (while the text edit owns focus): flip the agent between Plan and Implement mode. See [[components/core/agent-mode]]. The header chip updates on the same frame; the next Send uses the new mode. The handler MUST consume the key event (`ui.input_mut(|i| i.consume_key(Modifiers::SHIFT, Key::Tab))`) so Tab focus-traversal and tab-character insertion are suppressed only when Shift is held.
 
