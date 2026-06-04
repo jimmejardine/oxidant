@@ -26,10 +26,16 @@ A Rust-native desktop code agent for working on Rust projects. Three differentia
 
 ## Entry points by interest
 
-- "How does the agent edit code?" → [[components/tools/workspace-edit-substrate]], [[tools/edit/apply-edits]], [[invariants/edits-are-atomic]]
+- "How does the agent edit code?" → [[components/tools/workspace-edit-substrate]], [[tools/edit/apply-edits]], [[invariants/edits-are-atomic]], [[flows/mutating-edit]]
+- "How does one turn of the agent loop run end-to-end?" → [[flows/conversation-turn]], [[components/core/agent-loop]]
+- "How are tool calls gated?" → [[flows/tool-permission-check]], [[contracts/tool]]
 - "How does the GUI work?" → [[components/gui/dock-layout]], [[components/gui/viewport]], [[decisions/0003-egui-gui-over-tui]]
+- "How are settings edited at runtime?" → [[flows/edit-settings]], [[components/config/settings]]
+- "How does rust-analyzer come up the first time?" → [[flows/lsp-cold-start]], [[components/rust-tools/lsp]]
 - "How do worktrees work?" → [[flows/spawn-exploration]], [[flows/merge-back]]
 - "How do I extend oxidant with a new tool?" → [[flows/add-tool]]
+- "How does spec-first editing actually go?" → [[flows/spec-first-edit]], [[decisions/0008-spec-is-canonical]]
+- "What does the spec CI gate check?" → [[flows/spec-ci-gate]], [[components/spec-tools/validate]]
 - "Why this and not that?" → all of `decisions/`
 
 ## Status

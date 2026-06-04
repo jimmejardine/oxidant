@@ -45,7 +45,7 @@ The active theme slug lives in `[gui] theme = "..."` under settings (see [[compo
 
 Changes flow:
 - Startup: `oxidant_config::load(...)` → `Theme::from_slug(&s.gui.theme)` → `theme::apply` in the viewport creation closure.
-- Runtime switch: the Settings tab ([[components/gui/settings-panel]]) owns the theme picker. It updates `App::active_theme`, calls `theme::apply(ui.ctx(), …)`, and writes the new slug back to settings. There is no separate top-bar menu for theme — earlier revisions carried a View → Theme submenu, but it was removed once Settings shipped, so users have one obvious place to tune everything.
+- Runtime switch: the Settings tab (whose data layer is [[components/config/settings]]) owns the theme picker. It updates `App::active_theme`, calls `theme::apply(ui.ctx(), …)`, and writes the new slug back to settings. There is no separate top-bar menu for theme — earlier revisions carried a View → Theme submenu, but it was removed once Settings shipped, so users have one obvious place to tune everything.
 
 ## Light themes
 

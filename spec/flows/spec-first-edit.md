@@ -46,7 +46,7 @@ A planned change that you can articulate as "the spec currently says X, after th
 
 4. **Validate.** [[tools/spec/spec-validate]] over the whole tree. The expected warnings for an in-flight change:
    - `missing_code_path` for any new file you haven't created yet — accept temporarily.
-   - `unresolved_ref` for any forward [[tools/spec/spec-validate]] you added — these should resolve as you finish editing other specs.
+   - `unresolved_ref` for any forward `[[ref]]` you added — these should resolve as you finish editing other specs.
    - Anything else (`orphan`, `cycle`, `length_budget_exceeded`, `frontmatter_invalid_value`) is a real problem; fix before continuing.
 
 5. **Implement the code change.** Now write or edit the Rust at the declared `code:` paths. Follow [[flows/mutating-edit]] for the apply path. Iterate until [[tools/cargo/cargo-check]] is clean.

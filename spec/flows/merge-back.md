@@ -9,7 +9,7 @@ responsibility: |
 depends_on:
   - components/vcs/worktree-mgmt
   - components/vcs/git-shellout
-  - components/gui/diagnostic-panel
+  - components/gui/merge-conflicts
 ```
 
 # Merge a sub-exploration back into its parent
