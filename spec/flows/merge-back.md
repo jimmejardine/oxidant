@@ -1,5 +1,4 @@
 ```yaml
----
 id: merge-back
 kind: flow
 parent: overview
@@ -11,7 +10,6 @@ depends_on:
   - components/vcs/worktree-mgmt
   - components/vcs/git-shellout
   - components/gui/diagnostic-panel
----
 ```
 
 # Merge a sub-exploration back into its parent

@@ -1,5 +1,4 @@
 ```yaml
----
 id: ask-user
 kind: tool
 parent: overview
@@ -15,7 +14,6 @@ tests:
 status: active
 responsibility: |
   Ask the user a multiple-choice question (with an optional free-form fallback) from within an agent turn. Blocks the calling tool task on a oneshot until the user clicks Submit; returns the chosen text.
----
 ```
 
 `category`: `ReadOnly`.

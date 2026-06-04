@@ -1,5 +1,4 @@
 ```yaml
----
 id: health-check-panel
 kind: component
 parent: overview
@@ -15,7 +14,6 @@ code:
   - crates/oxidant-gui/src/panels/health_check.rs
 status: active
 responsibility: "Right-docked tree panel showing the workspace's CI-equivalent state — every check the project gates on, surfaced as a root node with a green ✔ if clean or a red ✗ with an auto-expanded subtree of issues. Replaces the earlier single-check Diagnostics panel."
----
 ```
 
 ## Checks

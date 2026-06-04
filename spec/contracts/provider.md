@@ -1,5 +1,4 @@
 ```yaml
----
 id: provider
 kind: contract
 parent: overview
@@ -10,7 +9,6 @@ code:
   - crates/oxidant-providers/src/provider.rs
 responsibility: |
   The trait every LLM backend implements: async streaming chat with tool use, plus a capabilities probe.
----
 ```
 
 `Provider` is the uniform interface oxidant uses to talk to LLM backends. The agent loop never knows which concrete backend it has; it has a `dyn Provider` and calls `chat`. Per-backend quirks (tool-call payload shapes, streaming framing) are normalised behind impls.

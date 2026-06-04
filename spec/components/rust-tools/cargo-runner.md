@@ -1,5 +1,4 @@
 ```yaml
----
 id: cargo-runner
 kind: component
 parent: overview
@@ -14,7 +13,6 @@ tests:
 status: active
 responsibility: |
   Spawn cargo/clippy/rustc/cargo-expand as subprocesses with --message-format=json, parse the streaming output via cargo_metadata, and return structured results.
----
 ```
 
 Backs every cargo-* tool: [[tools/cargo/cargo-check]], [[tools/cargo/cargo-build]], [[tools/cargo/cargo-test]], [[tools/cargo/cargo-clippy]], [[tools/cargo/cargo-expand]], [[tools/cargo/cargo-tree]], [[tools/cargo/cargo-metadata]].

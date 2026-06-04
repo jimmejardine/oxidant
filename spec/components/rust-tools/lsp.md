@@ -1,5 +1,4 @@
 ```yaml
----
 id: lsp
 kind: component
 parent: overview
@@ -15,7 +14,6 @@ tests:
 status: active
 responsibility: |
   Manage one rust-analyzer process per exploration over async-lsp and expose its capabilities as structured agent tools.
----
 ```
 
 The semantic spine. rust-analyzer runs as a subprocess per active exploration ([[decisions/0009-no-ra-ap-crates-lsp-suffices]]); this component owns the lifecycle and serves the tool surface in [[tools/lsp/rust-hover]], [[tools/lsp/rust-goto-definition]], etc.

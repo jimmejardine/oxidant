@@ -1,5 +1,4 @@
 ```yaml
----
 id: typography
 kind: component
 parent: overview
@@ -14,7 +13,6 @@ code:
 status: active
 responsibility: |
   Single-size uniform typography across every panel, with broad-Unicode bundled fonts and a user-controllable global zoom factor (scroll-wheel hotkey, Ctrl+0 reset, settings slider) persisted across launches.
----
 ```
 
 ## Bundled fonts

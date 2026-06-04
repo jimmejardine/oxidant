@@ -1,5 +1,4 @@
 ```yaml
----
 id: vcs-branch-create
 kind: tool
 parent: components/vcs/git-shellout
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Create a new branch in the active exploration's worktree (does not switch to it).
----
 ```
 
 `category`: `Mutating`.

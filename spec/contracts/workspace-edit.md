@@ -1,5 +1,4 @@
 ```yaml
----
 id: workspace-edit
 kind: contract
 parent: overview
@@ -17,7 +16,6 @@ tests:
   - crates/oxidant-tools/src/workspace_edit.rs::post_edit_byte_ranges_track_shifts
 responsibility: |
   The atomic multi-file edit data structure used by every code-changing path in oxidant.
----
 ```
 
 `WorkspaceEdit` is the lingua franca for code changes. LSP refactors produce it; clippy-fix flows produce it; `syn` transforms produce it; the two model-facing edit tools both build it. The [[components/tools/workspace-edit-substrate]] consumes it.

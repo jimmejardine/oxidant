@@ -1,5 +1,4 @@
 ```yaml
----
 id: vcs-discard
 kind: tool
 parent: components/vcs/worktree-mgmt
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Remove a sub-exploration's worktree and archive its transcript. GUI-only — destructive, user-initiated.
----
 ```
 
 `category`: `Mutating`. **GUI-only**.

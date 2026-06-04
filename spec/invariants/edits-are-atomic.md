@@ -1,5 +1,4 @@
 ```yaml
----
 id: edits-are-atomic
 kind: invariant
 order: 1
@@ -8,7 +7,6 @@ responsibility: |
   Every WorkspaceEdit is applied all-or-nothing across all files, with rollback on any post-edit validation failure.
 depends_on:
   - components/tools/workspace-edit-substrate
----
 ```
 
 For every `WorkspaceEdit` flowing through [[components/tools/workspace-edit-substrate]]:

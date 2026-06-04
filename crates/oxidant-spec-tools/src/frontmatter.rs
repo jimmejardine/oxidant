@@ -99,9 +99,11 @@ impl SpecStatus {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
-    #[error("missing frontmatter: file must begin with `---` on its first line")]
+    #[error(
+        "missing frontmatter: file must begin with a ```yaml (or ```) fenced YAML block, or a `---`-delimited block"
+    )]
     MissingFrontmatter,
-    #[error("unterminated frontmatter: opening `---` has no closing `---` or `...`")]
+    #[error("unterminated frontmatter: the opening fence (or `---`) has no closing line")]
     UnterminatedFrontmatter,
     #[error("invalid YAML in frontmatter: {0}")]
     InvalidYaml(String),
@@ -116,7 +118,7 @@ pub enum ParseError {
 pub fn parse(content: &str) -> Result<SpecFile, ParseError> {
     let (yaml_text, body, body_line_offset) = split_frontmatter(content)?;
     let raw: RawFrontmatter =
-        serde_yaml_ng::from_str(yaml_text).map_err(|e| ParseError::InvalidYaml(e.to_string()))?;
+        serde_yaml_ng::from_str(&yaml_text).map_err(|e| ParseError::InvalidYaml(e.to_string()))?;
     let frontmatter = raw.into_record()?;
     let refs_in_body = extract_refs(&body, body_line_offset);
     Ok(SpecFile {
@@ -126,84 +128,55 @@ pub fn parse(content: &str) -> Result<SpecFile, ParseError> {
     })
 }
 
-fn split_frontmatter(content: &str) -> Result<(&str, String, usize), ParseError> {
-    let mut lines = content.lines().enumerate();
-    let Some((_, first)) = lines.next() else {
+/// Split a spec file into (yaml, body, body_line_offset).
+///
+/// Canonical form is a **fenced YAML block** — the file opens with
+/// ```` ```yaml ```` (or bare ```` ``` ```` / `~~~`) and the YAML runs to
+/// the closing fence, so raw-markdown viewers render the header as a code
+/// block. An optional inner `---`/`...` pair (the legacy YAML delimiters)
+/// inside the fence is stripped, so older fence+`---` files still parse.
+/// A bare `---`…`---` block with no fence is also tolerated for
+/// hand-written files. See spec/components/spec-tools/frontmatter.md.
+fn split_frontmatter(content: &str) -> Result<(String, String, usize), ParseError> {
+    let lines: Vec<&str> = content.lines().collect();
+    let Some(first) = lines.first() else {
         return Err(ParseError::MissingFrontmatter);
     };
 
-    // Optional code-fence wrap: a spec can open with ```yaml (or
-    // bare ```) so the frontmatter renders as a code block in raw-
-    // markdown viewers. The matching close ``` after the YAML's
-    // `---` terminator is also consumed. Both shapes parse to the
-    // same Frontmatter. See spec/components/spec-tools/validate.md
-    // "Frontmatter format".
-    let has_opening_fence = is_fence_opener(first.trim());
-    let opening_fence_bytes = if has_opening_fence {
-        first.len() + 1 // include the newline
-    } else {
-        0
-    };
-
-    let yaml_start_line = if has_opening_fence {
-        // Read the next line as the real frontmatter opener.
-        let Some((_, second)) = lines.next() else {
-            return Err(ParseError::MissingFrontmatter);
-        };
-        if second.trim() != "---" {
-            return Err(ParseError::MissingFrontmatter);
-        }
-        second
-    } else {
-        if first.trim() != "---" {
-            return Err(ParseError::MissingFrontmatter);
-        }
-        first
-    };
-
-    let mut yaml_end_byte: Option<usize> = None;
-    let mut body_start_line: Option<usize> = None;
-    let mut running_byte = opening_fence_bytes + yaml_start_line.len() + 1;
-    for (line_idx, line) in lines {
-        let trimmed = line.trim();
-        if trimmed == "---" || trimmed == "..." {
-            yaml_end_byte = Some(running_byte);
-            body_start_line = Some(line_idx + 1); // first body line is the one after the closer
-            break;
-        }
-        running_byte += line.len() + 1;
-    }
-    let yaml_end = yaml_end_byte.ok_or(ParseError::UnterminatedFrontmatter)?;
-    let mut body_start = body_start_line.unwrap();
-
-    // If the file opened with a fence, the line right after the
-    // closing `---` should be the matching ``` close. Consume it
-    // so the body is what the user actually wrote, not the literal
-    // close-fence text. A blank line after the close-fence is also
-    // consumed so the body lead doesn't start with an awkward gap.
-    if has_opening_fence {
-        let mut after_close = content.lines().skip(body_start);
-        if let Some(line) = after_close.next()
-            && line.trim().starts_with("```")
-        {
+    if is_fence_opener(first.trim()) {
+        // Fenced: YAML is everything up to the closing fence.
+        let close_idx = lines
+            .iter()
+            .enumerate()
+            .skip(1)
+            .find(|(_, l)| is_fence_closer(l.trim()))
+            .map(|(i, _)| i)
+            .ok_or(ParseError::UnterminatedFrontmatter)?;
+        let yaml = strip_yaml_delimiters(&lines[1..close_idx]);
+        // Body starts after the closing fence; consume one optional blank
+        // line so the lead matches what the author wrote.
+        let mut body_start = close_idx + 1;
+        if lines.get(body_start).is_some_and(|l| l.trim().is_empty()) {
             body_start += 1;
-            // Eat one optional blank line so the body content
-            // starts at its first real line, matching the
-            // unfenced shape.
-            if let Some(maybe_blank) = after_close.next()
-                && maybe_blank.trim().is_empty()
-            {
-                body_start += 1;
-            }
         }
+        let body = lines.get(body_start..).unwrap_or(&[]).join("\n");
+        Ok((yaml, body, body_start + 1))
+    } else if first.trim() == "---" {
+        // Legacy unfenced `---`…`---` block.
+        let close_idx = lines
+            .iter()
+            .enumerate()
+            .skip(1)
+            .find(|(_, l)| matches!(l.trim(), "---" | "..."))
+            .map(|(i, _)| i)
+            .ok_or(ParseError::UnterminatedFrontmatter)?;
+        let yaml = lines[1..close_idx].join("\n");
+        let body_start = close_idx + 1;
+        let body = lines.get(body_start..).unwrap_or(&[]).join("\n");
+        Ok((yaml, body, body_start + 1))
+    } else {
+        Err(ParseError::MissingFrontmatter)
     }
-
-    let yaml_text = &content[opening_fence_bytes + yaml_start_line.len() + 1..yaml_end];
-    let body = collect_body(content, body_start);
-    // body_line_offset: the line number the first body line had in the
-    // original source (1-indexed).
-    let body_line_offset = body_start + 1;
-    Ok((yaml_text, body, body_line_offset))
 }
 
 /// A markdown code-fence opener. Recognises ```` ``` ```` and ```` ~~~ ````
@@ -212,12 +185,32 @@ fn is_fence_opener(trimmed: &str) -> bool {
     trimmed.starts_with("```") || trimmed.starts_with("~~~")
 }
 
-fn collect_body(content: &str, start_line: usize) -> String {
-    content
-        .lines()
-        .skip(start_line)
-        .collect::<Vec<_>>()
-        .join("\n")
+/// A closing fence line — a run of backticks/tildes with no info string.
+fn is_fence_closer(trimmed: &str) -> bool {
+    trimmed.starts_with("```") || trimmed.starts_with("~~~")
+}
+
+/// Strip an optional leading `---` and trailing `---`/`...` (plus blank
+/// lines) from the lines inside a frontmatter fence — the legacy YAML
+/// delimiters that the fence makes redundant.
+fn strip_yaml_delimiters(lines: &[&str]) -> String {
+    let mut start = 0;
+    let mut end = lines.len();
+    while start < end && lines[start].trim().is_empty() {
+        start += 1;
+    }
+    if start < end && lines[start].trim() == "---" {
+        start += 1;
+    }
+    while end > start {
+        let t = lines[end - 1].trim();
+        if t.is_empty() || t == "---" || t == "..." {
+            end -= 1;
+        } else {
+            break;
+        }
+    }
+    lines[start..end].join("\n")
 }
 
 #[derive(Deserialize)]
@@ -515,6 +508,26 @@ mod tests {
         let f = parse(src).expect("parse");
         assert_eq!(f.frontmatter.id, "foo");
         assert_eq!(f.body.trim(), "body text");
+    }
+
+    #[test]
+    fn parses_fence_only_frontmatter() {
+        // Canonical new form: YAML directly inside the fence, no `---`.
+        let src = "```yaml\nid: foo\nkind: component\n```\n\nbody text\n";
+        let f = parse(src).expect("parse");
+        assert_eq!(f.frontmatter.id, "foo");
+        assert!(matches!(f.frontmatter.kind, SpecKind::Component));
+        assert_eq!(f.body.trim(), "body text");
+    }
+
+    #[test]
+    fn fence_only_keeps_correct_line_numbers_for_body_refs() {
+        // fence(1) + id(2) + kind(3) + close(4) + blank(5) → body at line 6.
+        let src = "```yaml\nid: a\nkind: tool\n```\n\nSee [[x/y]] and [[z]].\n";
+        let f = parse(src).expect("parse");
+        let raws: Vec<_> = f.refs_in_body.iter().map(|r| r.raw.as_str()).collect();
+        assert_eq!(raws, vec!["x/y", "z"]);
+        assert_eq!(f.refs_in_body[0].line, 6);
     }
 
     #[test]

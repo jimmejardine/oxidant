@@ -1,5 +1,4 @@
 ```yaml
----
 id: graph
 kind: component
 parent: overview
@@ -15,7 +14,6 @@ tests:
 status: active
 responsibility: |
   Construct an in-memory directed graph of spec nodes and edges (parent, implements, depends_on, body refs), and answer traversal queries.
----
 ```
 
 Sits between the SQLite index and the query/validate/diff tools. Builds a `petgraph::DiGraph<Node, EdgeKind>` from the index, or directly from the parsed `SpecFile`s when the index is unavailable.

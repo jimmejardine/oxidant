@@ -1,5 +1,4 @@
 ```yaml
----
 id: vcs-explorations-list
 kind: tool
 parent: components/vcs/worktree-mgmt
@@ -14,7 +13,6 @@ code:
 status: active
 responsibility: |
   List all known explorations (main + sub) with their worktree paths, branches, status, and basic resource usage.
----
 ```
 
 `category`: `ReadOnly`.

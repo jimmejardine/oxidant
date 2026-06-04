@@ -1,5 +1,4 @@
 ```yaml
----
 id: file-tree-panel
 kind: component
 parent: overview
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Left-docked browser for the workspace filesystem. Lets the user navigate to any file under the workspace root and open it as an editable centre tab via double-click — the same flow [[components/gui/spec-tree-panel]] uses for specs.
----
 ```
 
 ## Layout

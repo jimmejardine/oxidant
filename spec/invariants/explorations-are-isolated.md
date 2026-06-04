@@ -1,5 +1,4 @@
 ```yaml
----
 id: explorations-are-isolated
 kind: invariant
 order: 3
@@ -9,7 +8,6 @@ depends_on:
   - components/vcs/worktree-mgmt
 responsibility: |
   Operations in one exploration never modify another exploration's worktree, target/, LSP state, or conversation.
----
 ```
 
 Two explorations may share `.git/objects` (the git worktree design point) but nothing else above that. Specifically:

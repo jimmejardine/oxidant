@@ -1,5 +1,4 @@
 ```yaml
----
 id: cargo-tree
 kind: tool
 parent: components/rust-tools/cargo-runner
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Return the cargo dependency tree as structured nodes (package, version, source, dependents).
----
 ```
 
 `category`: `ReadOnly`.

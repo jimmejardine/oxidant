@@ -1,5 +1,4 @@
 ```yaml
----
 id: rust-find-references
 kind: tool
 parent: components/rust-tools/lsp
@@ -15,7 +14,6 @@ tests:
 status: active
 responsibility: |
   Return all references to the symbol at a position across the workspace.
----
 ```
 
 `category`: `ReadOnly`.

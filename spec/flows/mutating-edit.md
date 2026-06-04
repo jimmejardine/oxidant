@@ -1,5 +1,4 @@
 ```yaml
----
 id: mutating-edit
 kind: flow
 parent: overview
@@ -19,7 +18,6 @@ depends_on:
   - tools/edit/edit-string
   - invariants/edits-are-atomic
   - invariants/rust-files-parse-after-edit
----
 ```
 
 # Apply a Mutating tool call and check for drift

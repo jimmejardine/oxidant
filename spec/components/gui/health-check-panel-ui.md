@@ -1,5 +1,4 @@
 ```yaml
----
 id: health-check-panel-ui
 kind: component
 parent: health-check-panel
@@ -13,7 +12,6 @@ code:
   - crates/oxidant-gui/src/panels/health_check.rs
 status: active
 responsibility: "UI rendering for the health-check panel: status glyphs per CheckKind, collapsible tree structure, subtree grouping, row interactions (click-to-open, double-click auto-fill), failure isolation, auto-expand bookkeeping, and leaf-row rendering."
----
 ```
 
 ## Glyphs and states

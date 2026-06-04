@@ -1,5 +1,4 @@
 ```yaml
----
 id: rust-rename
 kind: tool
 parent: components/rust-tools/lsp
@@ -18,7 +17,6 @@ tests:
 status: active
 responsibility: |
   Compute a cross-file rename WorkspaceEdit via rust-analyzer; the caller decides whether to apply.
----
 ```
 
 `category`: `ReadOnly` for preview; the apply step is `Mutating` and goes through [[components/tools/workspace-edit-substrate]].

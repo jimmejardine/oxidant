@@ -1,5 +1,4 @@
 ```yaml
----
 id: syn-find-items
 kind: tool
 parent: components/rust-tools/syn-tools
@@ -16,7 +15,6 @@ tests:
 status: active
 responsibility: |
   Parse a Rust file via syn and return the items matching a kind + optional name pattern, with byte ranges.
----
 ```
 
 `category`: `ReadOnly`.

@@ -1,5 +1,4 @@
 ```yaml
----
 id: spec-first-edit
 kind: flow
 parent: overview
@@ -17,7 +16,6 @@ depends_on:
   - tools/edit/apply-edits
   - tools/cargo/cargo-check
   - tools/vcs/vcs-commit
----
 ```
 
 # Edit spec first, then code

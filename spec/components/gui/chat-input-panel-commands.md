@@ -1,5 +1,4 @@
 ```yaml
----
 id: chat-input-panel-commands
 kind: component
 parent: chat-input-panel
@@ -13,7 +12,6 @@ status: active
 responsibility: |
   Slash command parsing and execution: ChatCommand enum, /clear, /compact,
   and unknown command handling.
----
 ```
 
 ## ChatCommand enum

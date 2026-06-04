@@ -1,5 +1,4 @@
 ```yaml
----
 id: spec-ci-gate
 kind: flow
 parent: overview
@@ -11,7 +10,6 @@ depends_on:
   - tools/spec/spec-validate
   - tools/spec/spec-diff
   - decisions/0008-spec-is-canonical
----
 ```
 
 # Run the spec gate in CI

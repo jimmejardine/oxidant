@@ -1,5 +1,4 @@
 ```yaml
----
 id: syn-add-derive
 kind: tool
 parent: components/rust-tools/syn-tools
@@ -18,7 +17,6 @@ tests:
 status: active
 responsibility: |
   Add a #[derive(...)] entry to a struct or enum, merging with any existing derive attribute.
----
 ```
 
 `category`: `ReadOnly` for preview; `Mutating` when applied.

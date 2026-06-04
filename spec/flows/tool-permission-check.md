@@ -1,5 +1,4 @@
 ```yaml
----
 id: tool-permission-check
 kind: flow
 parent: overview
@@ -12,7 +11,6 @@ depends_on:
   - components/core/tool-registry
   - contracts/tool
   - decisions/0002-no-built-in-sandbox
----
 ```
 
 # Decide whether a tool call may proceed

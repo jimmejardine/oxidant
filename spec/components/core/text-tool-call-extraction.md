@@ -1,5 +1,4 @@
 ```yaml
----
 id: text-tool-call-extraction
 kind: component
 parent: overview
@@ -12,7 +11,6 @@ code:
 status: active
 responsibility: |
   Recover tool calls that the model emitted as literal text rather than via the provider's native tool-use mechanism. Runs once per turn at end-of-stream, scanning the accumulated text for known XML/JSON tool-call envelopes, and inserts each match into the agent-loop's pending-tool-call set so the existing dispatch path picks it up unchanged.
----
 ```
 
 ## Motivation

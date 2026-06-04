@@ -1,5 +1,4 @@
 ```yaml
----
 id: anthropic
 kind: component
 parent: overview
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Talk to the Anthropic Messages API: streaming, tool use, prompt caching, extended thinking.
----
 ```
 
 The primary provider in MVP. Uses the native Messages API directly (not OpenAI-compatible).

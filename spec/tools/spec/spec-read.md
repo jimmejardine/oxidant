@@ -1,5 +1,4 @@
 ```yaml
----
 id: spec-read
 kind: tool
 parent: components/spec-tools/frontmatter
@@ -17,7 +16,6 @@ tests:
 status: active
 responsibility: |
   Fetch one spec file by canonical or short-form ref, returning parsed frontmatter and raw body.
----
 ```
 
 `category`: `ReadOnly`.

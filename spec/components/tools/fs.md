@@ -1,5 +1,4 @@
 ```yaml
----
 id: fs
 kind: component
 parent: overview
@@ -13,7 +12,6 @@ tests:
 status: active
 responsibility: |
   Filesystem read/write/list capabilities scoped to the exploration's workspace root.
----
 ```
 
 Generic filesystem operations. Backs [[tools/fs/fs-read]], [[tools/fs/fs-write]], [[tools/fs/glob]], [[tools/fs/grep]].

@@ -1,5 +1,4 @@
 ```yaml
----
 id: syn-add-use
 kind: tool
 parent: components/rust-tools/syn-tools
@@ -17,7 +16,6 @@ tests:
 status: active
 responsibility: |
   Add a use path to a Rust file at the correct location (after existing use clauses, respecting grouping); produce a WorkspaceEdit.
----
 ```
 
 `category`: `ReadOnly` for preview; `Mutating` when applied via the substrate.

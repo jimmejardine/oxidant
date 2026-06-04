@@ -1,5 +1,4 @@
 ```yaml
----
 id: spec-tree-panel
 kind: component
 parent: overview
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Left-docked tree view of spec/ organised by kind, with status/order ordering, recent-change badges, validate-warning indicators, and per-leaf Refs out / Refs in subtrees.
----
 ```
 
 ## Layout

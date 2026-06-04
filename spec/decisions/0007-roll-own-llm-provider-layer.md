@@ -1,5 +1,4 @@
 ```yaml
----
 id: 0007-roll-own-llm-provider-layer
 kind: decision
 order: 7
@@ -7,7 +6,6 @@ status: active
 date: 2026-05-21
 responsibility: |
   Hand-roll the LLM provider abstraction rather than adopting rig, swiftide, or genai.
----
 ```
 
 # 0007 — Hand-roll the provider layer

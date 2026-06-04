@@ -1,12 +1,10 @@
 ```yaml
----
 id: glossary
 kind: glossary
 order: 1
 status: active
 responsibility: |
   Shared vocabulary referenced across the rest of the spec tree.
----
 ```
 
 # Glossary

@@ -1,5 +1,4 @@
 ```yaml
----
 id: cargo-metadata
 kind: tool
 parent: components/rust-tools/cargo-runner
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Return workspace metadata: members, dependencies, features, target_dir, rust-version.
----
 ```
 
 `category`: `ReadOnly`.

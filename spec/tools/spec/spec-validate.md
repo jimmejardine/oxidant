@@ -1,5 +1,4 @@
 ```yaml
----
 id: spec-validate
 kind: tool
 parent: components/spec-tools/validate
@@ -17,7 +16,6 @@ tests:
 status: active
 responsibility: |
   Run the full validator over spec/ and return structured warnings (frontmatter completeness, link integrity, length budgets, orphans, code path existence).
----
 ```
 
 `category`: `ReadOnly`.

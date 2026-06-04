@@ -1,5 +1,4 @@
 ```yaml
----
 id: 0001-multi-provider-llm
 kind: decision
 order: 1
@@ -7,7 +6,6 @@ status: active
 date: 2026-05-21
 responsibility: |
   Support multiple LLM providers (Anthropic, OpenAI, Ollama, llama.cpp) behind a hand-rolled Provider trait.
----
 ```
 
 # 0001 — Support multiple LLM providers via a hand-rolled abstraction

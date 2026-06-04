@@ -1,5 +1,4 @@
 ```yaml
----
 id: spec-diff
 kind: tool
 parent: components/spec-tools/diff
@@ -15,7 +14,6 @@ tests:
 status: active
 responsibility: |
   Detect spec↔code drift; in MVP this means trait-method drift for contract specs and missing code: paths for component specs.
----
 ```
 
 `category`: `ReadOnly`.

@@ -1,5 +1,4 @@
 ```yaml
----
 id: 0008-spec-is-canonical
 kind: decision
 order: 8
@@ -7,7 +6,6 @@ status: active
 date: 2026-05-21
 responsibility: |
   Establish spec/ as the authoritative design source for oxidant; code is a realisation of spec, not the other way round.
----
 ```
 
 # 0008 — `spec/` is the source of truth for design

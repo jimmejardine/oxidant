@@ -1,5 +1,4 @@
 ```yaml
----
 id: cargo-expand
 kind: tool
 parent: components/rust-tools/cargo-runner
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Run cargo-expand to show macro-expanded source for a target; advertise availability at startup.
----
 ```
 
 `category`: `ReadOnly`.

@@ -1,5 +1,4 @@
 ```yaml
----
 id: coverage
 kind: component
 parent: overview
@@ -12,7 +11,6 @@ code:
 status: active
 responsibility: |
   Compute spec coverage of code: which workspace Rust source files are transitively reachable from the files specs declare in their `code:` frontmatter, so code anchored to no spec can be found.
----
 ```
 
 Specs name high-level files; those `use` utility files specs don't name directly. This component builds a **file-level import graph** and reports `crates/*/src/**/*.rs` files that nothing a spec declares transitively reaches.

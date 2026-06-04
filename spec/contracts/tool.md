@@ -1,5 +1,4 @@
 ```yaml
----
 id: tool
 kind: contract
 parent: overview
@@ -10,7 +9,6 @@ responsibility: |
 depends_on: []
 code:
   - crates/oxidant-core/src/registry.rs
----
 ```
 
 `Tool` is the uniform interface every model-facing capability presents to the agent loop. The agent loop never knows which concrete tool it's dispatching to; it has a `dyn Tool` from the registry and calls `invoke`. The trait deliberately stays minimal — the schema captures everything the model needs to know, the category captures everything the permission layer needs to know, and `invoke` does the work.

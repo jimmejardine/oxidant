@@ -1,5 +1,4 @@
 ```yaml
----
 id: ollama
 kind: component
 parent: overview
@@ -16,7 +15,6 @@ tests:
 status: active
 responsibility: |
   Talk to a local Ollama (or llama.cpp) server via its OpenAI-compatible endpoint.
----
 ```
 
 A thin wrapper around [[components/providers/openai]] with conservative defaults for local servers.

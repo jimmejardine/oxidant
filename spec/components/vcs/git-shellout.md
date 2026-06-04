@@ -1,5 +1,4 @@
 ```yaml
----
 id: git-shellout
 kind: component
 parent: overview
@@ -11,7 +10,6 @@ code:
 status: active
 responsibility: |
   Wrap subprocess calls to the git CLI behind a typed Rust API; never use git2/gix.
----
 ```
 
 Low-level git wrapper. Every call is a single `tokio::process::Command::new("git")` invocation with structured arg construction and parsed output.

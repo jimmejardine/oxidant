@@ -1,5 +1,4 @@
 ```yaml
----
 id: permissions
 kind: component
 parent: overview
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Decide whether each tool call should auto-approve, auto-deny, or prompt the user; mirror Claude Code's allowlist UX.
----
 ```
 
 The single layer of safety between the agent and the user's filesystem. **Not** a sandbox — see [[decisions/0002-no-built-in-sandbox]].

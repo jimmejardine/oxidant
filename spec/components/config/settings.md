@@ -1,5 +1,4 @@
 ```yaml
----
 id: settings
 kind: component
 parent: overview
@@ -11,7 +10,6 @@ code:
 status: active
 responsibility: |
   Load, merge, and serve oxidant's configuration from per-repo and per-user oxidant.toml files.
----
 ```
 
 ## File locations

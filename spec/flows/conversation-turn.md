@@ -1,5 +1,4 @@
 ```yaml
----
 id: conversation-turn
 kind: flow
 parent: overview
@@ -16,7 +15,6 @@ depends_on:
   - components/gui/chat-input-panel
   - components/gui/transcript-tab
   - tools/spec/spec-diff
----
 ```
 
 # Run a conversation turn

@@ -1,5 +1,4 @@
 ```yaml
----
 id: cargo-test
 kind: tool
 parent: components/rust-tools/cargo-runner
@@ -15,7 +14,6 @@ tests:
 status: active
 responsibility: |
   Run cargo test with structured per-test events, capturing stdout/stderr per failing test for diagnostic use.
----
 ```
 
 `category`: `Mutating` (writes test binaries, may touch test fixtures on disk).

@@ -1,5 +1,4 @@
 ```yaml
----
 id: rust-hover
 kind: tool
 parent: components/rust-tools/lsp
@@ -15,7 +14,6 @@ tests:
 status: active
 responsibility: |
   Return the rust-analyzer hover info at a position: type signature plus markdown docs.
----
 ```
 
 `category`: `ReadOnly`.

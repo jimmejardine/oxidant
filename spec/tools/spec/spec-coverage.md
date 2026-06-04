@@ -1,5 +1,4 @@
 ```yaml
----
 id: spec-coverage
 kind: tool
 parent: components/spec-tools/coverage
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Model/CLI/Health-Check-facing wrapper over [[components/spec-tools/coverage]]: report Rust source files no spec transitively reaches.
----
 ```
 
 `category`: `ReadOnly`.

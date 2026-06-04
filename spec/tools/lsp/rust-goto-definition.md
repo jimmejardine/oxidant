@@ -1,5 +1,4 @@
 ```yaml
----
 id: rust-goto-definition
 kind: tool
 parent: components/rust-tools/lsp
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Return the definition site(s) of the symbol at a position.
----
 ```
 
 `category`: `ReadOnly`.

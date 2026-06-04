@@ -1,5 +1,4 @@
 ```yaml
----
 id: grep
 kind: tool
 parent: components/tools/fs
@@ -16,7 +15,6 @@ tests:
 status: active
 responsibility: |
   Stream-search a regex across the worktree (or a subset), returning line-anchored matches with context.
----
 ```
 
 `category`: `ReadOnly`.

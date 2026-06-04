@@ -1,5 +1,4 @@
 ```yaml
----
 id: conversation
 kind: component
 parent: overview
@@ -12,7 +11,6 @@ code:
 status: active
 responsibility: |
   An append-only ordered list of messages (user, assistant, tool-result) representing one exploration's interaction history.
----
 ```
 
 ## Types

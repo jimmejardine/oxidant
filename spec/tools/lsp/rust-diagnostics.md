@@ -1,5 +1,4 @@
 ```yaml
----
 id: rust-diagnostics
 kind: tool
 parent: components/rust-tools/lsp
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Return rust-analyzer's current diagnostics for one file or the whole workspace, from its push-published cache.
----
 ```
 
 `category`: `ReadOnly`.

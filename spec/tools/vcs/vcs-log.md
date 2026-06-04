@@ -1,5 +1,4 @@
 ```yaml
----
 id: vcs-log
 kind: tool
 parent: components/vcs/git-shellout
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Return recent commits for the active exploration's branch (or a revspec) as structured records.
----
 ```
 
 `category`: `ReadOnly`.

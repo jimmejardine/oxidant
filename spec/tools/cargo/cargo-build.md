@@ -1,5 +1,4 @@
 ```yaml
----
 id: cargo-build
 kind: tool
 parent: components/rust-tools/cargo-runner
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Run cargo build (debug or release) and return diagnostics plus produced artifact paths.
----
 ```
 
 `category`: `Mutating` (writes binaries to `target/`).

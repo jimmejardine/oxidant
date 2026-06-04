@@ -1,5 +1,4 @@
 ```yaml
----
 id: rust-workspace-symbols
 kind: tool
 parent: components/rust-tools/lsp
@@ -15,7 +14,6 @@ tests:
 status: active
 responsibility: |
   Search across the workspace for symbols (functions, types, traits, modules) by name.
----
 ```
 
 `category`: `ReadOnly`.

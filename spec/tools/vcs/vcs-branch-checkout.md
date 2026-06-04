@@ -1,5 +1,4 @@
 ```yaml
----
 id: vcs-branch-checkout
 kind: tool
 parent: components/vcs/git-shellout
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Switch the active exploration's worktree to a different branch.
----
 ```
 
 `category`: `Mutating`.

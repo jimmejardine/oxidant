@@ -1,5 +1,4 @@
 ```yaml
----
 id: vcs-diff
 kind: tool
 parent: components/vcs/git-shellout
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Return a structured diff between the worktree and a revspec (or between two revspecs).
----
 ```
 
 `category`: `ReadOnly`.

@@ -1,5 +1,4 @@
 ```yaml
----
 id: cargo-clippy
 kind: tool
 parent: components/rust-tools/cargo-runner
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Run clippy with --message-format=json and return structured lint diagnostics; optionally apply machine-applicable suggestions.
----
 ```
 
 `category`: `ReadOnly` by default; `Mutating` when `fix: true`.

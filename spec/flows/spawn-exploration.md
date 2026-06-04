@@ -1,5 +1,4 @@
 ```yaml
----
 id: spawn-exploration
 kind: flow
 parent: overview
@@ -12,7 +11,6 @@ depends_on:
   - components/vcs/session-persistence
   - components/core/exploration
   - components/gui/viewport
----
 ```
 
 # Spawn a sub-exploration

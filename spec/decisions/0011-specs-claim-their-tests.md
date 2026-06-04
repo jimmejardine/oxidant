@@ -1,5 +1,4 @@
 ```yaml
----
 id: 0011-specs-claim-their-tests
 kind: decision
 order: 11
@@ -7,7 +6,6 @@ status: active
 date: 2026-05-22
 responsibility: |
   Establish that spec frontmatter is the source of truth for which tests cover which specs; the validator surfaces orphan tests and unresolved test references as warnings.
----
 ```
 
 # 0011 — Specs claim their tests

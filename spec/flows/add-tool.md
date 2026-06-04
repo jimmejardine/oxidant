@@ -1,5 +1,4 @@
 ```yaml
----
 id: add-tool
 kind: flow
 parent: overview
@@ -15,7 +14,6 @@ depends_on:
   - tools/edit/apply-edits
   - tools/cargo/cargo-check
   - tools/cargo/cargo-test
----
 ```
 
 # Add a new model-facing tool

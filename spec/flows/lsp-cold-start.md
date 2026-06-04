@@ -1,5 +1,4 @@
 ```yaml
----
 id: lsp-cold-start
 kind: flow
 parent: overview
@@ -17,7 +16,6 @@ depends_on:
   - tools/lsp/rust-code-actions
   - tools/lsp/rust-diagnostics
   - decisions/0009-no-ra-ap-crates-lsp-suffices
----
 ```
 
 # Cold-start rust-analyzer for an exploration

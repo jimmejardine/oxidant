@@ -1,5 +1,4 @@
 ```yaml
----
 id: edit-string
 kind: tool
 parent: components/tools/edit
@@ -19,7 +18,6 @@ tests:
 status: active
 responsibility: |
   Replace a unique occurrence of `old_string` with `new_string` in a single file; the natural surface when no upstream tool produced a span.
----
 ```
 
 The string-replace edit surface. Use after `fs_read`-ing a file when the model wants to change `foo` to `bar` in one spot. For span-precise edits (e.g. driven by `cargo_check` or `rust_hover`), prefer [[tools/edit/apply-edits]].

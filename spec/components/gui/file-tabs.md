@@ -1,5 +1,4 @@
 ```yaml
----
 id: file-tabs
 kind: component
 parent: overview
@@ -12,7 +11,6 @@ code:
 status: active
 responsibility: |
   Render an opened code or spec file as a centre-area dock tab — markdown files default to a rendered preview with a Preview/Source toggle, everything else as a syntax-highlighted editor — plus live diagnostic markers.
----
 ```
 
 Opened files dock as siblings of the [[components/gui/transcript-tab]] in the centre tab group.

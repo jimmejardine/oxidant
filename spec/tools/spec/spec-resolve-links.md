@@ -1,5 +1,4 @@
 ```yaml
----
 id: spec-resolve-links
 kind: tool
 parent: components/spec-tools/graph
@@ -16,7 +15,6 @@ tests:
 status: active
 responsibility: |
   Return all inbound and outbound links (frontmatter and body refs) for one spec.
----
 ```
 
 `category`: `ReadOnly`.

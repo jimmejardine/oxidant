@@ -1,5 +1,4 @@
 ```yaml
----
 id: diff
 kind: component
 parent: overview
@@ -16,7 +15,6 @@ tests:
 status: active
 responsibility: |
   Detect spec↔code drift: trait-method drift for contract specs and code-path existence for component specs.
----
 ```
 
 This component uses `syn` directly for the trait parse — [[components/rust-tools/syn-tools]] is the model-facing AST surface, separate concern.

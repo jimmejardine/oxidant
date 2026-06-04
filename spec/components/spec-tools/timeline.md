@@ -1,5 +1,4 @@
 ```yaml
----
 id: timeline
 kind: component
 parent: overview
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Provide chronological queries over spec and code change history by combining git log with the SQLite metadata index.
----
 ```
 
 The timeline is **git** — oxidant does not maintain a parallel change log. This component is the thin layer that turns git history into structured query results for the agent and the GUI.

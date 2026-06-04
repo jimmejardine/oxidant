@@ -1,5 +1,4 @@
 ```yaml
----
 id: chat-input-panel
 kind: component
 parent: overview
@@ -14,7 +13,6 @@ status: active
 responsibility: |
   Bottom-docked multi-line text input panel with send, cancel, slash commands,
   model picker, and "continue iterating" flow..
----
 ```
 
 ## Layout

@@ -1,5 +1,4 @@
 ```yaml
----
 id: glob
 kind: tool
 parent: components/tools/fs
@@ -15,7 +14,6 @@ tests:
 status: active
 responsibility: |
   Return paths matching a glob pattern under the worktree root.
----
 ```
 
 `category`: `ReadOnly`.

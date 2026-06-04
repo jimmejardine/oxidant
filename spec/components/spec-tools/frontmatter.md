@@ -1,5 +1,4 @@
 ```yaml
----
 id: frontmatter
 kind: component
 parent: overview
@@ -13,7 +12,6 @@ tests:
 status: active
 responsibility: |
   Parse YAML frontmatter and body `[[refs]]` from spec markdown files; produce typed FrontmatterRecord and SpecBody structs.
----
 ```
 
 The lexer/parser layer underneath everything else in `oxidant-spec-tools`. Pure function: bytes in, structured record out.
@@ -57,11 +55,23 @@ pub struct RefMention {
 
 ## Frontmatter grammar
 
-YAML between `---` markers at the very top of the file. Missing → error. Empty → empty `FrontmatterRecord` minus `id`/`kind` → validation error downstream.
+The **canonical** form is a fenced YAML block at the very top of the file — a ` ```yaml … ``` ` (or bare ` ``` ` / `~~~`) fence whose contents are the YAML, with **no `---` delimiters**:
 
-The frontmatter block MAY be wrapped in a ` ```yaml … ``` ` (or bare ` ``` `) code fence so that raw-markdown viewers (GitHub, mdbook, `egui_commonmark` in our own file tabs) render the header as a code block instead of collapsing the leading `---` into a horizontal rule. Both shapes parse to the same `FrontmatterRecord`; the canonical form for new specs is the fenced one. A trailing blank line between the closing ` ``` ` and the body's first prose line is consumed so the body line numbers match what a reader sees in the editor.
+````
+```yaml
+id: foo
+kind: component
+…
+```
 
-The one-shot `wrap_frontmatter` binary under `crates/oxidant-spec-tools/src/bin/` adds fences to any spec that doesn't have them and is idempotent on those that do.
+<body>
+````
+
+The fence makes raw-markdown viewers (GitHub, mdbook, `egui_commonmark` in our own file tabs) render the header as a code block; the fence already delimits the block, so the old `---` markers are redundant. The YAML runs to the closing fence. Missing frontmatter → error. Empty → empty `FrontmatterRecord` minus `id`/`kind` → validation error downstream. A single blank line between the closing ` ``` ` and the body's first prose line is consumed so body line numbers match what a reader sees in the editor.
+
+**Tolerated legacy shapes** (the parser still accepts them, but they aren't the canonical form): an inner `---`/`...` pair inside the fence (stripped on parse), and a bare unfenced `---`…`---` block.
+
+The one-shot `wrap_frontmatter` binary under `crates/oxidant-spec-tools/src/bin/` normalises any spec to the canonical fenced form — stripping inner `---`, wrapping bare blocks — and is idempotent on files already canonical.
 
 ## `tests:` field
 

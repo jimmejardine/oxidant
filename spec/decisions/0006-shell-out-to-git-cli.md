@@ -1,5 +1,4 @@
 ```yaml
----
 id: 0006-shell-out-to-git-cli
 kind: decision
 order: 6
@@ -7,7 +6,6 @@ status: active
 date: 2026-05-21
 responsibility: |
   oxidant-vcs shells out to the git CLI rather than linking git2 or gix.
----
 ```
 
 # 0006 — Shell out to the `git` CLI

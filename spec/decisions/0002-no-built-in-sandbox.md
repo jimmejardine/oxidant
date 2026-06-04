@@ -1,5 +1,4 @@
 ```yaml
----
 id: 0002-no-built-in-sandbox
 kind: decision
 order: 2
@@ -7,7 +6,6 @@ status: active
 date: 2026-05-21
 responsibility: |
   Oxidant does not implement an in-process sandbox; users run oxidant under whatever isolation they prefer (devcontainer, VM, none).
----
 ```
 
 # 0002 — Oxidant ships without a built-in sandbox

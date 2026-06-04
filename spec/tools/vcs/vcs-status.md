@@ -1,5 +1,4 @@
 ```yaml
----
 id: vcs-status
 kind: tool
 parent: components/vcs/git-shellout
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Return current branch, dirty files (with statuses), and ahead/behind counts for the active exploration's worktree.
----
 ```
 
 `category`: `ReadOnly`.

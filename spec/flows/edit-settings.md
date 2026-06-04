@@ -1,5 +1,4 @@
 ```yaml
----
 id: edit-settings
 kind: flow
 parent: overview
@@ -13,7 +12,6 @@ depends_on:
   - components/gui/dock-layout
   - components/gui/theme
   - tools/spec/spec-validate
----
 ```
 
 # Edit and persist user settings

@@ -1,5 +1,4 @@
 ```yaml
----
 id: dock-layout
 kind: component
 parent: overview
@@ -11,7 +10,6 @@ code:
 status: active
 responsibility: |
   Build, persist, and restore the egui_dock dock tree, including default layout and "reset layout". The host viewport (see [[components/gui/viewport]]) owns this state; dock-layout itself is layering-neutral.
----
 ```
 
 The dock manager lives via `egui_dock::DockArea`. Each exploration's viewport owns a `DockState<DockTab>` tree — the dependency direction is viewport → dock-layout, deliberately not the reverse.

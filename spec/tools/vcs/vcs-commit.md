@@ -1,5 +1,4 @@
 ```yaml
----
 id: vcs-commit
 kind: tool
 parent: components/vcs/git-shellout
@@ -13,7 +12,6 @@ code:
 status: active
 responsibility: |
   Stage paths and create a commit in the active exploration's worktree; never pushes to a remote.
----
 ```
 
 `category`: `Mutating`.

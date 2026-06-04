@@ -1,5 +1,4 @@
 ```yaml
----
 id: worktree-mgmt
 kind: component
 parent: overview
@@ -12,7 +11,6 @@ code:
 status: active
 responsibility: |
   Create, list, and remove git worktrees for explorations; resolve canonical paths; enforce one worktree per branch. Returns lean WorktreeHandle values that higher layers wrap into Exploration aggregates.
----
 ```
 
 The worktree-lifecycle layer on top of [[components/vcs/git-shellout]]. Owns the choice of worktree paths, branch naming, and resource bookkeeping. Deliberately does **not** depend on [[components/core/exploration]] — the dependency goes the other way (an Exploration carries a worktree path produced here). The spawn-exploration flow ([[flows/spawn-exploration]]) is the assembly point that takes a `WorktreeHandle` and constructs the full `Exploration` aggregate.

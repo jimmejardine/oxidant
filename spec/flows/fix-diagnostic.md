@@ -1,5 +1,4 @@
 ```yaml
----
 id: fix-diagnostic
 kind: flow
 parent: overview
@@ -18,7 +17,6 @@ depends_on:
   - tools/cargo/cargo-test
   - tools/vcs/vcs-commit
   - components/tools/workspace-edit-substrate
----
 ```
 
 # Fix a Rust compiler diagnostic

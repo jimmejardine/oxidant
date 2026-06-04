@@ -1,5 +1,4 @@
 ```yaml
----
 id: 0003-egui-gui-over-tui
 kind: decision
 order: 3
@@ -7,7 +6,6 @@ status: active
 date: 2026-05-21
 responsibility: |
   Use egui+eframe (with egui_dock) for a native desktop GUI rather than a ratatui-based TUI.
----
 ```
 
 # 0003 — egui+eframe desktop GUI, not a TUI

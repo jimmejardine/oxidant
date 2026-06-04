@@ -1,5 +1,4 @@
 ```yaml
----
 id: bash-runner
 kind: component
 parent: overview
@@ -11,7 +10,6 @@ code:
 status: active
 responsibility: |
   Execute shell commands in the exploration's working directory with a timeout, captured stdout/stderr, and structured output.
----
 ```
 
 The escape hatch. When no first-class tool covers what the model needs, [[tools/bash/bash]] runs the command directly.
