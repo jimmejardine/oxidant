@@ -255,10 +255,10 @@ fn render_leaf(
             )
             .show(ui, |ui| {
                 for (node, ek) in &outbound {
-                    ref_row_spec(ui, node, *ek, workspace_root, state);
+                    ref_row_spec(ui, node, *ek, RefDirection::Outbound, workspace_root, state);
                 }
                 for code in code_files {
-                    ref_row_code(ui, code, workspace_root, state);
+                    ref_row_code(ui, code, RefDirection::Outbound, workspace_root, state);
                 }
             });
 
@@ -269,7 +269,7 @@ fn render_leaf(
             )
             .show(ui, |ui| {
                 for (node, ek) in &inbound {
-                    ref_row_spec(ui, node, *ek, workspace_root, state);
+                    ref_row_spec(ui, node, *ek, RefDirection::Inbound, workspace_root, state);
                 }
             });
         });
@@ -317,19 +317,38 @@ fn wire_leaf_actions(
     });
 }
 
+/// Direction of a ref row — picks the arrow glyph that visually
+/// matches the enclosing "Refs out" / "Refs in" section. See
+/// spec/components/gui/spec-tree-panel.md "Refs subtrees".
+#[derive(Debug, Clone, Copy)]
+enum RefDirection {
+    Outbound,
+    Inbound,
+}
+
+impl RefDirection {
+    fn arrow(self) -> &'static str {
+        match self {
+            RefDirection::Outbound => "→",
+            RefDirection::Inbound => "←",
+        }
+    }
+}
+
 /// A clickable ref row pointing at another spec, labelled with the edge
 /// kind. Double-click opens that spec.
 fn ref_row_spec(
     ui: &mut egui::Ui,
     node: &Node,
     edge: EdgeKind,
+    direction: RefDirection,
     workspace_root: &Path,
     state: &Arc<StdMutex<SharedState>>,
 ) {
     let short = node.id.rsplit('/').next().unwrap_or(&node.id);
     let mut job = LayoutJob::default();
     job.append(
-        &format!("{} → ", edge.as_str()),
+        &format!("{} {} ", edge.as_str(), direction.arrow()),
         0.0,
         TextFormat {
             color: theme::faint_text(),
@@ -361,9 +380,13 @@ fn ref_row_spec(
 
 /// A clickable ref row pointing at a source file declared in the spec's
 /// `code:` frontmatter. Click previews; double-click opens it as a code tab.
+/// `direction` only ever takes `Outbound` here — code files are declared
+/// in the spec's own frontmatter and so are never inbound — but threading
+/// it through keeps the row helpers shaped identically.
 fn ref_row_code(
     ui: &mut egui::Ui,
     code: &Path,
+    direction: RefDirection,
     workspace_root: &Path,
     state: &Arc<StdMutex<SharedState>>,
 ) {
@@ -374,7 +397,7 @@ fn ref_row_code(
         .unwrap_or_else(|| rel.clone());
     let mut job = LayoutJob::default();
     job.append(
-        "code → ",
+        &format!("code {} ", direction.arrow()),
         0.0,
         TextFormat {
             color: theme::faint_text(),

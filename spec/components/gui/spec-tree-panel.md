@@ -73,6 +73,8 @@ Each leaf with associations expands to two nested subtrees, backed by an in-memo
 - **Refs out (N)** — what this spec points at: its outbound graph edges (`depends_on`, `implements`, `parent`, body `[[ref]]`), each row labelled with the edge kind and coloured by the target's kind, plus one `code → <file>` row per path in the spec's `code:` frontmatter.
 - **Refs in (M)** — specs that point at this one (the inbound graph edges).
 
+Rows under **Refs out** render as `<edge> → <target>`; rows under **Refs in** render as `<edge> ← <target>` — the arrow direction mirrors the section semantics so a glance tells the reader which way the relationship points. Word order stays the same (edge-then-target) in both directions so the columns line up.
+
 Each ref row supports **single-click to preview** in the [[components/gui/dock-layout]] Selected tab and **double-click to open**: spec rows open the target spec ([[components/gui/file-tabs]], Spec source); `code:` rows open the source file (Code source). Leaves with no outbound edges, no `code:` files, and no inbound edges stay plain rows (no triangle), so the expander itself signals "has associations".
 
 ## Backing query
