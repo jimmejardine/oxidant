@@ -20,6 +20,7 @@ fn ctx() -> ToolContext {
         workspace_root: Utf8PathBuf::from_path_buf(repo_root()).unwrap(),
         exploration_id: "test".into(),
         cancellation: CancellationToken::new(),
+        ui: None,
     }
 }
 

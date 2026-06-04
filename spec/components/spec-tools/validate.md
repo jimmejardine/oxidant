@@ -39,7 +39,7 @@ The drift detector for spec hygiene. Warnings, never errors — even severe issu
 | missing_code_path | A `code:` entry refers to a file that doesn't exist. |
 | orphan_test | A `#[test]` exists in code but no spec's `tests:` claims it (directly or via whole-file shorthand). See [[decisions/0011-specs-claim-their-tests]]. |
 | unresolved_test | A `tests:` entry refers to a path or function that doesn't exist. |
-| reachability | `overview` cannot reach this spec via the link graph in ≤ 4 hops. |
+| reachability | `overview` cannot reach this spec via the link graph at all (orphan). Depth is unbounded — deep abstraction layers are fine; the only problem is total disconnection. |
 
 ## Output
 

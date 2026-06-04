@@ -35,7 +35,6 @@ pub enum WarningKind {
     ParseError,
 }
 
-const MAX_REACH_HOPS: usize = 4;
 const ROOT_ID: &str = "overview";
 
 pub fn validate(repo: &Path) -> Vec<Warning> {
@@ -325,12 +324,18 @@ fn check_orphans(graph: &SpecGraph, warnings: &mut Vec<Warning>) {
     }
 }
 
+/// Flag specs that are unreachable from `overview` at any depth
+/// through the link graph (parent / depends_on / implements / body
+/// `[[ref]]`). Depth is intentionally unbounded — deep abstraction
+/// layers are a feature, not a code smell; the warning fires only
+/// when a spec is truly disconnected (orphan island). See
+/// spec/components/spec-tools/validate.md "reachability".
 fn check_reachability(graph: &SpecGraph, all_ids: &[String], warnings: &mut Vec<Warning>) {
     if !all_ids.iter().any(|id| id == ROOT_ID) {
         return; // no root to measure from; not our concern here
     }
     let reachable: HashSet<String> = graph
-        .reachable_within(ROOT_ID, MAX_REACH_HOPS)
+        .reachable_within(ROOT_ID, usize::MAX)
         .into_iter()
         .map(|n| n.id.clone())
         .collect();
@@ -342,7 +347,10 @@ fn check_reachability(graph: &SpecGraph, all_ids: &[String], warnings: &mut Vec<
             warnings.push(Warning {
                 spec_id: Some(node.id.clone()),
                 kind: WarningKind::Reachability,
-                message: format!("not reachable from `{ROOT_ID}` within {MAX_REACH_HOPS} hops"),
+                message: format!(
+                    "not reachable from `{ROOT_ID}` through the spec link graph \
+                     — add a `parent:`, `depends_on:`, or body `[[ref]]` from a connected spec"
+                ),
                 location: Some((node.path.clone(), 1, 1)),
             });
         }
@@ -359,5 +367,92 @@ fn body_line_budget(kind: SpecKind) -> usize {
         SpecKind::Flow => 120,
         SpecKind::Invariant => 60,
         SpecKind::Decision => 120,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::frontmatter;
+    use crate::graph::GraphInput;
+
+    /// Build a tiny SpecGraph from a list of (id, kind, body_refs).
+    /// Body refs become outgoing edges from the spec via the
+    /// `[[ref]]` mention extractor — the same mechanism overview.md
+    /// uses to reach the rest of the tree in the real spec set.
+    fn build_graph(specs: &[(&str, &str, &[&str])]) -> (SpecGraph, Vec<String>) {
+        let inputs: Vec<GraphInput> = specs
+            .iter()
+            .map(|(id, kind, refs)| {
+                let body_refs = refs
+                    .iter()
+                    .map(|r| format!("See [[{r}]]."))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let raw =
+                    format!("---\nid: {id}\nkind: {kind}\n---\n{body_refs}\n(body)\n");
+                GraphInput {
+                    canonical_id: (*id).to_string(),
+                    file: frontmatter::parse(&raw).expect("parse"),
+                    path: PathBuf::from(format!("spec/{id}.md")),
+                }
+            })
+            .collect();
+        let all_ids: Vec<String> = inputs.iter().map(|i| i.canonical_id.clone()).collect();
+        (SpecGraph::build(&inputs), all_ids)
+    }
+
+    #[test]
+    fn reachability_does_not_complain_about_deeply_nested_but_connected_specs() {
+        // overview → a → b → c → d → e — 5 hops, all connected via
+        // body refs (the same mechanism real overview.md uses). The
+        // old depth-4 check would have flagged `e`; the new unbounded
+        // check must not.
+        let (graph, all_ids) = build_graph(&[
+            ("overview", "overview", &["a"]),
+            ("a", "component", &["b"]),
+            ("b", "component", &["c"]),
+            ("c", "component", &["d"]),
+            ("d", "component", &["e"]),
+            ("e", "component", &[]),
+        ]);
+        let mut warnings = Vec::new();
+        check_reachability(&graph, &all_ids, &mut warnings);
+        let reachability_warnings: Vec<_> = warnings
+            .iter()
+            .filter(|w| matches!(w.kind, WarningKind::Reachability))
+            .collect();
+        assert!(
+            reachability_warnings.is_empty(),
+            "depth ≥ 5 must NOT trip reachability when chain is connected; got {reachability_warnings:?}"
+        );
+    }
+
+    #[test]
+    fn reachability_complains_about_truly_disconnected_island_specs() {
+        // overview reaches `a` but has no path to `island`. Only
+        // `island` should warn.
+        let (graph, all_ids) = build_graph(&[
+            ("overview", "overview", &["a"]),
+            ("a", "component", &[]),
+            ("island", "component", &[]),
+        ]);
+        let mut warnings = Vec::new();
+        check_reachability(&graph, &all_ids, &mut warnings);
+        let reachability_warnings: Vec<_> = warnings
+            .iter()
+            .filter(|w| matches!(w.kind, WarningKind::Reachability))
+            .collect();
+        assert_eq!(
+            reachability_warnings.len(),
+            1,
+            "expected exactly one orphan warning, got {reachability_warnings:?}"
+        );
+        assert_eq!(
+            reachability_warnings[0].spec_id.as_deref(),
+            Some("island"),
+            "the orphan warning must target `island`, got {:?}",
+            reachability_warnings[0].spec_id
+        );
     }
 }
